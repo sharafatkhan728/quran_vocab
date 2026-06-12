@@ -1,0 +1,609 @@
+// ignore_for_file: unnecessary_string_interpolations, curly_braces_in_flow_control_structures
+
+import 'dart:convert';
+import 'package:flutter/services.dart';
+
+/// Morphology service using mustafa0x/quran-morphology corpus
+/// Source: corpus.quran.com (Kais Dukes, University of Leeds) — GNU GPL
+/// 77,430 words, manually verified morphological tags
+class MorphologyService {
+  static final Map<String, List<WordSegment>> _wordSegments = {};
+  static final Map<String, String> _terms = {};
+  static bool _loaded = false;
+
+  static Future<void> initialize() async {
+    if (_loaded) return;
+    await Future.wait([_loadCorpus(), _loadTerms()]);
+    _loaded = true;
+  }
+
+
+  /// Find root for a normalized Arabic word by scanning segments
+  static String? getAllKeysForWord(String normalizedArabic, int surahId) {
+    // Scan all cached segments for this surah
+    for (final entry in _wordSegments.entries) {
+      if (!entry.key.startsWith('$surahId:')) continue;
+      for (final seg in entry.value) {
+        if (seg.type == SegType.stem && seg.root.isNotEmpty) {
+          // Check if this segment's lemma matches our word
+          final normalizedLemma = seg.lemma
+              .replaceAll(RegExp(r'[\u064B-\u065F\u0670\u0640]'), '')
+              .trim();
+          if (normalizedLemma == normalizedArabic ||
+              normalizedLemma.contains(normalizedArabic) ||
+              normalizedArabic.contains(normalizedLemma)) {
+            return seg.root;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  static bool get isLoaded => _loaded;
+
+  static Future<void> _loadCorpus() async {
+    final raw = await rootBundle.loadString('assets/data/quran_morphology.txt');
+    for (final line in raw.split('\n')) {
+      final t = line.trim();
+      if (t.isEmpty || t.startsWith('#')) continue;
+      final tab = t.indexOf('\t');
+      if (tab < 0) continue;
+      final loc =
+          t.substring(0, tab).replaceAll('(', '').replaceAll(')', '').trim();
+      final tag = t.substring(tab + 1).trim();
+      final parts = loc.split(':');
+      if (parts.length < 4) continue;
+      final wordKey = '${parts[0]}:${parts[1]}:${parts[2]}';
+      final seg = WordSegment.parse(tag, int.tryParse(parts[3]) ?? 1);
+      _wordSegments.putIfAbsent(wordKey, () => []).add(seg);
+    }
+  }
+
+  static Future<void> _loadTerms() async {
+    try {
+      final raw =
+          await rootBundle.loadString('assets/data/morphology_terms.json');
+      final decoded = json.decode(raw) as Map<String, dynamic>;
+      _terms.addAll(decoded.map((k, v) => MapEntry(k, v.toString())));
+    } catch (_) {}
+  }
+
+  /// Get all segments for a word (surah:ayah:position)
+  static List<WordSegment>? getSegments(int surah, int ayah, int pos) =>
+      _wordSegments['$surah:$ayah:$pos'];
+
+  /// Get all words with same root (for Tab 2)
+  static Map<String, List<String>> getWordsByRoot(String root) {
+    final result = <String, List<String>>{};
+    for (final entry in _wordSegments.entries) {
+      for (final seg in entry.value) {
+        if (seg.root == root) {
+          result.putIfAbsent(entry.key, () => []);
+        }
+      }
+    }
+    return result;
+  }
+
+  /// Get all word keys that share the same root, grouped by lemma
+  static Map<String, List<String>> getRootForms(String root) {
+    final byLemma = <String, Set<String>>{};
+    for (final entry in _wordSegments.entries) {
+      for (final seg in entry.value) {
+        if (seg.type == SegType.stem &&
+            seg.root == root &&
+            seg.lemma.isNotEmpty) {
+          byLemma.putIfAbsent(seg.lemma, () => {}).add(entry.key);
+        }
+      }
+    }
+    return byLemma.map((k, v) => MapEntry(k, v.toList()));
+  }
+
+  static String expand(String code) => _terms[code] ?? _builtinExpand(code);
+
+  static String _builtinExpand(String code) {
+    const m = {
+      // POS
+      'N': 'Noun', 'PN': 'Proper Noun', 'V': 'Verb', 'ADJ': 'Adjective',
+      'PRON': 'Pronoun', 'DEM': 'Demonstrative', 'REL': 'Relative Pronoun',
+      'T': 'Time', 'LOC': 'Location', 'P': 'Preposition',
+      'CONJ': 'Conjunction', 'SUB': 'Subordinating', 'ACC': 'Particle',
+      'CERT': 'Certainty', 'FUT': 'Future', 'VOC': 'Vocative',
+      'NEG': 'Negative', 'PREV': 'Preventive', 'VN': 'Verbal Noun',
+      'INTG': 'Interrogative', 'NV': 'Nominal Verb',
+      // Tense
+      'PERF': 'Perfect (ماضي)', 'IMPF': 'Imperfect (مضارع)',
+      'IMPV': 'Imperative (أمر)', 'ACT PCPL': 'Active Participle',
+      'PASS PCPL': 'Passive Participle',
+      // Person
+      '1': '1st person (متكلم)', '2': '2nd person (مخاطب)',
+      '3': '3rd person (غائب)',
+      // Gender
+      'M': 'Masculine (مذكر)', 'F': 'Feminine (مؤنث)',
+      // Number
+      'SG': 'Singular (مفرد)', 'DU': 'Dual (مثنى)', 'PL': 'Plural (جمع)',
+      // Case
+      'NOM': 'Nominative (مرفوع)', 'ACCu': 'Accusative (منصوب)',
+      'GEN': 'Genitive (مجرور)',
+      // Voice
+      'ACT': 'Active (معلوم)', 'PASS': 'Passive (مجهول)',
+      // State
+      'DEF': 'Definite (معرفة)', 'INDEF': 'Indefinite (نكرة)',
+    };
+    return m[code] ?? code;
+  }
+
+  /// Build Sarf derivation chain for a word
+  static SarfChain? buildSarfChain(
+      int surah, int ayah, int pos, String arabicWord) {
+    final segs = getSegments(surah, ayah, pos);
+    if (segs == null) return null;
+
+    final stem = segs.firstWhere(
+      (s) => s.type == SegType.stem,
+      orElse: () => segs.first,
+    );
+
+    if (stem.root.isEmpty) return null;
+
+    final steps = <SarfStep>[];
+
+    // Step 1: Root
+    steps.add(SarfStep(
+      arabic: stem.root,
+      arabicUrdu: stem.root,
+      title: 'Root (جذر)',
+      titleUrdu: 'اصل (جذر)',
+      explanation: _rootExplanation(stem.root, stem.pos),
+      explanationUrdu: _rootExplanationUrdu(stem.root, stem.pos),
+      type: SarfType.root,
+      change: '',
+    ));
+
+    // Step 2: Lemma (if different from arabicWord and root)
+    if (stem.lemma.isNotEmpty && stem.lemma != arabicWord) {
+      steps.add(SarfStep(
+        arabic: stem.lemma,
+        arabicUrdu: stem.lemma,
+        title: _lemmaTitle(stem),
+        titleUrdu: _lemmaTitleUrdu(stem),
+        explanation: _lemmaExplanation(stem),
+        explanationUrdu: _lemmaExplanationUrdu(stem),
+        type: SarfType.lemma,
+        change: _lemmaChange(stem),
+      ));
+    }
+
+    // Step 3: Inflected form (if verb with tense/number changes)
+    if (_needsInflectionStep(stem) && stem.lemma != arabicWord) {
+      steps.add(SarfStep(
+        arabic: arabicWord,
+        arabicUrdu: arabicWord,
+        title: _inflectionTitle(stem),
+        titleUrdu: _inflectionTitleUrdu(stem),
+        explanation: _inflectionExplanation(stem, arabicWord),
+        explanationUrdu: _inflectionExplanationUrdu(stem, arabicWord),
+        type: SarfType.inflected,
+        change: _inflectionChange(stem),
+      ));
+    }
+
+    // Step 4: Final form with prefixes/suffixes
+    final prefixes = segs.where((s) => s.type == SegType.prefix).toList();
+    final suffixes = segs.where((s) => s.type == SegType.suffix).toList();
+
+    if (prefixes.isNotEmpty || suffixes.isNotEmpty) {
+      steps.add(SarfStep(
+        arabic: arabicWord,
+        arabicUrdu: arabicWord,
+        title: 'Quranic Form (صيغة قرآنية)',
+        titleUrdu: 'قرآنی شکل',
+        explanation: _affixExplanation(prefixes, suffixes),
+        explanationUrdu: _affixExplanationUrdu(prefixes, suffixes),
+        type: SarfType.quranicForm,
+        change: _affixChange(prefixes, suffixes),
+        prefixes: prefixes,
+        suffixes: suffixes,
+      ));
+    }
+
+    return SarfChain(
+      root: stem.root,
+      lemma: stem.lemma,
+      pos: stem.pos,
+      tense: stem.tense,
+      person: stem.person,
+      gender: stem.gender,
+      number: stem.number,
+      grammaticalCase: stem.grammaticalCase,
+      voice: stem.voice,
+      state: stem.state,
+      steps: steps,
+      segments: segs,
+    );
+  }
+
+  // ── Explanation generators ─────────────────────────────────────────────────
+
+  static String _rootExplanation(String root, String pos) {
+    final letters = root.replaceAll(' ', '-');
+    switch (pos) {
+      case 'V':
+        return 'Trilateral root $letters. All verb conjugations derive from this pattern.';
+      case 'N':
+        return 'Root $letters. All derived nouns and adjectives share this core meaning.';
+      default:
+        return 'Root letters: $letters. The fundamental semantic unit.';
+    }
+  }
+
+  static String _rootExplanationUrdu(String root, String pos) {
+    switch (pos) {
+      case 'V':
+        return 'ثلاثی جذر $root۔ تمام فعلی صیغے اسی سے بنتے ہیں۔';
+      case 'N':
+        return 'جذر $root۔ تمام مشتق اسماء اسی معنی سے ہیں۔';
+      default:
+        return 'جذری حروف: $root';
+    }
+  }
+
+  static String _lemmaTitle(WordSegment s) {
+    if (s.pos == 'V') return 'Base Verb (فعل ماضي مفرد مذكر)';
+    if (s.pos == 'N') return 'Base Noun (مفرد)';
+    return 'Lemma (مصدر)';
+  }
+
+  static String _lemmaTitleUrdu(WordSegment s) {
+    if (s.pos == 'V') return 'بنیادی فعل (ماضی - واحد مذکر)';
+    if (s.pos == 'N') return 'بنیادی اسم (واحد)';
+    return 'اصل شکل';
+  }
+
+  static String _lemmaExplanation(WordSegment s) {
+    if (s.pos == 'V')
+      return 'Past tense, 3rd person singular masculine — the dictionary/citation form of the verb.';
+    if (s.pos == 'N')
+      return 'Singular, indefinite form — the dictionary entry form.';
+    return 'The base dictionary form of this word.';
+  }
+
+  static String _lemmaExplanationUrdu(WordSegment s) {
+    if (s.pos == 'V')
+      return 'ماضی، واحد، غائب، مذکر — فعل کی بنیادی اور لغوی شکل۔';
+    if (s.pos == 'N') return 'واحد، نکرہ — اسم کی بنیادی لغوی شکل۔';
+    return 'اس لفظ کی بنیادی لغوی شکل۔';
+  }
+
+  static String _lemmaChange(WordSegment s) {
+    if (s.pos == 'V') return '↓ Base verb established';
+    return '↓ Base form established';
+  }
+
+  static bool _needsInflectionStep(WordSegment s) =>
+      s.tense.isNotEmpty ||
+      s.number == 'DU' ||
+      s.number == 'PL' ||
+      s.voice == 'PASS';
+
+  static String _inflectionTitle(WordSegment s) {
+    final parts = <String>[];
+    if (s.tense.isNotEmpty) parts.add(expand(s.tense));
+    if (s.person.isNotEmpty) parts.add('${expand(s.person)}');
+    if (s.gender.isNotEmpty) parts.add(expand(s.gender));
+    if (s.number.isNotEmpty) parts.add(expand(s.number));
+    return parts.isEmpty ? 'Inflected Form' : parts.join(', ');
+  }
+
+  static String _inflectionTitleUrdu(WordSegment s) {
+    final parts = <String>[];
+    const urduTense = {'PERF': 'ماضی', 'IMPF': 'مضارع', 'IMPV': 'امر'};
+    const urduNumber = {'SG': 'واحد', 'DU': 'تثنیہ', 'PL': 'جمع'};
+    const urduGender = {'M': 'مذکر', 'F': 'مؤنث'};
+    const urduPerson = {'1': 'متکلم', '2': 'مخاطب', '3': 'غائب'};
+    if (s.tense.isNotEmpty) parts.add(urduTense[s.tense] ?? s.tense);
+    if (s.person.isNotEmpty) parts.add(urduPerson[s.person] ?? s.person);
+    if (s.gender.isNotEmpty) parts.add(urduGender[s.gender] ?? s.gender);
+    if (s.number.isNotEmpty) parts.add(urduNumber[s.number] ?? s.number);
+    return parts.join('، ');
+  }
+
+  static String _inflectionExplanation(WordSegment s, String word) {
+    final changes = <String>[];
+    if (s.tense == 'IMPF') {
+      changes.add(
+          'Added ي، ت، أ، or ن as a prefix to indicate present/future tense (مضارع pattern)');
+    }
+    if (s.tense == 'IMPV') {
+      changes.add('Imperative form: direct command address (فعل أمر)');
+    }
+    if (s.number == 'DU') {
+      changes.add('Added ان or ين suffix for dual — referring to exactly two');
+    }
+    if (s.number == 'PL') {
+      changes.add(
+          'Added ون/ين (masculine) or ات (feminine) suffix for plural — three or more');
+    }
+    if (s.voice == 'PASS') {
+      changes.add(
+          'Passive voice: subject receives the action, pattern changes to u-ِ vowels');
+    }
+    if (s.gender == 'F' && s.pos == 'V') {
+      changes.add('Added ت prefix or suffix to mark feminine subject');
+    }
+    if (s.grammaticalCase == 'NOM') {
+      changes
+          .add('Nominative case (مرفوع): subject of sentence, marked with ضمة');
+    }
+    if (s.grammaticalCase == 'GEN') {
+      changes
+          .add('Genitive case (مجرور): follows preposition, marked with كسرة');
+    }
+    return changes.isEmpty
+        ? 'Morphological changes applied to match grammatical context.'
+        : changes.join('. ');
+  }
+
+  static String _inflectionExplanationUrdu(WordSegment s, String word) {
+    final changes = <String>[];
+    if (s.tense == 'IMPF')
+      changes.add('مضارع بنانے کے لیے شروع میں ی/ت/أ/ن لگایا گیا');
+    if (s.tense == 'IMPV') changes.add('امر کی صیغہ: براہ راست حکم کے لیے');
+    if (s.number == 'DU')
+      changes.add('تثنیہ کے لیے آخر میں ان/ین کا اضافہ — دو کے لیے');
+    if (s.number == 'PL')
+      changes.add('جمع کے لیے ون/ین یا ات کا اضافہ — تین یا زیادہ کے لیے');
+    if (s.voice == 'PASS') changes.add('مجہول: فاعل معلوم نہیں، صیغہ بدل گیا');
+    return changes.isEmpty
+        ? 'صرفی تبدیلیاں نحوی سیاق کے مطابق۔'
+        : changes.join('۔ ');
+  }
+
+  static String _inflectionChange(WordSegment s) {
+    if (s.tense == 'IMPF') return '↓ Present tense prefix added';
+    if (s.tense == 'IMPV') return '↓ Imperative form';
+    if (s.number == 'PL') return '↓ Plural suffix added';
+    if (s.number == 'DU') return '↓ Dual suffix added';
+    return '↓ Inflection applied';
+  }
+
+  static String _affixExplanation(
+      List<WordSegment> prefixes, List<WordSegment> suffixes) {
+    final p =
+        prefixes.map((s) => '${expand(s.pos)} prefix (${s.pos})').join(', ');
+    final s =
+        suffixes.map((s) => '${expand(s.pos)} suffix (${s.pos})').join(', ');
+    final parts = <String>[];
+    if (p.isNotEmpty) parts.add('Prefixed with: $p');
+    if (s.isNotEmpty) parts.add('Suffixed with: $s');
+    return parts.join('. ');
+  }
+
+  static String _affixExplanationUrdu(
+      List<WordSegment> prefixes, List<WordSegment> suffixes) {
+    final parts = <String>[];
+    if (prefixes.isNotEmpty) {
+      parts.add('سابقہ: ${prefixes.map((s) => expand(s.pos)).join("، ")}');
+    }
+    if (suffixes.isNotEmpty) {
+      parts.add('لاحقہ: ${suffixes.map((s) => expand(s.pos)).join("، ")}');
+    }
+    return parts.join('۔ ');
+  }
+
+  static String _affixChange(
+      List<WordSegment> prefixes, List<WordSegment> suffixes) {
+    if (prefixes.isNotEmpty && suffixes.isNotEmpty)
+      return '↓ Prefix + suffix attached';
+    if (prefixes.isNotEmpty) return '↓ Prefix attached';
+    if (suffixes.isNotEmpty) return '↓ Suffix attached';
+    return '';
+  }
+}
+
+// ── Data models ────────────────────────────────────────────────────────────────
+
+enum SegType { prefix, stem, suffix }
+
+class WordSegment {
+  final int segNum;
+  final SegType type;
+  final String pos;
+  final String root;
+  final String lemma;
+  final String tense;
+  final String person;
+  final String gender;
+  final String number;
+  final String grammaticalCase;
+  final String voice;
+  final String state;
+  final String verbForm;
+
+  WordSegment({
+    required this.segNum,
+    required this.type,
+    required this.pos,
+    required this.root,
+    required this.lemma,
+    required this.tense,
+    required this.person,
+    required this.gender,
+    required this.number,
+    required this.grammaticalCase,
+    required this.voice,
+    required this.state,
+    required this.verbForm,
+  });
+
+  factory WordSegment.parse(String tag, int segNum) {
+    SegType type = SegType.stem;
+    String pos = '', root = '', lemma = '', tense = '', person = '';
+    String gender = '', number = '', gcase = '', voice = '', state = '';
+    String verbForm = '';
+
+    for (final token in tag.split('|')) {
+      final t = token.trim();
+      if (t == 'PREFIX') {
+        type = SegType.prefix;
+        continue;
+      }
+      if (t == 'SUFFIX') {
+        type = SegType.suffix;
+        continue;
+      }
+      if (t == 'STEM') {
+        type = SegType.stem;
+        continue;
+      }
+      if (t.startsWith('POS:')) {
+        pos = t.substring(4);
+        continue;
+      }
+      if (t.startsWith('ROOT:')) {
+        root = t.substring(5);
+        continue;
+      }
+      if (t.startsWith('LEM:')) {
+        lemma = t.substring(4);
+        continue;
+      }
+
+      switch (t) {
+        case 'PERF':
+          tense = 'PERF';
+          break;
+        case 'IMPF':
+          tense = 'IMPF';
+          break;
+        case 'IMPV':
+          tense = 'IMPV';
+          break;
+        case '1':
+          person = '1';
+          break;
+        case '2':
+          person = '2';
+          break;
+        case '3':
+          person = '3';
+          break;
+        case 'M':
+          gender = 'M';
+          break;
+        case 'F':
+          gender = 'F';
+          break;
+        case 'SG':
+          number = 'SG';
+          break;
+        case 'DU':
+          number = 'DU';
+          break;
+        case 'PL':
+          number = 'PL';
+          break;
+        case 'NOM':
+          gcase = 'NOM';
+          break;
+        case 'ACC':
+          gcase = 'ACC';
+          break;
+        case 'GEN':
+          gcase = 'GEN';
+          break;
+        case 'ACT':
+          voice = 'ACT';
+          break;
+        case 'PASS':
+          voice = 'PASS';
+          break;
+        case 'DEF':
+          state = 'DEF';
+          break;
+        case 'INDEF':
+          state = 'INDEF';
+          break;
+      }
+
+      // Verb form: II, III, IV... X
+      if (RegExp(r'^[IVX]+$').hasMatch(t)) verbForm = t;
+    }
+
+    return WordSegment(
+      segNum: segNum,
+      type: type,
+      pos: pos,
+      root: root,
+      lemma: lemma,
+      tense: tense,
+      person: person,
+      gender: gender,
+      number: number,
+      grammaticalCase: gcase,
+      voice: voice,
+      state: state,
+      verbForm: verbForm,
+    );
+  }
+}
+
+class SarfChain {
+  final String root;
+  final String lemma;
+  final String pos;
+  final String tense;
+  final String person;
+  final String gender;
+  final String number;
+  final String grammaticalCase;
+  final String voice;
+  final String state;
+  final List<SarfStep> steps;
+  final List<WordSegment> segments;
+
+  SarfChain({
+    required this.root,
+    required this.lemma,
+    required this.pos,
+    required this.tense,
+    required this.person,
+    required this.gender,
+    required this.number,
+    required this.grammaticalCase,
+    required this.voice,
+    required this.state,
+    required this.steps,
+    required this.segments,
+  });
+}
+
+class SarfStep {
+  final String arabic;
+  final String arabicUrdu;
+  final String title;
+  final String titleUrdu;
+  final String explanation;
+  final String explanationUrdu;
+  final String change;
+  final SarfType type;
+  final List<WordSegment> prefixes;
+  final List<WordSegment> suffixes;
+
+  SarfStep({
+    required this.arabic,
+    required this.arabicUrdu,
+    required this.title,
+    required this.titleUrdu,
+    required this.explanation,
+    required this.explanationUrdu,
+    required this.change,
+    required this.type,
+    this.prefixes = const [],
+    this.suffixes = const [],
+  });
+}
+
+enum SarfType { root, lemma, inflected, quranicForm }

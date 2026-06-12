@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "507080315475",
+    "project_id": "quran-kalima",
+    "storage_bucket": "quran-kalima.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:507080315475:android:dd2521498e8c116b27eca6",
+        "android_client_info": {
+          "package_name": "com.example.quran_vocab"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCOy0skr6EH_l7LQVA8o7bUemmigfRqItw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
