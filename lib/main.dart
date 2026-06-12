@@ -11,7 +11,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'screens/auth_screen.dart';
 import 'screens/profile_settings_screen.dart';
 import 'services/morphology_service.dart';
-import 'services/translation_service.dart';
 import 'services/quran_cache_service.dart';
 
 void main() async {
@@ -106,10 +105,9 @@ class _MainNavigationState extends State<MainNavigation> {
             icon: Icon(Icons.person_outline),
             selectedIcon: Icon(Icons.person),
             label: 'Profile',
-            label: 'Profile',
           ),
         ],
       ),
     );
   }
-} //done
+} 

@@ -45,10 +45,10 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
   double _urduFontSize = 16;
 
   // Translation
-  Map<String, String> _ayahTranslations = {}; // ayahNum → translation text
+  final Map<String, String> _ayahTranslations = {}; // ayahNum → translation text
   bool _showTranslation = true;
   String _selectedScholar = 'ur.jalandhry';
-  Map<String, Map<String, String>> _multiTranslations = {}; // ayahNum → {scholar→text}
+// ayahNum → {scholar→text}
 
   // Bookmarks
   Set<String> _bookmarks = {}; // format: "surahId:ayahNum"
@@ -58,7 +58,7 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
   double _lastScale = 1.0;
 
   // Juz data cache
-  Map<int, String> _ayahJuzInfo = {}; // ayahNum → label like "Juz 1"
+// ayahNum → label like "Juz 1"
 
   // How many real ayahs this surah has (Islamic standard numbering)
   // This is what the USER sees — always matches printed Quran
@@ -140,6 +140,7 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
                 _selectedScholar = e.key;
                 _ayahTranslations.clear(); // reload with new scholar
               });
+              // ignore: use_build_context_synchronously
               Navigator.pop(context);
             },
           )),

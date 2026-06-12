@@ -1,5 +1,6 @@
+// ignore_for_file: use_build_context_synchronously
+
 import 'dart:math';
-import 'package:characters/characters.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -211,11 +212,12 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     }
 
     if (sessionWords.isEmpty) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _loading = false;
           _sessionDone = true;
         });
+      }
       return;
     }
 
@@ -346,7 +348,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
       final s = card.sampleSurah.toString().padLeft(3, '0');
       final a = card.sampleAyahNum.toString().padLeft(3, '0');
       final w = card.wordPositionInAyah.toString().padLeft(3, '0');
-      final url = 'https://audio.qurancdn.com/wbw/${s}_${a}_${w}.mp3';
+      final url = 'https://audio.qurancdn.com/wbw/${s}_${a}_$w.mp3';
       await _audio.setUrl(url);
       await _audio.play();
     } catch (_) {}
@@ -478,11 +480,13 @@ class _FlashcardScreenState extends State<FlashcardScreen>
           if (!_isFlipped) return; // block drag before flip
           setState(() {
             _dragX += d.delta.dx;
-            if (_dragX > 50)
+            if (_dragX > 50) {
               _swipeHint = 'known';
-            else if (_dragX < -50)
+            } else if (_dragX < -50)
+              // ignore: curly_braces_in_flow_control_structures
               _swipeHint = 'unknown';
             else
+              // ignore: curly_braces_in_flow_control_structures
               _swipeHint = null;
           });
         },
@@ -576,6 +580,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                   return Transform(
                     alignment: Alignment.center,
                     transform: Matrix4.identity()
+                      // ignore: deprecated_member_use
                       ..translate(tx, 0.0)
                       ..rotateZ(rot),
                     child: ScaleTransition(
