@@ -16,14 +16,17 @@ import '../services/morphology_service.dart';
 import 'morphology_sheet.dart';
 import '../models/word.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:quran/quran.dart' as quran;
 
 // ── FlashWord model ─────────────────────────────────────────────────────────
 
 class FlashWord {
-  final String arabic;
+  final String arabic;        // original with harkat
+  final String normalizedForLookup; // normalized for SRS keys
   final String urdu;
   final int frequency;
-  final String normalizedArabic;
+  late final String normalizedArabic; // for ayah search
+
   String transliteration = '';
   String root = '';
   String sampleAyahArabic = '';
@@ -36,6 +39,7 @@ class FlashWord {
 
   FlashWord({
     required this.arabic,
+    required this.normalizedForLookup,
     required this.urdu,
     required this.frequency,
   }) : normalizedArabic = arabic
@@ -44,67 +48,143 @@ class FlashWord {
     transliteration = normalizedArabic;
   }
 
+  // Future<void> loadAyah() async {
+  //   if (ayahLoaded) return;
+  //   ayahLoaded = true;
+
+  //   // Strategy 1: Use QuranCacheService (instant if loaded)
+  //   if (QuranCacheService.isLoaded) {
+  //     final found = QuranCacheService.findAyahForWord(normalizedArabic);
+  //     if (found != null) {
+  //       sampleAyahArabic = found['arabic'] as String;
+  //       sampleSurah = found['surah'] as int;
+  //       sampleAyahNum = found['ayah'] as int;
+  //       wordPositionInAyah = found['wordPos'] as int? ?? 1;
+
+  //       // Load translation in background
+  //       TranslationService.getAyahTranslation(sampleSurah, sampleAyahNum)
+  //           .then((t) => sampleAyahTranslation = t ?? '');
+  //       return;
+  //     }
+  //   }
+
+  //   // Strategy 2: Search surah_word_counts from SharedPreferences
+  //   // to find which surah contains this word, then use quran package
+  //   final prefs = await SharedPreferences.getInstance();
+  //   for (int i = 1; i <= 114; i++) {
+  //     final raw = prefs.getStringList('surah_word_counts_$i');
+  //     if (raw == null) continue;
+  //     bool found = false;
+  //     for (final e in raw) {
+  //       final p = e.split('|||');
+  //       if (p.isNotEmpty && p[0] == normalizedArabic) {
+  //         found = true;
+  //         break;
+  //       }
+  //     }
+  //     if (!found) continue;
+
+  //     // Found the surah — now find which ayah using quran package (offline)
+  //     final verseCount = quran.getVerseCount(i);
+  //     for (int a = 1; a <= verseCount; a++) {
+  //       final verse = quran.getVerse(i, a);
+  //       final normalizedVerse = verse
+  //           .replaceAll(RegExp(r'[\u064B-\u065F\u0670\u0640]'), '')
+  //           .trim();
+  //       if (normalizedVerse.contains(normalizedArabic)) {
+  //         sampleAyahArabic = verse;
+  //         sampleSurah = i;
+  //         sampleAyahNum = a;
+  //         // Find word position
+  //         final words = normalizedVerse.split(' ');
+  //         for (int w = 0; w < words.length; w++) {
+  //           if (words[w].contains(normalizedArabic)) {
+  //             wordPositionInAyah = w + 1;
+  //             break;
+  //           }
+  //         }
+
+  //         // Load translation in background
+  //       TranslationService.getAyahTranslation(sampleSurah, sampleAyahNum)
+  //           .then((t) => sampleAyahTranslation = t ?? '');
+  //       return;
+  //       }
+  //     }
+  //     break; // Only check first matching surah
+  //   }
+  // }
+
   Future<void> loadAyah() async {
     if (ayahLoaded) return;
     ayahLoaded = true;
 
-    // Search the local Quran cache for correct ayah
-    final found = QuranCacheService.findAyahForWord(normalizedArabic);
-    if (found != null) {
-      sampleAyahArabic = found['arabic'] as String;
-      sampleSurah = found['surah'] as int;
-      sampleAyahNum = found['ayah'] as int;
-      wordPositionInAyah = found['wordPos'] as int? ?? 1;
-      final trans = await TranslationService.getAyahTranslation(
-          sampleSurah, sampleAyahNum);
-      sampleAyahTranslation = trans ?? '';
-      return;
-    }
-
-    // Fallback: search visited surahs
-    final prefs = await SharedPreferences.getInstance();
-    for (int i = 1; i <= 114; i++) {
-      final raw = prefs.getStringList('surah_word_counts_$i');
-      if (raw == null) continue;
-      final has = raw.any((e) {
-        final p = e.split('|||');
-        return p.isNotEmpty && p[0] == normalizedArabic;
-      });
-      if (has) {
-        sampleSurah = i;
-        sampleAyahNum = 1;
-        final trans = await TranslationService.getAyahTranslation(i, 1);
-        sampleAyahTranslation = trans ?? '';
-        break;
+    // Use bundled quran package — instant, offline, no API needed
+    // Find which surah contains this word by checking all 114 surahs
+    for (int s = 1; s <= 114; s++) {
+      final verseCount = quran.getVerseCount(s);
+      for (int a = 1; a <= verseCount; a++) {
+        final verse = quran.getVerse(s, a);
+        final normVerse = verse
+            .replaceAll(RegExp(r'[\u064B-\u065F\u0670\u0640]'), '');
+        if (normVerse.split(' ').any((w) => w == normalizedArabic)) {
+          sampleAyahArabic = verse;
+          sampleSurah = s;
+          sampleAyahNum = a;
+          // Find exact word position for audio
+          final parts = normVerse.split(' ');
+          for (int i = 0; i < parts.length; i++) {
+            if (parts[i] == normalizedArabic) {
+              wordPositionInAyah = i + 1;
+              break;
+            }
+          }
+          // Load translation in background
+          TranslationService.getAyahTranslation(s, a)
+              .then((t) => sampleAyahTranslation = t ?? '');
+          return;
+        }
       }
     }
   }
 
 
+
+
   Future<void> loadRoot() async {
     if (rootLoaded || root.isNotEmpty) return;
     rootLoaded = true;
-    if (!MorphologyService.isLoaded) return;
+    if (!MorphologyService.isLoaded || sampleSurah == 0) return;
 
-    // Search morphology data for this normalized word
-    // Try all surahs that have this word
-    final prefs = await SharedPreferences.getInstance();
-    for (int s = 1; s <= 114; s++) {
-      final counts = prefs.getStringList('surah_word_counts_$s');
-      if (counts == null) continue;
-      final hasWord = counts.any((e) {
-        final p = e.split('|||');
-        return p.isNotEmpty && p[0] == normalizedArabic;
-      });
-      if (!hasWord) continue;
-
-      // Found a surah — search all ayahs for this word
-      final wordKeys = MorphologyService.getAllKeysForWord(normalizedArabic, s);
-      if (wordKeys != null && wordKeys.isNotEmpty) {
-        root = wordKeys;
-        return;
+    // Use the exact position we found in loadAyah
+    for (int p = 1; p <= 20; p++) {
+      final segs = MorphologyService.getSegments(sampleSurah, sampleAyahNum, p);
+      if (segs == null) continue;
+      for (final seg in segs) {
+        if (seg.type != SegType.stem) continue;
+        // Check if this segment matches our word
+        final segNorm = seg.lemma
+            .replaceAll(RegExp(r'[\u064B-\u065F\u0670\u0640]'), '')
+            .trim();
+        if (seg.root.isNotEmpty &&
+            (segNorm == normalizedArabic ||
+             segNorm.contains(normalizedArabic) ||
+             normalizedArabic.contains(segNorm))) {
+          root = seg.root;
+          return;
+        }
       }
-      break;
+    }
+
+    // Fallback: try exact word position
+    final segs = MorphologyService.getSegments(
+        sampleSurah, sampleAyahNum, wordPositionInAyah);
+    if (segs != null) {
+      for (final seg in segs) {
+        if (seg.type == SegType.stem && seg.root.isNotEmpty) {
+          root = seg.root;
+          return;
+        }
+      }
     }
   }
 }
@@ -224,7 +304,10 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     final cards = sessionWords.map((word) {
       final entry = freq[word];
       return FlashWord(
-        arabic: word,
+        arabic: entry?.originalArabic.isNotEmpty == true
+            ? entry!.originalArabic
+            : word, // originalArabic has harkat
+        normalizedForLookup: word, // normalized for SRS/progress lookup
         urdu: entry?.urdu ?? '',
         frequency: entry?.frequency ?? 0,
       );
@@ -244,11 +327,14 @@ class _FlashcardScreenState extends State<FlashcardScreen>
   }
 
   Future<void> _preloadCards(int from) async {
-    for (int i = from; i < (from + 4).clamp(0, _cards.length); i++) {
-      await _cards[i].loadAyah();
-      await _cards[i].loadRoot();
-      if (mounted) setState(() {});
-    }
+    final end = (from + 5).clamp(0, _cards.length);
+    // Load all in parallel
+    await Future.wait([
+      for (int i = from; i < end; i++)
+        _cards[i].loadAyah().then((_) => _cards[i].loadRoot()).then((_) {
+          if (mounted) setState(() {});
+        }),
+    ]);
   }
 
   FlashWord get _current => _cards[_currentIndex];
@@ -271,8 +357,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
       return;
     }
     HapticFeedback.mediumImpact();
-    final pts = await SrsService.markKnown(_current.arabic);
-    await WordProgressService.markAsKnown(_current.arabic);
+    final pts = await SrsService.markKnown(_current.normalizedForLookup);
+    await WordProgressService.markAsKnown(_current.normalizedForLookup);
     setState(() {
       _sessionPoints += pts;
       _totalPoints += pts;
@@ -287,7 +373,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
       return;
     }
     HapticFeedback.mediumImpact();
-    await SrsService.markUnknown(_current.arabic);
+    await SrsService.markUnknown(_current.normalizedForLookup);
     final remaining = _cards.length - _currentIndex - 1;
     if (remaining > 2) {
       final insertAt =
@@ -300,7 +386,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
   }
 
   Future<void> _deleteCard() async {
-    await SrsService.deleteCard(_current.arabic);
+    await SrsService.deleteCard(_current.normalizedForLookup);
     await _animateDismiss(toRight: true);
     _nextCard();
   }
@@ -332,9 +418,9 @@ class _FlashcardScreenState extends State<FlashcardScreen>
         _swipeHint = null;
       });
       _entryCtrl.reset();
-      _entryCtrl.forward();
+      _entryCtrl.forward();   
       SrsService.saveSession(
-          _cards.map((c) => c.arabic).toList(), _currentIndex);
+        _cards.map((c) => c.normalizedForLookup).toList(), _currentIndex);    
       _preloadCards(_currentIndex);
     }
   }

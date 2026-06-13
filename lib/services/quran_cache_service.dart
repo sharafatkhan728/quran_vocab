@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:quran/quran.dart' as quran;
 
 /// Caches all 6236 ayahs locally.
 /// Uses fawazahmed0 CDN — no rate limit, no API key.
@@ -34,6 +35,34 @@ class QuranCacheService {
         return;
       }
     }
+
+    // Fast index: normalizedWord → {surah, ayah, position}
+  static final Map<String, Map<String, dynamic>> _wordLocationIndex = {};
+
+  static Future<void> buildWordIndex() async {
+    if (_wordLocationIndex.isNotEmpty) return;
+    // Build from quran package — runs once, very fast
+    for (int s = 1; s <= 114; s++) {
+      final count = quran.getVerseCount(s);
+      for (int a = 1; a <= count; a++) {
+        final verse = quran.getVerse(s, a);
+        final words = verse.split(' ');
+        for (int w = 0; w < words.length; w++) {
+          final norm = words[w]
+              .replaceAll(RegExp(r'[\u064B-\u065F\u0670\u0640]'), '')
+              .trim();
+          if (norm.isEmpty) continue;
+          _wordLocationIndex.putIfAbsent(norm, () => {
+            'surah': s, 'ayah': a,
+            'arabic': verse, 'pos': w + 1,
+          });
+        }
+      }
+    }
+  }
+
+  static Map<String, dynamic>? findWordLocation(String normalized) =>
+      _wordLocationIndex[normalized];
 
     // Fetch from CDN surah by surah
     for (int surah = 1; surah <= 114; surah++) {

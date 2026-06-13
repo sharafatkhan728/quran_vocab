@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:quran_vocab/services/translation_service.dart';
 import 'providers/theme_provider.dart';
 import 'screens/surah_list_screen.dart';
 import 'screens/vocabulary_screen.dart';
@@ -13,17 +14,22 @@ import 'screens/profile_settings_screen.dart';
 import 'services/morphology_service.dart';
 import 'services/quran_cache_service.dart';
 
+
+
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  MorphologyService.initialize(); // background
-  QuranCacheService.initialize(); // background — no await
   await Firebase.initializeApp();
-  // Load morphology data in background — doesn't block UI
+  await TranslationService.init();
+  // Initialize theme before showing UI to prevent flash
+  final themeProvider = ThemeProvider();
+  await Future.delayed(const Duration(milliseconds: 100)); // let prefs load
   MorphologyService.initialize();
+  QuranCacheService.initialize();
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider.value(value: themeProvider),
         ChangeNotifierProvider(create: (_) => UserProvider()),
         ChangeNotifierProvider(create: (_) => DisplayProvider()),
       ],

@@ -138,7 +138,28 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
               await TranslationService.setScholar(e.key);
               setState(() {
                 _selectedScholar = e.key;
-                _ayahTranslations.clear(); // reload with new scholar
+                _ayahTranslations.clear();
+                setState(() {
+                _selectedScholar = e.key;
+                _ayahTranslations.clear();
+              });
+              Navigator.pop(context);
+              // Show loading snackbar
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Row(
+                    children: [
+                      SizedBox(width: 20, height: 20,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white)),
+                      SizedBox(width: 12),
+                      Text('Switching translation...'),
+                    ],
+                  ),
+                  duration: Duration(seconds: 2),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              ); // reload with new scholar
               });
               // ignore: use_build_context_synchronously
               Navigator.pop(context);
@@ -644,6 +665,12 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
                 // index 1 → ayah 1, index 2 → ayah 2, etc.
                 final ayahNum = index;
                 final words = _ayahCache[ayahNum];
+                // Pre-load translation as soon as ayah is visible
+                if (_showTranslation) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _loadTranslation(ayahNum);
+                  });
+                }
                 return Container(
                   margin: const EdgeInsets.only(bottom: 2),
                   padding: const EdgeInsets.all(12),
@@ -682,6 +709,28 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
                             child: Text('﴾ $ayahNum ﴿',
                                 style: const TextStyle(
                                     color: Colors.white, fontSize: 12)),
+                          ),
+                          // Juz/Ruku markers
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              if (ayahNum == 1 || 
+                                  quran.getJuzNumber(widget.surah.id, ayahNum) !=
+                                  quran.getJuzNumber(widget.surah.id, ayahNum - 1 < 1 ? 1 : ayahNum - 1))
+                                Container(
+                                  margin: const EdgeInsets.only(left: 6),
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.teal.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.teal.withValues(alpha: 0.4)),
+                                  ),
+                                  child: Text(
+                                    'Juz ${quran.getJuzNumber(widget.surah.id, ayahNum)}',
+                                    style: const TextStyle(fontSize: 9, color: Colors.teal),
+                                  ),
+                                ),
+                            ],
                           ),
                         ],
                       ),
