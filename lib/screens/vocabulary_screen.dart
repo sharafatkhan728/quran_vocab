@@ -1,5 +1,3 @@
-// ignore_for_file: unused_local_variable
-
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/word_progress_service.dart';
@@ -65,25 +63,17 @@ class _VocabularyScreenState extends State<VocabularyScreen>
     final knownSet = await WordProgressService.getAllKnownWords();
     final wordFreq = await WordProgressService.getWordFrequencies();
 
-    // final all = wordFreq.entries
-    //     .map((e) => WordEntry(
-    //           arabic: e.key,
-    //           urdu: e.value.urdu,
-    //           frequency: e.value.frequency,
-    //           isKnown: knownSet.contains(e.key),
-    //         ))
-    //     .toList();
-
-    final all = wordFreq.entries.map((e) => WordEntry(
-      arabic: e.key,
-      originalArabic: e.value.originalArabic.isNotEmpty
-          ? e.value.originalArabic : e.key, // fallback to normalized
-      urdu: e.value.urdu,
-      frequency: e.value.frequency,
-      isKnown: knownSet.contains(e.key),
-    )).toList();    
-
-    
+    final all = wordFreq.entries
+        .map((e) => WordEntry(
+              arabic: e.key,
+              originalArabic: e.value.originalArabic.isNotEmpty
+                  ? e.value.originalArabic
+                  : e.key,
+              urdu: e.value.urdu,
+              frequency: e.value.frequency,
+              isKnown: knownSet.contains(e.key),
+            ))
+        .toList();
 
     _applySort(all);
 
@@ -176,8 +166,6 @@ class _VocabularyScreenState extends State<VocabularyScreen>
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
@@ -398,8 +386,6 @@ class _StatBadge extends StatelessWidget {
   }
 }
 
-
-
 class WordEntry {
   final String arabic;
   final String originalArabic;
@@ -534,9 +520,18 @@ class _WordCard extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final color = isDark ? Colors.white : const Color(0xFF1A1A1A);
     switch (d.arabicFont) {
-      case 'indopak': return TextStyle(fontFamily: 'IndoPak', fontSize: size, color: color, height: 1.8);
-      case 'noorehuda': return TextStyle(fontFamily: 'NoorehudaFont', fontSize: size, color: color, height: 1.8);
-      default: return GoogleFonts.amiriQuran(fontSize: size, color: color, height: 1.8);
+      case 'indopak':
+        return TextStyle(
+            fontFamily: 'IndoPak', fontSize: size, color: color, height: 1.8);
+      case 'noorehuda':
+        return TextStyle(
+            fontFamily: 'NoorehudaFont',
+            fontSize: size,
+            color: color,
+            height: 1.8);
+      default:
+        return GoogleFonts.amiriQuran(
+            fontSize: size, color: color, height: 1.8);
     }
   }
 
@@ -622,7 +617,7 @@ class _WordCard extends StatelessWidget {
                         Text(
                           word.originalArabic,
                           textDirection: TextDirection.rtl,
-                          style: _arabicStyle(context, 26),                                           
+                          style: _arabicStyle(context, 26),
                         ),
                       ],
                     ),

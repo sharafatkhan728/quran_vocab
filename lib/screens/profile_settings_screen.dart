@@ -9,6 +9,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../providers/theme_provider.dart';
 import '../providers/display_provider.dart';
 import '../providers/user_provider.dart';
+import '../services/sync_service.dart';
 
 class ProfileSettingsScreen extends StatefulWidget {
   const ProfileSettingsScreen({super.key});
@@ -203,6 +204,10 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                         title: 'Instagram',
                         onTap: () => _instagram()),
                   ]),
+                  const SizedBox(height: 16),
+
+                  // ── Cloud Sync ────────────────────────────────────────
+                  _buildSyncCard(isDark),
                   const SizedBox(height: 16),
 
                   // ── Account ───────────────────────────────────────────
@@ -535,6 +540,64 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     );
   }
 
+  Widget _buildSyncCard(bool isDark) {
+    return StreamBuilder<SyncStatus>(
+      stream: SyncService.statusStream,
+      initialData: SyncService.lastStatus,
+      builder: (context, snapshot) {
+        final status = snapshot.data ?? SyncStatus.idle;
+        final (icon, color, label) = switch (status) {
+          SyncStatus.syncing => (Icons.sync, Colors.blue, 'Syncing...'),
+          SyncStatus.done => (
+              Icons.cloud_done,
+              Colors.green,
+              'Synced to cloud'
+            ),
+          SyncStatus.error => (
+              Icons.cloud_off,
+              Colors.red,
+              'Sync failed — tap to retry'
+            ),
+          SyncStatus.idle => (
+              Icons.cloud_upload_outlined,
+              _teal,
+              'Sync progress to cloud'
+            ),
+        };
+        return _card(
+          isDark,
+          title: 'Cloud Backup',
+          titleIcon: Icons.cloud,
+          child: Row(
+            children: [
+              AnimatedRotation(
+                turns: status == SyncStatus.syncing ? 1 : 0,
+                duration: const Duration(seconds: 1),
+                child: Icon(icon, color: color, size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: isDark ? Colors.white70 : Colors.black87,
+                  ),
+                ),
+              ),
+              if (status != SyncStatus.syncing)
+                TextButton(
+                  onPressed: () => SyncService.syncUp(),
+                  style: TextButton.styleFrom(foregroundColor: _teal),
+                  child: const Text('Sync Now'),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildSection(bool isDark,
       {required String title, required List<Widget> items}) {
     return _card(isDark,
@@ -788,6 +851,8 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     );
     if (confirm == true) {
       try {
+        // Delete cloud data before deleting auth account
+        await SyncService.deleteCloudData();
         await FirebaseAuth.instance.currentUser?.delete();
       } catch (e) {
         if (mounted) {

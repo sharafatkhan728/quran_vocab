@@ -1,5 +1,3 @@
-// ignore_for_file: use_build_context_synchronously
-
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -15,13 +13,11 @@ import '../services/translation_service.dart';
 import '../services/morphology_service.dart';
 import 'morphology_sheet.dart';
 import '../models/word.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:quran/quran.dart' as quran;
 
 // ── FlashWord model ─────────────────────────────────────────────────────────
 
 class FlashWord {
-  final String arabic;        // original with harkat
+  final String arabic; // original with harkat
   final String normalizedForLookup; // normalized for SRS keys
   final String urdu;
   final int frequency;
@@ -48,134 +44,42 @@ class FlashWord {
     transliteration = normalizedArabic;
   }
 
-  // Future<void> loadAyah() async {
-  //   if (ayahLoaded) return;
-  //   ayahLoaded = true;
-
-  //   // Strategy 1: Use QuranCacheService (instant if loaded)
-  //   if (QuranCacheService.isLoaded) {
-  //     final found = QuranCacheService.findAyahForWord(normalizedArabic);
-  //     if (found != null) {
-  //       sampleAyahArabic = found['arabic'] as String;
-  //       sampleSurah = found['surah'] as int;
-  //       sampleAyahNum = found['ayah'] as int;
-  //       wordPositionInAyah = found['wordPos'] as int? ?? 1;
-
-  //       // Load translation in background
-  //       TranslationService.getAyahTranslation(sampleSurah, sampleAyahNum)
-  //           .then((t) => sampleAyahTranslation = t ?? '');
-  //       return;
-  //     }
-  //   }
-
-  //   // Strategy 2: Search surah_word_counts from SharedPreferences
-  //   // to find which surah contains this word, then use quran package
-  //   final prefs = await SharedPreferences.getInstance();
-  //   for (int i = 1; i <= 114; i++) {
-  //     final raw = prefs.getStringList('surah_word_counts_$i');
-  //     if (raw == null) continue;
-  //     bool found = false;
-  //     for (final e in raw) {
-  //       final p = e.split('|||');
-  //       if (p.isNotEmpty && p[0] == normalizedArabic) {
-  //         found = true;
-  //         break;
-  //       }
-  //     }
-  //     if (!found) continue;
-
-  //     // Found the surah — now find which ayah using quran package (offline)
-  //     final verseCount = quran.getVerseCount(i);
-  //     for (int a = 1; a <= verseCount; a++) {
-  //       final verse = quran.getVerse(i, a);
-  //       final normalizedVerse = verse
-  //           .replaceAll(RegExp(r'[\u064B-\u065F\u0670\u0640]'), '')
-  //           .trim();
-  //       if (normalizedVerse.contains(normalizedArabic)) {
-  //         sampleAyahArabic = verse;
-  //         sampleSurah = i;
-  //         sampleAyahNum = a;
-  //         // Find word position
-  //         final words = normalizedVerse.split(' ');
-  //         for (int w = 0; w < words.length; w++) {
-  //           if (words[w].contains(normalizedArabic)) {
-  //             wordPositionInAyah = w + 1;
-  //             break;
-  //           }
-  //         }
-
-  //         // Load translation in background
-  //       TranslationService.getAyahTranslation(sampleSurah, sampleAyahNum)
-  //           .then((t) => sampleAyahTranslation = t ?? '');
-  //       return;
-  //       }
-  //     }
-  //     break; // Only check first matching surah
-  //   }
-  // }
-
   Future<void> loadAyah() async {
     if (ayahLoaded) return;
     ayahLoaded = true;
 
-    // Use bundled quran package — instant, offline, no API needed
-    // Find which surah contains this word by checking all 114 surahs
-    for (int s = 1; s <= 114; s++) {
-      final verseCount = quran.getVerseCount(s);
-      for (int a = 1; a <= verseCount; a++) {
-        final verse = quran.getVerse(s, a);
-        final normVerse = verse
-            .replaceAll(RegExp(r'[\u064B-\u065F\u0670\u0640]'), '');
-        if (normVerse.split(' ').any((w) => w == normalizedArabic)) {
-          sampleAyahArabic = verse;
-          sampleSurah = s;
-          sampleAyahNum = a;
-          // Find exact word position for audio
-          final parts = normVerse.split(' ');
-          for (int i = 0; i < parts.length; i++) {
-            if (parts[i] == normalizedArabic) {
-              wordPositionInAyah = i + 1;
-              break;
-            }
-          }
-          // Load translation in background
-          TranslationService.getAyahTranslation(s, a)
-              .then((t) => sampleAyahTranslation = t ?? '');
-          return;
-        }
-      }
+    // Try fast index first
+    final loc = QuranCacheService.findWordLocation(normalizedArabic);
+    if (loc != null) {
+      sampleAyahArabic = loc['arabic'] as String;
+      sampleSurah = loc['surah'] as int;
+      sampleAyahNum = loc['ayah'] as int;
+      wordPositionInAyah = loc['pos'] as int;
+      TranslationService.getAyahTranslation(sampleSurah, sampleAyahNum)
+          .then((t) => sampleAyahTranslation = t ?? '');
+      return;
+    }
+
+    // Fallback: wait for index to build then retry
+    await Future.delayed(const Duration(seconds: 2));
+    final loc2 = QuranCacheService.findWordLocation(normalizedArabic);
+    if (loc2 != null) {
+      sampleAyahArabic = loc2['arabic'] as String;
+      sampleSurah = loc2['surah'] as int;
+      sampleAyahNum = loc2['ayah'] as int;
+      wordPositionInAyah = loc2['pos'] as int;
+      TranslationService.getAyahTranslation(sampleSurah, sampleAyahNum)
+          .then((t) => sampleAyahTranslation = t ?? '');
     }
   }
-
-
-
 
   Future<void> loadRoot() async {
     if (rootLoaded || root.isNotEmpty) return;
     rootLoaded = true;
-    if (!MorphologyService.isLoaded || sampleSurah == 0) return;
+    if (!MorphologyService.isLoaded) return;
+    if (sampleSurah == 0 || sampleAyahNum == 0) return;
 
-    // Use the exact position we found in loadAyah
-    for (int p = 1; p <= 20; p++) {
-      final segs = MorphologyService.getSegments(sampleSurah, sampleAyahNum, p);
-      if (segs == null) continue;
-      for (final seg in segs) {
-        if (seg.type != SegType.stem) continue;
-        // Check if this segment matches our word
-        final segNorm = seg.lemma
-            .replaceAll(RegExp(r'[\u064B-\u065F\u0670\u0640]'), '')
-            .trim();
-        if (seg.root.isNotEmpty &&
-            (segNorm == normalizedArabic ||
-             segNorm.contains(normalizedArabic) ||
-             normalizedArabic.contains(segNorm))) {
-          root = seg.root;
-          return;
-        }
-      }
-    }
-
-    // Fallback: try exact word position
+    // Use exact position found in loadAyah
     final segs = MorphologyService.getSegments(
         sampleSurah, sampleAyahNum, wordPositionInAyah);
     if (segs != null) {
@@ -183,6 +87,26 @@ class FlashWord {
         if (seg.type == SegType.stem && seg.root.isNotEmpty) {
           root = seg.root;
           return;
+        }
+      }
+    }
+
+    // Try nearby positions (position might be off by 1)
+    for (int offset = -2; offset <= 2; offset++) {
+      if (offset == 0) continue;
+      final p = wordPositionInAyah + offset;
+      if (p < 1) continue;
+      final s = MorphologyService.getSegments(sampleSurah, sampleAyahNum, p);
+      if (s == null) continue;
+      for (final seg in s) {
+        if (seg.type == SegType.stem && seg.root.isNotEmpty) {
+          final segNorm =
+              seg.lemma.replaceAll(RegExp(r'[\u064B-\u065F\u0670\u0640]'), '');
+          if (segNorm.contains(normalizedArabic) ||
+              normalizedArabic.contains(segNorm)) {
+            root = seg.root;
+            return;
+          }
         }
       }
     }
@@ -208,6 +132,9 @@ class _FlashcardScreenState extends State<FlashcardScreen>
   int _totalPoints = 0;
   int _sessionPoints = 0;
   bool _loading = true;
+
+  SessionBuildResult? _sessionResult;
+
   bool _sessionDone = false;
   bool _isFlipped = false;
   bool _hasBeenFlipped = false;
@@ -263,7 +190,14 @@ class _FlashcardScreenState extends State<FlashcardScreen>
   // ── Session loading ─────────────────────────────────────────────────────
 
   Future<void> _loadSession({bool forceNew = false}) async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _sessionDone = false;
+    });
+
+    if (forceNew) {
+      await SrsService.clearSession();
+    }
     _totalPoints = await SrsService.getTotalPoints();
 
     final freq = await WordProgressService.getWordFrequencies();
@@ -272,58 +206,85 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     final allWords =
         sorted.where((e) => e.value.urdu.isNotEmpty).map((e) => e.key).toList();
 
-    for (final w in allWords.take(500)) {
-      await SrsService.initCard(w);
+    // Init SRS cards for top 500 frequent words
+    final initialized = await SrsService.isInitialized();
+
+    if (!initialized) {
+      for (final w in allWords) {
+        await SrsService.initCard(w);
+      }
+
+      await SrsService.setInitialized();
     }
 
     final userProvider = context.read<UserProvider>();
     final dailyGoal = userProvider.dailyGoal;
 
-    final saved = forceNew ? null : await SrsService.loadSession();
-    List<String> sessionWords;
-    int startIndex = 0;
-
-    if (saved != null && saved.words.isNotEmpty) {
-      sessionWords = saved.words;
-      startIndex = saved.index;
-    } else {
-      sessionWords =
-          await SrsService.buildSession(allWords.take(500).toList(), dailyGoal);
+    // Try restoring saved session first
+    if (!forceNew) {
+      final saved = await SrsService.loadSession();
+      if (saved != null &&
+          saved.words.isNotEmpty &&
+          saved.index < saved.words.length - 1) {
+        final cards = _buildCards(saved.words, freq);
+        if (mounted) {
+          setState(() {
+            _cards = cards;
+            _currentIndex = saved.index;
+            _loading = false;
+            _isFlipped = false;
+            _hasBeenFlipped = false;
+          });
+          _entryCtrl.forward();
+          _preloadCards(_currentIndex);
+        }
+        return;
+      }
     }
 
-    if (sessionWords.isEmpty) {
+    // Build fresh session
+    final result = await SrsService.buildSession(allWords.toList(), dailyGoal);
+
+    if (result.isEmpty) {
       if (mounted) {
         setState(() {
           _loading = false;
-          _sessionDone = true;
+          _sessionDone = false;
+          _cards = [];
         });
       }
       return;
     }
 
-    final cards = sessionWords.map((word) {
-      final entry = freq[word];
-      return FlashWord(
-        arabic: entry?.originalArabic.isNotEmpty == true
-            ? entry!.originalArabic
-            : word, // originalArabic has harkat
-        normalizedForLookup: word, // normalized for SRS/progress lookup
-        urdu: entry?.urdu ?? '',
-        frequency: entry?.frequency ?? 0,
-      );
-    }).toList();
+    // Show session breakdown to user
+    _sessionResult = result;
 
+    final cards = _buildCards(result.words, freq);
     if (mounted) {
       setState(() {
         _cards = cards;
-        _currentIndex = startIndex.clamp(0, cards.length - 1);
+        _currentIndex = 0;
         _loading = false;
         _isFlipped = false;
         _hasBeenFlipped = false;
       });
       _entryCtrl.forward();
-      _preloadCards(_currentIndex);
+      _preloadCards(0);
     }
+  }
+
+  List<FlashWord> _buildCards(List<String> words, Map<String, WordData> freq) {
+    return words.map((word) {
+      final entry = freq[word];
+      return FlashWord(
+        arabic: entry?.originalArabic.isNotEmpty == true
+            ? entry!.originalArabic
+            : word,
+        normalizedForLookup: word,
+        urdu: entry?.urdu ?? '',
+        frequency: entry?.frequency ?? 0,
+      );
+    }).toList();
   }
 
   Future<void> _preloadCards(int from) async {
@@ -359,6 +320,12 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     HapticFeedback.mediumImpact();
     final pts = await SrsService.markKnown(_current.normalizedForLookup);
     await WordProgressService.markAsKnown(_current.normalizedForLookup);
+    // Track if this was a new card
+    final card = await SrsService.getCard(_current.normalizedForLookup);
+    if (card?.totalReviews == 1) {
+      // just became 1 = was new
+      await SrsService.recordNewCardReviewed();
+    }
     setState(() {
       _sessionPoints += pts;
       _totalPoints += pts;
@@ -418,14 +385,15 @@ class _FlashcardScreenState extends State<FlashcardScreen>
         _swipeHint = null;
       });
       _entryCtrl.reset();
-      _entryCtrl.forward();   
-      SrsService.saveSession(
-        _cards.map((c) => c.normalizedForLookup).toList(), _currentIndex);    
+      _entryCtrl.forward();
+      if (_currentIndex < _cards.length - 1) {
+        SrsService.saveSession(
+            _cards.map((c) => c.normalizedForLookup).toList(), _currentIndex);
+      }
       _preloadCards(_currentIndex);
     }
   }
 
-  
   Future<void> _playAudio() async {
     final card = _current;
     if (card.sampleSurah == 0) return;
@@ -507,6 +475,9 @@ class _FlashcardScreenState extends State<FlashcardScreen>
       body: Column(
         children: [
           _buildProgress(isDark),
+          // Show session breakdown once at start
+          if (_currentIndex == 0 && _sessionResult != null)
+            _buildSessionBanner(isDark),
           Expanded(child: _buildCardArea(isDark)),
           _isFlipped ? _buildActionButtons(isDark) : _buildFlipHint(isDark),
         ],
@@ -568,12 +539,11 @@ class _FlashcardScreenState extends State<FlashcardScreen>
             _dragX += d.delta.dx;
             if (_dragX > 50) {
               _swipeHint = 'known';
-            } else if (_dragX < -50)
-              // ignore: curly_braces_in_flow_control_structures
+            } else if (_dragX < -50) {
               _swipeHint = 'unknown';
-            else
-              // ignore: curly_braces_in_flow_control_structures
+            } else {
               _swipeHint = null;
+            }
           });
         },
         onHorizontalDragEnd: (d) {
@@ -666,8 +636,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                   return Transform(
                     alignment: Alignment.center,
                     transform: Matrix4.identity()
-                      // ignore: deprecated_member_use
-                      ..translate(tx, 0.0)
+                      ..setTranslationRaw(tx, 0.0, 0.0)
                       ..rotateZ(rot),
                     child: ScaleTransition(
                       scale: _entryScale,
@@ -1237,6 +1206,63 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     );
   }
 
+  Widget _statsRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(fontSize: 13)),
+          Text(value,
+              style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFFD4AF37))),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSessionBanner(bool isDark) {
+    final r = _sessionResult!;
+    if (r.overdueCount == 0 && r.failedCount == 0)
+      return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1B4332).withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border:
+            Border.all(color: const Color(0xFF1B4332).withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          if (r.overdueCount > 0)
+            _bannerChip('📚 ${r.overdueCount} review', Colors.blue),
+          if (r.failedCount > 0)
+            _bannerChip('❌ ${r.failedCount} failed', Colors.red),
+          if (r.newCount > 0) _bannerChip('🆕 ${r.newCount} new', Colors.green),
+        ],
+      ),
+    );
+  }
+
+  Widget _bannerChip(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Text(label,
+          style: TextStyle(
+              fontSize: 11, color: color, fontWeight: FontWeight.w600)),
+    );
+  }
+
   Widget _buildAllDoneScreen(bool isDark) {
     return Scaffold(
       backgroundColor:
@@ -1279,21 +1305,51 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                 ),
               ),
               const SizedBox(height: 16),
+
+              // Session stats
+              if (_sessionResult != null) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1B4332).withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color: const Color(0xFF1B4332).withValues(alpha: 0.2)),
+                  ),
+                  child: Column(children: [
+                    _statsRow('📚 Overdue reviews',
+                        '${_sessionResult!.overdueCount}'),
+                    _statsRow(
+                        '❌ Failed cards', '${_sessionResult!.failedCount}'),
+                    _statsRow(
+                        '🆕 New cards today', '${_sessionResult!.newCount}'),
+                  ]),
+                ),
+              ],
+              const SizedBox(height: 16),
+
               // Option to load more anyway
-              OutlinedButton(
+
+              OutlinedButton.icon(
                 onPressed: () async {
                   final confirm = await showDialog<bool>(
                     context: context,
                     builder: (_) => AlertDialog(
-                      title: const Text('⚠️ Warning'),
+                      title: const Text('⚠️ Daily Limit Reached'),
                       content: const Text(
-                          'Learning too many words at once may cause you to forget them faster.\n\n'
-                          'We recommend consistent daily practice.\n\n'
-                          'Do you still want to load more cards?'),
+                        'You have completed today\'s learning session.\n\n'
+                        'Learning too many new words at once reduces retention '
+                        'and increases forgetting.\n\n'
+                        'Consistent daily practice (5–10 words) is far more '
+                        'effective than cramming.\n\n'
+                        'Do you still want to continue with new words today?',
+                      ),
                       actions: [
                         TextButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            child: const Text('No, I\'ll wait')),
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('No, I\'ll wait'),
+                        ),
                         ElevatedButton(
                           style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.orange),
@@ -1304,20 +1360,54 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                       ],
                     ),
                   );
-                  if (confirm == true) {
-                    _loadSession(forceNew: true);
+                  if (confirm == true && mounted) {
+                    setState(() {
+                      _sessionDone = false;
+                      _loading = true;
+                    });
+
+                    final freq = await WordProgressService.getWordFrequencies();
+                    final allWords = freq.keys.toList();
+                    final extra =
+                        await SrsService.buildExtraSession(allWords, 10);
+                    if (extra.isEmpty) {
+                      setState(() {
+                        _loading = false;
+                      });
+
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('No more new words available'),
+                        ),
+                      );
+
+                      return;
+                    }
+                    final cards = _buildCards(extra.words, freq);
+                    setState(() {
+                      _cards = cards;
+                      _currentIndex = 0;
+                      _sessionDone = false;
+                      _isFlipped = false;
+                      _hasBeenFlipped = false;
+                    });
+                    _entryCtrl.reset();
+                    _entryCtrl.forward();
+                    _preloadCards(0);
                   }
                 },
+                icon: const Icon(Icons.add_card),
+                label: const Text('Load More Cards (Not Recommended)'),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: _gold,
-                  side: BorderSide(color: _gold.withValues(alpha: 0.5)),
+                  foregroundColor: Colors.orange,
+                  side: const BorderSide(color: Colors.orange),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 ),
-                child: const Text('Load More Cards'),
               ),
+
               const SizedBox(height: 12),
               ElevatedButton(
                 onPressed: () => Navigator.pop(context),

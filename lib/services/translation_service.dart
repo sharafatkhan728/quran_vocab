@@ -1,54 +1,128 @@
+// ignore_for_file: library_private_types_in_public_api
+
 import 'dart:convert';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class TranslationService {
-  // Available scholars
-  static const Map<String, String> scholars = {
-    'ur.jalandhry': 'Jalandhry (Urdu)',
-    'ur.ahmedali': 'Ahmed Ali (Urdu)',
-    'ur.kanzuliman': 'Kanz ul Iman (Urdu)',
-    'en.sahih': 'Sahih International (English)',
-    'en.pickthall': 'Pickthall (English)',
-    'en.yusufali': 'Yusuf Ali (English)',
-    'en.asad': 'Muhammad Asad (English)',
+  static const Map<String, _TranslationSource> scholars = {
+    'ur.maududi': _TranslationSource(
+      name: 'Maududi (Urdu)',
+      assetPath: 'assets/data/translation_ur_maududi.json',
+      apiId: 'urd-maududi',
+      isRtl: true,
+    ),
+    'ur.bayanulquran': _TranslationSource(
+      name: 'Bayan-ul-Quran (Urdu)',
+      assetPath: 'assets/data/bayan-ul-quran-simple.json',  
+      apiId: 'ur.bayanulquran',
+      isRtl: true,
+    ),
+    'en.sahih': _TranslationSource(
+      name: 'Sahih International (English)',
+      assetPath: 'assets/data/translation_en_sahih.json',
+      apiId: 'eng-sahih',
+      isRtl: false,
+    ),
+    'en.pickthall': _TranslationSource(
+      name: 'Pickthall (English)',
+      assetPath: null,
+      apiId: 'en.pickthall',
+      isRtl: false,
+    ),
   };
 
-  static const _cachePrefix = 'trans_';
-  static String _selectedScholar = 'ur.jalandhry';
+  // In-memory cache: scholarKey → {surah:ayah → text}
+  static final Map<String, Map<String, String>> _memCache = {};
+  static String _selectedScholar = 'ur.maududi';
 
   static Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
-    _selectedScholar = prefs.getString('selected_scholar') ?? 'ur.jalandhry';
+    _selectedScholar = prefs.getString('selected_scholar') ?? 'ur.maududi';
+    // Preload bundled translations into memory
+    await _preloadBundled();
   }
 
   static String get selectedScholar => _selectedScholar;
-  static String get selectedScholarName => scholars[_selectedScholar] ?? '';
+  static String get selectedScholarName =>
+      scholars[_selectedScholar]?.name ?? '';
+  static bool get isRtl =>
+      scholars[_selectedScholar]?.isRtl ?? true;
 
   static Future<void> setScholar(String key) async {
     _selectedScholar = key;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('selected_scholar', key);
+    // Preload if bundled
+    await _preloadBundled();
   }
 
-  /// Fetch single ayah translation (cached)
-  static Future<String?> getAyahTranslation(int surah, int ayah,
-      {String? scholar}) async {
+  /// Preload all bundled translation files into memory — runs once
+  static Future<void> _preloadBundled() async {
+    final source = scholars[_selectedScholar];
+    if (source?.assetPath == null) return;
+    if (_memCache.containsKey(_selectedScholar)) return;
+
+    try {
+      final raw = await rootBundle.loadString(source!.assetPath!);
+      final data = json.decode(raw) as Map<String, dynamic>;
+
+      //
+      final Map<String, String> translations = {};
+
+      data.forEach((key, value) {
+        if (value is Map<String, dynamic>) {
+          final text = value['t']?.toString();
+
+          if (text != null && text.isNotEmpty) {
+            translations[key] = text;
+          }
+        }
+      });
+
+      _memCache[_selectedScholar] = translations;
+      _memCache[_selectedScholar] = translations;
+    } catch (e) {
+      // Asset not found — will fall back to API
+    }
+  }
+
+  /// Get translation for one ayah — instant if bundled, API if not
+  static Future<String?> getAyahTranslation(
+      int surah, int ayah, {String? scholar}) async {
     final s = scholar ?? _selectedScholar;
-    final cacheKey = '$_cachePrefix${s}_${surah}_$ayah';
+
+    // 1. Check in-memory cache (bundled)
+    final memKey = '$surah:$ayah';
+    if (_memCache[s]?.containsKey(memKey) == true) {
+      return _memCache[s]![memKey];
+    }
+
+    // 2. Check SharedPreferences cache
     final prefs = await SharedPreferences.getInstance();
+    final cacheKey = 'trans_${s}_${surah}_$ayah';
     final cached = prefs.getString(cacheKey);
     if (cached != null) return cached;
 
+    // 3. Fetch from API
     try {
-      final url = 'https://api.alquran.cloud/v1/ayah/$surah:$ayah/$s';
-      final res =
-          await http.get(Uri.parse(url)).timeout(const Duration(seconds: 6));
+      final source = scholars[s];
+      final apiId = source?.apiId ?? s;
+      final url =
+          'https://api.alquran.cloud/v1/ayah/$surah:$ayah/$apiId';
+      final res = await http.get(Uri.parse(url))
+          .timeout(const Duration(seconds: 6));
       if (res.statusCode == 200) {
         final data = json.decode(res.body);
         final text = data['data']['text'] as String? ?? '';
         if (text.isNotEmpty) {
           await prefs.setString(cacheKey, text);
+          // Also add to memory cache
+          _memCache.putIfAbsent(
+            s,
+            () => <String, String>{},
+          )[memKey] = text;
           return text;
         }
       }
@@ -56,76 +130,34 @@ class TranslationService {
     return null;
   }
 
-  /// Fetch all translations for one ayah (multiple scholars at once)
-  static Future<Map<String, String>> getAllTranslations(
-      int surah, int ayah) async {
-    final editions = scholars.keys.join(',');
+  /// Get all translations for surah at once — for surah reader preload
+  static Map<String, String> getSurahTranslations(int surahId) {
+    final cache = _memCache[_selectedScholar] ?? {};
     final result = <String, String>{};
-    try {
-      final url =
-          'https://api.alquran.cloud/v1/ayah/$surah:$ayah/editions/$editions';
-      final res =
-          await http.get(Uri.parse(url)).timeout(const Duration(seconds: 8));
-      if (res.statusCode == 200) {
-        final data = json.decode(res.body);
-        final list = data['data'] as List;
-        for (final item in list) {
-          final edition = item['edition']['identifier'] as String;
-          final text = item['text'] as String? ?? '';
-          if (text.isNotEmpty) result[edition] = text;
-        }
-      }
-    } catch (_) {}
-    return result;
-  }
-
-  /// Get ayah for a word from cache (used in flashcards)
-  static Future<Map<String, String>?> getWordSampleAyah(
-      String normalizedArabic) async {
-    final prefs = await SharedPreferences.getInstance();
-    // Find which surah:ayah contains this word from our cached data
-    for (int i = 1; i <= 114; i++) {
-      final raw = prefs.getStringList('surah_word_counts_$i');
-      if (raw == null) continue;
-      final has = raw.any((e) {
-        final p = e.split('|||');
-        return p.isNotEmpty && p[0] == normalizedArabic;
-      });
-      if (has) {
-        // Get ayah 1 of this surah as sample
-        final arabicKey = 'ayah_arabic_${i}_1';
-        final arabic = prefs.getString(arabicKey);
-        if (arabic != null) {
-          final translation = await getAyahTranslation(i, 1);
-          return {
-            'arabic': arabic,
-            'translation': translation ?? '',
-            'surah': '$i',
-            'ayah': '1'
-          };
-        }
-        // Fetch from API
-        try {
-          final url = 'https://api.alquran.cloud/v1/ayah/$i:1/quran-uthmani';
-          final res = await http
-              .get(Uri.parse(url))
-              .timeout(const Duration(seconds: 5));
-          if (res.statusCode == 200) {
-            final data = json.decode(res.body);
-            final arabicText = data['data']['text'] as String? ?? '';
-            await prefs.setString(arabicKey, arabicText);
-            final translation = await getAyahTranslation(i, 1);
-            return {
-              'arabic': arabicText,
-              'translation': translation ?? '',
-              'surah': '$i',
-              'ayah': '1',
-            };
-          }
-        } catch (_) {}
+    for (int a = 1; a <= 300; a++) {
+      final text = cache['$surahId:$a'];
+      if (text != null) {
+        result['$a'] = text;
+      } else {
         break;
       }
     }
-    return null;
+    return result;
   }
+
+  static Map<String, String> scholarsMap() =>
+      scholars.map((k, v) => MapEntry(k, v.name));
+}
+
+class _TranslationSource {
+  final String name;
+  final String? assetPath;
+  final String apiId;
+  final bool isRtl;
+  const _TranslationSource({
+    required this.name,
+    required this.assetPath,
+    required this.apiId,
+    required this.isRtl,
+  });
 }

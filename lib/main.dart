@@ -14,9 +14,6 @@ import 'screens/profile_settings_screen.dart';
 import 'services/morphology_service.dart';
 import 'services/quran_cache_service.dart';
 
-
-
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
@@ -26,6 +23,7 @@ void main() async {
   await Future.delayed(const Duration(milliseconds: 100)); // let prefs load
   MorphologyService.initialize();
   QuranCacheService.initialize();
+  QuranCacheService.buildWordIndex(); // background, no await
   runApp(
     MultiProvider(
       providers: [
@@ -41,9 +39,21 @@ void main() async {
 class QuranApp extends StatelessWidget {
   const QuranApp({super.key});
 
+//................................................changing
   @override
   Widget build(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
+
+    // Wait for settings to load before rendering
+    if (!themeProvider.isLoaded) {
+      return const MaterialApp(
+        home: Scaffold(
+          backgroundColor: Color(0xFF1B4332),
+          body: Center(
+              child: CircularProgressIndicator(color: Color(0xFFD4AF37))),
+        ),
+      );
+    }
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Quran Kalima',
@@ -53,12 +63,21 @@ class QuranApp extends StatelessWidget {
       home: StreamBuilder<User?>(
         stream: FirebaseAuth.instance.authStateChanges(),
         builder: (context, snapshot) {
+          // Don't show loading spinner — causes navigation flicker
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
+            return const MainNavigation(); // assume logged in while checking
+          }
+          if (snapshot.hasData) {
+            // Show restore overlay while syncing down from cloud
+            return Consumer<UserProvider>(
+              builder: (context, userProvider, child) {
+                if (userProvider.isRestoring) {
+                  return const _RestoringScreen();
+                }
+                return const MainNavigation();
+              },
             );
           }
-          if (snapshot.hasData) return const MainNavigation();
           return const AuthScreen();
         },
       ),
@@ -86,7 +105,10 @@ class _MainNavigationState extends State<MainNavigation> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _screens[_currentIndex],
+      body: IndexedStack(
+        index: _currentIndex,
+        children: _screens,
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (i) => setState(() => _currentIndex = i),
@@ -116,4 +138,42 @@ class _MainNavigationState extends State<MainNavigation> {
       ),
     );
   }
-} 
+}
+
+class _RestoringScreen extends StatelessWidget {
+  const _RestoringScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return const MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        backgroundColor: Color(0xFF1B4332),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text('﷽',
+                  style: TextStyle(fontSize: 36, color: Color(0xFFD4AF37))),
+              SizedBox(height: 32),
+              CircularProgressIndicator(color: Color(0xFFD4AF37)),
+              SizedBox(height: 20),
+              Text(
+                'Restoring your progress...',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500),
+              ),
+              SizedBox(height: 8),
+              Text(
+                'آپ کی پیشرفت بحال ہو رہی ہے',
+                style: TextStyle(color: Color(0xFFD4AF37), fontSize: 14),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

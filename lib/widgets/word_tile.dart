@@ -1,10 +1,7 @@
-// ignore_for_file: unused_import
-
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/word.dart';
 import 'package:provider/provider.dart';
-import '../providers/theme_provider.dart';
 import '../providers/display_provider.dart';
 
 class WordTile extends StatelessWidget {

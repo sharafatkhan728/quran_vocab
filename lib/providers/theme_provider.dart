@@ -5,6 +5,17 @@ class ThemeProvider extends ChangeNotifier {
   bool _isDark = false;
   bool get isDark => _isDark;
 
+  bool _isLoaded = false;
+  bool get isLoaded => _isLoaded;
+
+  Future<void> _loadTheme() async {
+    final prefs = await SharedPreferences.getInstance();
+    _isDark = prefs.getBool('is_dark_mode') ?? false;
+    _arabicFont = prefs.getString('arabic_font') ?? 'uthmani';
+    _isLoaded = true;
+    notifyListeners();
+  }
+
   String _arabicFont = 'uthmani'; // uthmani, indopak
   String get arabicFont => _arabicFont;
 
@@ -17,13 +28,6 @@ class ThemeProvider extends ChangeNotifier {
 
   ThemeProvider() {
     _loadTheme();
-  }
-
-  Future<void> _loadTheme() async {
-    final prefs = await SharedPreferences.getInstance();
-    _isDark = prefs.getBool('is_dark_mode') ?? false;
-    _arabicFont = prefs.getString('arabic_font') ?? 'uthmani';
-    notifyListeners();
   }
 
   Future<void> toggleTheme() async {

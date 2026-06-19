@@ -15,28 +15,8 @@ class QuranCacheService {
   static final Map<String, List<String>> _wordIndex = {};
   static bool _loaded = false;
 
-  static bool get isLoaded => _loaded;
 
-  /// Call once at app start — loads from prefs or fetches from CDN
-  static Future<void> initialize({
-    Function(int progress, int total)? onProgress,
-  }) async {
-    if (_loaded) return;
-    final prefs = await SharedPreferences.getInstance();
-
-    if (prefs.getBool(_cachedKey) == true) {
-      // Load from prefs
-      final raw = prefs.getString(_dataKey);
-      if (raw != null) {
-        final map = json.decode(raw) as Map<String, dynamic>;
-        map.forEach((k, v) => _arabic[k] = v.toString());
-        _buildIndex();
-        _loaded = true;
-        return;
-      }
-    }
-
-    // Fast index: normalizedWord → {surah, ayah, position}
+      // Fast index: normalizedWord → {surah, ayah, position}
   static final Map<String, Map<String, dynamic>> _wordLocationIndex = {};
 
   static Future<void> buildWordIndex() async {
@@ -63,6 +43,29 @@ class QuranCacheService {
 
   static Map<String, dynamic>? findWordLocation(String normalized) =>
       _wordLocationIndex[normalized];
+
+  static bool get isLoaded => _loaded;
+
+  /// Call once at app start — loads from prefs or fetches from CDN
+  static Future<void> initialize({
+    Function(int progress, int total)? onProgress,
+  }) async {
+    if (_loaded) return;
+    final prefs = await SharedPreferences.getInstance();
+
+    if (prefs.getBool(_cachedKey) == true) {
+      // Load from prefs
+      final raw = prefs.getString(_dataKey);
+      if (raw != null) {
+        final map = json.decode(raw) as Map<String, dynamic>;
+        map.forEach((k, v) => _arabic[k] = v.toString());
+        _buildIndex();
+        _loaded = true;
+        return;
+      }
+    }
+
+
 
     // Fetch from CDN surah by surah
     for (int surah = 1; surah <= 114; surah++) {

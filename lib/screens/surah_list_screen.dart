@@ -1,5 +1,3 @@
-// ignore_for_file: curly_braces_in_flow_control_structures, unused_local_variable
-
 import 'package:flutter/material.dart';
 import 'package:quran/quran.dart' as quran;
 import '../models/surah.dart';
@@ -23,6 +21,7 @@ class SurahListScreen extends StatefulWidget {
 class _SurahListScreenState extends State<SurahListScreen> {
   double _totalProgress = 0;
   Map<int, double> _surahProgress = {};
+  Map<int, int> _lastReadAyahs = {}; // surahId → ayahNum
 
   List<Map<String, dynamic>> _bookmarks = [];
 
@@ -33,27 +32,34 @@ class _SurahListScreenState extends State<SurahListScreen> {
   }
 
   Future<void> _loadProgress() async {
-    final p = await WordProgressService.getProgressPercent();
+    final progressPercent = await WordProgressService.getProgressPercent();
     final sp = await WordProgressService.getAllSurahProgress();
-
     final prefs = await SharedPreferences.getInstance();
+    final Map<int, int> lastRead = {};
+    for (int i = 1; i <= 114; i++) {
+      final ayah = prefs.getInt('last_read_$i') ?? 0;
+      if (ayah > 1) lastRead[i] = ayah;
+    }
+    if (mounted) setState(() => _lastReadAyahs = lastRead);
+
     final bList = prefs.getStringList('bookmarks') ?? [];
     final bmarks = <Map<String, dynamic>>[];
     for (final b in bList) {
-      final p = b.split(':');
-      if (p.length >= 2) {
-        final sid = int.tryParse(p[0]) ?? 0;
-        final aid = int.tryParse(p[1]) ?? 0;
-        bmarks.add({'surahId': sid, 'ayahId': aid,
-          'name': quran.getSurahName(sid)});
+      final parts = b.split(':');
+      if (parts.length >= 2) {
+        final sid = int.tryParse(parts[0]) ?? 0;
+        final aid = int.tryParse(parts[1]) ?? 0;
+        bmarks.add(
+            {'surahId': sid, 'ayahId': aid, 'name': quran.getSurahName(sid)});
       }
     }
     if (mounted) setState(() => _bookmarks = bmarks);
-    if (mounted)
+    if (mounted) {
       setState(() {
-        _totalProgress = p;
+        _totalProgress = progressPercent;
         _surahProgress = sp;
       });
+    }
   }
 
   @override
@@ -121,64 +127,69 @@ class _SurahListScreenState extends State<SurahListScreen> {
           Column(
             children: [
               if (_bookmarks.isNotEmpty)
-              Container(
-                color: const Color(0xFF1B4332),
-                padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Bookmarks',
-                        style: TextStyle(color: Colors.white70, fontSize: 11)),
-                    const SizedBox(height: 6),
-                    SizedBox(
-                      height: 36,
-                      child: ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: _bookmarks.length,
-                        itemBuilder: (_, i) {
-                          final b = _bookmarks[i];
-                          return GestureDetector(
-                            onTap: () async {
-                              final surah = Surah(
-                                id: b['surahId'],
-                                englishName: quran.getSurahName(b['surahId']),
-                                arabicName: quran.getSurahNameArabic(b['surahId']),
-                                urduName: quran.getSurahName(b['surahId']),
-                                verseCount: quran.getVerseCount(b['surahId']),
-                              );
-                              await Navigator.push(context,
-                                MaterialPageRoute(builder: (_) => SurahReaderScreen(
-                                  surah: surah,
-                                  jumpToAyah: b['ayahId'],
-                                )));
-                              _loadProgress();
-                            },
-                            child: Container(
-                              margin: const EdgeInsets.only(right: 8),
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFD4AF37).withValues(alpha: 0.2),
-                                borderRadius: BorderRadius.circular(18),
-                                border: Border.all(
-                                    color: const Color(0xFFD4AF37).withValues(alpha: 0.5)),
+                Container(
+                  color: const Color(0xFF1B4332),
+                  padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Bookmarks',
+                          style:
+                              TextStyle(color: Colors.white70, fontSize: 11)),
+                      const SizedBox(height: 6),
+                      SizedBox(
+                        height: 36,
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: _bookmarks.length,
+                          itemBuilder: (_, i) {
+                            final b = _bookmarks[i];
+                            return GestureDetector(
+                              onTap: () async {
+                                final surah = Surah(
+                                  id: b['surahId'],
+                                  englishName: quran.getSurahName(b['surahId']),
+                                  arabicName:
+                                      quran.getSurahNameArabic(b['surahId']),
+                                  urduName: quran.getSurahName(b['surahId']),
+                                  verseCount: quran.getVerseCount(b['surahId']),
+                                );
+                                await Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (_) => SurahReaderScreen(
+                                              surah: surah,
+                                              jumpToAyah: b['ayahId'],
+                                            )));
+                                _loadProgress();
+                              },
+                              child: Container(
+                                margin: const EdgeInsets.only(right: 8),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFD4AF37)
+                                      .withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(
+                                      color: const Color(0xFFD4AF37)
+                                          .withValues(alpha: 0.5)),
+                                ),
+                                child: Text(
+                                  '${b['name']} ${b['ayahId']}',
+                                  style: const TextStyle(
+                                      color: Color(0xFFD4AF37),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600),
+                                ),
                               ),
-                              child: Text(
-                                '${b['name']} ${b['ayahId']}',
-                                style: const TextStyle(
-                                    color: Color(0xFFD4AF37),
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                          );
-                        },
+                            );
+                          },
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-
               _buildProgressHeader(context),
               Expanded(
                 child: ListView.builder(
@@ -190,6 +201,7 @@ class _SurahListScreenState extends State<SurahListScreen> {
                     return _SurahCard(
                       id: id,
                       surahProgress: _surahProgress[id] ?? 0,
+                      lastReadAyah: _lastReadAyahs[id],
                       onTap: () async {
                         final surah = Surah(
                           id: id,
@@ -204,6 +216,7 @@ class _SurahListScreenState extends State<SurahListScreen> {
                           MaterialPageRoute(
                             builder: (_) => SurahReaderScreen(
                               surah: surah,
+                              jumpToAyah: _lastReadAyahs[id],
                             ),
                           ),
                         );
@@ -243,7 +256,6 @@ class _SurahListScreenState extends State<SurahListScreen> {
   //................
 
   Widget _buildProgressHeader(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       color: const Color(0xFF1B4332),
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
@@ -271,9 +283,13 @@ class _SurahListScreenState extends State<SurahListScreen> {
 class _SurahCard extends StatefulWidget {
   final int id;
   final double surahProgress;
+  final int? lastReadAyah;
   final VoidCallback onTap;
   const _SurahCard(
-      {required this.id, required this.surahProgress, required this.onTap});
+      {required this.id,
+      required this.surahProgress,
+      required this.onTap,
+      this.lastReadAyah});
 
   @override
   State<_SurahCard> createState() => _SurahCardState();
@@ -318,7 +334,6 @@ class _SurahCardState extends State<_SurahCard>
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isEven = widget.id % 2 == 0;
     final revelation = quran.getPlaceOfRevelation(widget.id);
     final isMakki = revelation.toLowerCase().contains('mecca') ||
         revelation.toLowerCase().contains('makk');
@@ -500,6 +515,19 @@ class _SurahCardState extends State<_SurahCard>
                                                     ? Colors.white54
                                                     : Colors.grey.shade500),
                                           ),
+                                          if (widget.lastReadAyah != null)
+                                            Padding(
+                                              padding:
+                                                  const EdgeInsets.only(top: 3),
+                                              child: Text(
+                                                'Last Read: Ayah ${widget.lastReadAyah}',
+                                                style: const TextStyle(
+                                                  fontSize: 10,
+                                                  color: Color(0xFFD4AF37),
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ),
                                         ],
                                       ),
                                     ],

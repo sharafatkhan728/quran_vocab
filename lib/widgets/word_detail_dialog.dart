@@ -1,5 +1,3 @@
-// ignore_for_file: unnecessary_brace_in_string_interps
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -123,9 +121,13 @@ class _WordDetailDialogState extends State<WordDetailDialog>
   }
 
   void _share() {
-    Share.share('${widget.word.arabic}\n${widget.word.urduMeaning}\n'
-        '— Quran ${widget.surahId}:${widget.ayahId}\n'
-        'Quran Kalima App');
+    SharePlus.instance.share(
+      ShareParams(
+        text: '${widget.word.arabic}\n${widget.word.urduMeaning}\n'
+            '— Quran ${widget.surahId}:${widget.ayahId}\n'
+            'Quran Kalima App',
+      ),
+    );
   }
 
   void _close() {
@@ -137,14 +139,12 @@ class _WordDetailDialogState extends State<WordDetailDialog>
   //'''''''''''''''''''''''''''''''''''''
 
   void _openMorphology() {
-    final dialogContext = context;
-
-    Navigator.pop(dialogContext);
-
+    final capturedContext = context;
+    Navigator.pop(capturedContext);
     Future.delayed(const Duration(milliseconds: 150), () {
+      if (!mounted) return;
       showModalBottomSheet(
-        // ignore: use_build_context_synchronously
-        context: dialogContext,
+        context: capturedContext,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
         builder: (_) => MorphologySheet(
