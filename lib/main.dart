@@ -13,10 +13,12 @@ import 'screens/auth_screen.dart';
 import 'screens/profile_settings_screen.dart';
 import 'services/morphology_service.dart';
 import 'services/quran_cache_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
+  await SharedPreferences.getInstance();
   await TranslationService.init();
   // Initialize theme before showing UI to prevent flash
   final themeProvider = ThemeProvider();
@@ -39,7 +41,6 @@ void main() async {
 class QuranApp extends StatelessWidget {
   const QuranApp({super.key});
 
-//................................................changing
   @override
   Widget build(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
@@ -60,27 +61,43 @@ class QuranApp extends StatelessWidget {
       theme: themeProvider.lightTheme,
       darkTheme: themeProvider.darkTheme,
       themeMode: themeProvider.isDark ? ThemeMode.dark : ThemeMode.light,
-      home: StreamBuilder<User?>(
-        stream: FirebaseAuth.instance.authStateChanges(),
-        builder: (context, snapshot) {
-          // Don't show loading spinner — causes navigation flicker
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const MainNavigation(); // assume logged in while checking
-          }
-          if (snapshot.hasData) {
-            // Show restore overlay while syncing down from cloud
-            return Consumer<UserProvider>(
-              builder: (context, userProvider, child) {
-                if (userProvider.isRestoring) {
-                  return const _RestoringScreen();
-                }
-                return const MainNavigation();
-              },
-            );
-          }
-          return const AuthScreen();
-        },
-      ),
+      // Stable key prevents MaterialApp from rebuilding its navigator tree
+      // when theme changes — fixes the "goes to home screen on dark mode toggle"
+      navigatorKey: _QuranAppNavigatorKey.key,
+      home: const _AppHome(),
+    );
+  }
+}
+
+/// Stable navigator key lives outside the widget tree so it is never recreated
+class _QuranAppNavigatorKey {
+  static final key = GlobalKey<NavigatorState>();
+}
+
+/// Separated so StreamBuilder is NOT rebuilt when theme changes
+class _AppHome extends StatelessWidget {
+  const _AppHome();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const MainNavigation();
+        }
+        if (snapshot.hasData) {
+          return Consumer<UserProvider>(
+            builder: (context, userProvider, child) {
+              if (userProvider.isRestoring) {
+                return const _RestoringScreen();
+              }
+              return const MainNavigation();
+            },
+          );
+        }
+        return const AuthScreen();
+      },
     );
   }
 }

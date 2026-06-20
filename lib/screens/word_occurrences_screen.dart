@@ -20,7 +20,7 @@ class WordOccurrencesScreen extends StatefulWidget {
 }
 
 class _WordOccurrencesScreenState extends State<WordOccurrencesScreen> {
-  List<OccurrenceEntry> _occurrences = [];
+  final List<OccurrenceEntry> _occurrences = [];
   bool _isLoading = true;
   int _loadedSurahs = 0;
   int _totalSurahsToSearch = 0;

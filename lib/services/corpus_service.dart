@@ -26,7 +26,7 @@ class CorpusService {
     final s = surahId.toString().padLeft(3, '0');
     final a = ayahId.toString().padLeft(3, '0');
     final w = wordPosition.toString().padLeft(3, '0');
-    final audioUrl = '$_audioBase/${s}_${a}_${w}.mp3';
+    final audioUrl = '$_audioBase/${s}_${a}_$w.mp3';
 
     // Fetch morphology from corpus endpoint
     CorpusMorphology? morphology;

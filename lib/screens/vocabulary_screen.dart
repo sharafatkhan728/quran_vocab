@@ -34,6 +34,7 @@ class _VocabularyScreenState extends State<VocabularyScreen>
   }
 
   Future<void> _initLoad() async {
+    final sw = Stopwatch()..start(); //<<<<<
     final isLoaded = await QuranPreloaderService.isFullyLoaded();
     if (!isLoaded) {
       setState(() => _isPreloading = true);
@@ -49,6 +50,7 @@ class _VocabularyScreenState extends State<VocabularyScreen>
       if (mounted) setState(() => _isPreloading = false);
     }
     await _loadWords();
+    //<<<<<<<
   }
 
   @override
@@ -59,6 +61,9 @@ class _VocabularyScreenState extends State<VocabularyScreen>
   }
 
   Future<void> _loadWords() async {
+
+    final sw = Stopwatch()..start();
+    
     setState(() => _isLoading = true);
     final knownSet = await WordProgressService.getAllKnownWords();
     final wordFreq = await WordProgressService.getWordFrequencies();

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import '../main.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -142,6 +143,27 @@ class _AuthScreenState extends State<AuthScreen>
 
               // Google sign in
               _GoogleButton(onTap: _signInGoogle, loading: _loading),
+              
+              const SizedBox(height: 12),
+
+              OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const MainNavigation(),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.menu_book),
+                label: const Text('Continue Without Login'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 50),
+                  foregroundColor: _green,
+                  side: const BorderSide(color: _green),
+                ),
+              ),
+
               const SizedBox(height: 16),
 
               // Divider

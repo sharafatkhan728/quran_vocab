@@ -96,7 +96,7 @@ class _WordDetailDialogState extends State<WordDetailDialog>
     final a = widget.ayahId.toString().padLeft(3, '0');
     final w = _wordPos.toString().padLeft(3, '0');
     try {
-      await _player.setUrl('https://audio.qurancdn.com/wbw/${s}_${a}_${w}.mp3');
+      await _player.setUrl('https://audio.qurancdn.com/wbw/${s}_${a}_$w.mp3');
       await _player.play();
     } catch (_) {}
   }
@@ -139,22 +139,29 @@ class _WordDetailDialogState extends State<WordDetailDialog>
   //'''''''''''''''''''''''''''''''''''''
 
   void _openMorphology() {
-    final capturedContext = context;
-    Navigator.pop(capturedContext);
+    Navigator.pop(context);
+    final word = widget.word;
+    final surahId = widget.surahId;
+    final ayahId = widget.ayahId;
+    final ayahWords = widget.ayahWords;
+    final onKnownToggled = widget.onKnownToggled;
+    final isKnown = _isKnown;
+    final wordPos = _wordPos;
+
     Future.delayed(const Duration(milliseconds: 150), () {
       if (!mounted) return;
       showModalBottomSheet(
-        context: capturedContext,
+        context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
         builder: (_) => MorphologySheet(
-          word: widget.word,
-          surahId: widget.surahId,
-          ayahId: widget.ayahId,
-          wordPos: _wordPos,
-          ayahWords: widget.ayahWords,
-          isKnown: _isKnown,
-          onKnownToggled: widget.onKnownToggled,
+          word: word,
+          surahId: surahId,
+          ayahId: ayahId,
+          wordPos: wordPos,
+          ayahWords: ayahWords,
+          isKnown: isKnown,
+          onKnownToggled: onKnownToggled,
         ),
       );
     });

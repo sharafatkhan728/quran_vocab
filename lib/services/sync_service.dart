@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Syncs all user learning data between SharedPreferences (local) and
@@ -82,7 +83,7 @@ class SyncService {
         }
       }
 
-      // ── 4. Surah word lists (for progress recalc after restore) ───────────
+      // ── 4. Surah word lists only (skip urdu/orig — rebuilt on read) ──────
       final surahData = <String, dynamic>{};
       for (final k in allKeys) {
         if (k.startsWith('surah_words_')) {
@@ -91,12 +92,8 @@ class SyncService {
         if (k.startsWith('surah_word_counts_')) {
           surahData[k] = prefs.getStringList(k) ?? [];
         }
-        if (k.startsWith('urdu_')) {
-          surahData[k] = prefs.getString(k) ?? '';
-        }
-        if (k.startsWith('orig_')) {
-          surahData[k] = prefs.getString(k) ?? '';
-        }
+        // Skip urdu_ and orig_ keys — they are large and rebuilt automatically
+        // when the user opens surahs. Syncing them risks Firestore field limits.
       }
 
       // ── 5. Meta ───────────────────────────────────────────────────────────
@@ -131,6 +128,7 @@ class SyncService {
 
       _emit(SyncStatus.done);
     } catch (e) {
+      debugPrint('SyncService.syncUp error: $e');
       _emit(SyncStatus.error);
     } finally {
       _syncing = false;

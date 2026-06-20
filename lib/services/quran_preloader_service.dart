@@ -6,17 +6,26 @@ import 'word_progress_service.dart';
 class QuranPreloaderService {
   static const String _loadedKey = 'quran_fully_loaded';
 
-  static Future<bool> isFullyLoaded() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_loadedKey) ?? false;
+
+// >>>>>>>>>>>>>>
+  static SharedPreferences? _prefs;
+  static Future<SharedPreferences> _getPrefs() async {
+    _prefs ??= await SharedPreferences.getInstance();
+    return _prefs!;
   }
 
+  static Future<bool> isFullyLoaded() async {
+    final prefs = await _getPrefs();    
+    final result = prefs.getBool(_loadedKey) ?? false;   
+    return result;
+  }
+//<<<<<<<<<<<<<<<<<<<<
   /// Loads all 114 surahs word data. Calls [onProgress] with surahId after each.
   static Future<void> loadAllSurahs({
     required Function(int surahId, int total) onProgress,
     Function(String error)? onError,
   }) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _getPrefs();
 
     for (int surahId = 1; surahId <= 114; surahId++) {
       // Skip if already loaded

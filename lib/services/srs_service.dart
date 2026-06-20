@@ -34,6 +34,19 @@ class SrsService {
     await saveCard(SrsCard.newCard(word));
   }
 
+  /// Initialize SRS cards for a list of words in one bulk pass.
+  /// Much faster than calling initCard() in a loop.
+  static Future<void> initAllCards(List<String> words) async {
+    final prefs = await SharedPreferences.getInstance();
+    final existingKeys = prefs.getKeys();
+    for (final word in words) {
+      final key = '$_pre$word';
+      if (!existingKeys.contains(key)) {
+        await prefs.setString(key, SrsCard.newCard(word).toRaw());
+      }
+    }
+  }
+
   // ── Review actions ────────────────────────────────────────────────────────
 
   /// Mark as Known — advance stage, increase ease
@@ -117,13 +130,17 @@ class SrsService {
       SharedPreferences prefs) async {
     final result = <String, SrsCard>{};
     for (final key in prefs.getKeys()) {
-      if (!key.startsWith(_pre)) continue;
+      if (!key.startsWith(_pre)) {
+        continue;
+      }
       // Skip non-card keys
       if (key == _pointsKey ||
           key == _srsInitializedKey ||
           key == _sessionKey ||
           key == _todayNewKey ||
-          key == _todayDateKey) continue;
+          key == _todayDateKey) {
+        continue;
+      }
       final raw = prefs.getString(key);
       if (raw == null) continue;
       final word = key.substring(_pre.length);

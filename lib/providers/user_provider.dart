@@ -26,11 +26,10 @@ class UserProvider extends ChangeNotifier {
       if (user != null) {
         _loadProfile();
         // Restore data from cloud on first login or account switch
+      
         if (wasLoggedOut) {
-          _restoring = true;
-          notifyListeners();
-          await SyncService.syncDown();
-          _restoring = false;
+          // Run cloud restore in background
+          SyncService.syncDown();
         }
       }
       notifyListeners();

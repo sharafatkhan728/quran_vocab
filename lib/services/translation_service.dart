@@ -7,39 +7,39 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class TranslationService {
   static const Map<String, _TranslationSource> scholars = {
-    'ur.maududi': _TranslationSource(
-      name: 'Maududi (Urdu)',
-      assetPath: 'assets/data/translation_ur_maududi.json',
-      apiId: 'urd-maududi',
-      isRtl: true,
-    ),
+    // 'ur.maududi': _TranslationSource(
+    //   name: 'Maududi (Urdu)',
+    //   assetPath: 'assets/data/translation_ur_maududi.json',
+    //   apiId: 'urd-maududi',
+    //   isRtl: true,
+    // ),
     'ur.bayanulquran': _TranslationSource(
       name: 'Bayan-ul-Quran (Urdu)',
-      assetPath: 'assets/data/bayan-ul-quran-simple.json',  
+      assetPath: 'assets/data/bayan-ul-quran-simple.json',
       apiId: 'ur.bayanulquran',
       isRtl: true,
     ),
-    'en.sahih': _TranslationSource(
-      name: 'Sahih International (English)',
-      assetPath: 'assets/data/translation_en_sahih.json',
-      apiId: 'eng-sahih',
-      isRtl: false,
-    ),
-    'en.pickthall': _TranslationSource(
-      name: 'Pickthall (English)',
-      assetPath: null,
-      apiId: 'en.pickthall',
-      isRtl: false,
-    ),
+    // 'en.sahih': _TranslationSource(
+    //   name: 'Sahih International (English)',
+    //   assetPath: 'assets/data/translation_en_sahih.json',
+    //   apiId: 'eng-sahih',
+    //   isRtl: false,
+    // ),
+    // 'en.pickthall': _TranslationSource(
+    //   name: 'Pickthall (English)',
+    //   assetPath: null,
+    //   apiId: 'en.pickthall',
+    //   isRtl: false,
+    // ),
   };
 
   // In-memory cache: scholarKey → {surah:ayah → text}
   static final Map<String, Map<String, String>> _memCache = {};
-  static String _selectedScholar = 'ur.maududi';
+  static String _selectedScholar = 'ur.bayanulquran';
 
   static Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
-    _selectedScholar = prefs.getString('selected_scholar') ?? 'ur.maududi';
+    _selectedScholar = prefs.getString('selected_scholar') ?? 'ur.bayanulquran';
     // Preload bundled translations into memory
     await _preloadBundled();
   }
@@ -47,8 +47,7 @@ class TranslationService {
   static String get selectedScholar => _selectedScholar;
   static String get selectedScholarName =>
       scholars[_selectedScholar]?.name ?? '';
-  static bool get isRtl =>
-      scholars[_selectedScholar]?.isRtl ?? true;
+  static bool get isRtl => scholars[_selectedScholar]?.isRtl ?? true;
 
   static Future<void> setScholar(String key) async {
     _selectedScholar = key;
@@ -89,8 +88,8 @@ class TranslationService {
   }
 
   /// Get translation for one ayah — instant if bundled, API if not
-  static Future<String?> getAyahTranslation(
-      int surah, int ayah, {String? scholar}) async {
+  static Future<String?> getAyahTranslation(int surah, int ayah,
+      {String? scholar}) async {
     final s = scholar ?? _selectedScholar;
 
     // 1. Check in-memory cache (bundled)
@@ -109,10 +108,9 @@ class TranslationService {
     try {
       final source = scholars[s];
       final apiId = source?.apiId ?? s;
-      final url =
-          'https://api.alquran.cloud/v1/ayah/$surah:$ayah/$apiId';
-      final res = await http.get(Uri.parse(url))
-          .timeout(const Duration(seconds: 6));
+      final url = 'https://api.alquran.cloud/v1/ayah/$surah:$ayah/$apiId';
+      final res =
+          await http.get(Uri.parse(url)).timeout(const Duration(seconds: 6));
       if (res.statusCode == 200) {
         final data = json.decode(res.body);
         final text = data['data']['text'] as String? ?? '';
@@ -138,8 +136,6 @@ class TranslationService {
       final text = cache['$surahId:$a'];
       if (text != null) {
         result['$a'] = text;
-      } else {
-        break;
       }
     }
     return result;

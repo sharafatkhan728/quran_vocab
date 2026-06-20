@@ -24,7 +24,7 @@ class SurahReaderScreen extends StatefulWidget {
   @override
   State<SurahReaderScreen> createState() => _SurahReaderScreenState();
 }
-
+//
 class _SurahReaderScreenState extends State<SurahReaderScreen> {
   bool _mushafMode = false;
   int _lastReadAyah = 0;
@@ -192,12 +192,17 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        child: Wrap(
-          alignment: WrapAlignment.end,
+        child: Directionality(
           textDirection: TextDirection.rtl,
-          spacing: 0,
-          runSpacing: 4,
-          children: [
+          child: SizedBox(
+            width: double.infinity,
+            child: Wrap(
+              alignment: WrapAlignment.start,
+              crossAxisAlignment: WrapCrossAlignment.end,
+              textDirection: TextDirection.rtl,
+              spacing: 0,
+              runSpacing: 4,
+              children: [
             // Words
             ...words.map((word) => GestureDetector(
                   onTap: () => _showWordDetail(word),
@@ -215,7 +220,7 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
                     ),
                   ),
                 )),
-            // Ayah end marker ﴾number﴿
+              // Ayah end marker ﴾number﴿
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
               child: Text(
@@ -231,6 +236,7 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
           ],
         ),
       ),
+       ) ),
     );
   }
 
@@ -780,7 +786,7 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
                                 color: Theme.of(context).brightness ==
                                         Brightness.dark
                                     ? const Color(0xFF0F1A0F)
-                                    : const Color(0xFFFDF6E3),
+                                    : const Color.fromARGB(255, 255, 255, 255),
                               ),
                             ),
                           // Mushaf decorative border frame
@@ -809,8 +815,9 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
                             itemBuilder: (context, index) {
                               // index 0 = bismillah header
                               if (index == 0) {
-                                if (!_showBismillahHeader)
+                                if (!_showBismillahHeader) {
                                   return const SizedBox.shrink();
+                                }
                                 return _BismillahHeader();
                               }
 
@@ -1143,31 +1150,60 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
                                         crossAxisAlignment:
                                             CrossAxisAlignment.end,
                                         children: [
-                                          Wrap(
-                                            alignment: WrapAlignment.end,
+                                          
+                                          // Wrap(
+                                          //   alignment: WrapAlignment.end,
+                                          //   crossAxisAlignment: WrapCrossAlignment.end,
+                                          //   textDirection: TextDirection.rtl,
+                                          //   children: words
+                                          //       .map((word) => WordTile(
+                                          //             word: word,
+                                          //             arabicFontSize:
+                                          //                 _arabicFontSize,
+                                          //             urduFontSize:
+                                          //                 _urduFontSize,
+                                          //             onLongPress: () =>
+                                          //                 _onWordLongPress(
+                                          //                     word),
+                                          //             onTap: () =>
+                                          //                 _showWordDetail(word),
+                                          //           ))
+                                          //       .toList(),
+                                          // ),
+
+
+                                          Directionality(
                                             textDirection: TextDirection.rtl,
-                                            children: words
-                                                .map((word) => WordTile(
-                                                      word: word,
-                                                      arabicFontSize:
-                                                          _arabicFontSize,
-                                                      urduFontSize:
-                                                          _urduFontSize,
-                                                      onLongPress: () =>
-                                                          _onWordLongPress(
-                                                              word),
-                                                      onTap: () =>
-                                                          _showWordDetail(word),
-                                                    ))
-                                                .toList(),
+                                            child: SizedBox(
+                                              width: double.infinity,
+                                              child: Wrap(
+                                                alignment: WrapAlignment.start,
+                                                crossAxisAlignment: WrapCrossAlignment.end,
+                                                textDirection: TextDirection.rtl,
+                                                children: words
+                                                    .map((word) => WordTile(
+                                                          word: word,
+                                                          arabicFontSize: _arabicFontSize,
+                                                          urduFontSize: _urduFontSize,
+                                                          onLongPress: () => _onWordLongPress(word),
+                                                          onTap: () => _showWordDetail(word),
+                                                        ))
+                                                    .toList(),
+                                              ),
+                                            ),
                                           ),
+
+
+
+
                                           if (_showTranslation)
                                             Builder(builder: (ctx) {
                                               _loadTranslation(ayahNum);
                                               final text =
                                                   _ayahTranslations['$ayahNum'];
-                                              if (text == null)
+                                              if (text == null) {
                                                 return const SizedBox.shrink();
+                                              }
                                               return Padding(
                                                 padding: const EdgeInsets.only(
                                                     top: 8),

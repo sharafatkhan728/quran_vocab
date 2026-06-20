@@ -187,9 +187,67 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     super.dispose();
   }
 
+  Future<void> _showLoadMoreWarning() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text('⚠️ Today\'s Session Complete'),
+        content: const Text(
+          'You have completed today\'s learning session.\n\n'
+          'Learning too many new words at once reduces retention.\n\n'
+          'Consistent daily practice is far more effective.\n\n'
+          'Do you still want to continue with new words today?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No, I\'ll wait'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Yes, continue',
+                style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true && mounted) {
+      setState(() => _loading = true);
+      final freq = await WordProgressService.getWordFrequencies();
+      final allWords = freq.keys.toList();
+      final extra = await SrsService.buildExtraSession(allWords, 10);
+      if (extra.isEmpty) {
+        setState(() => _loading = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No more new words available')));
+        }
+        return;
+      }
+      final cards = _buildCards(extra.words, freq);
+      if (mounted) {
+        setState(() {
+          _cards = cards; _currentIndex = 0;
+          _loading = false; _sessionDone = false;
+          _isFlipped = false; _hasBeenFlipped = false;
+        });
+        _entryCtrl.reset();
+        _entryCtrl.forward();
+        _preloadCards(0);
+      }
+    } else if (mounted) {
+      Navigator.pop(context);
+    }
+  }
+
   // ── Session loading ─────────────────────────────────────────────────────
 
   Future<void> _loadSession({bool forceNew = false}) async {
+    // Capture context-dependent values before any await
+    final dailyGoal = context.read<UserProvider>().dailyGoal;
+
     setState(() {
       _loading = true;
       _sessionDone = false;
@@ -206,21 +264,13 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     final allWords =
         sorted.where((e) => e.value.urdu.isNotEmpty).map((e) => e.key).toList();
 
-    // Init SRS cards for top 500 frequent words
     final initialized = await SrsService.isInitialized();
 
     if (!initialized) {
-      for (final w in allWords) {
-        await SrsService.initCard(w);
-      }
-
+      await SrsService.initAllCards(allWords);
       await SrsService.setInitialized();
     }
 
-    final userProvider = context.read<UserProvider>();
-    final dailyGoal = userProvider.dailyGoal;
-
-    // Try restoring saved session first
     if (!forceNew) {
       final saved = await SrsService.loadSession();
       if (saved != null &&
@@ -247,11 +297,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
 
     if (result.isEmpty) {
       if (mounted) {
-        setState(() {
-          _loading = false;
-          _sessionDone = false;
-          _cards = [];
-        });
+        setState(() { _loading = false; _sessionDone = false; _cards = []; });
+        WidgetsBinding.instance.addPostFrameCallback((_) => _showLoadMoreWarning());
       }
       return;
     }
@@ -1225,8 +1272,9 @@ class _FlashcardScreenState extends State<FlashcardScreen>
 
   Widget _buildSessionBanner(bool isDark) {
     final r = _sessionResult!;
-    if (r.overdueCount == 0 && r.failedCount == 0)
+    if (r.overdueCount == 0 && r.failedCount == 0) {
       return const SizedBox.shrink();
+    }
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -1371,16 +1419,15 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                     final extra =
                         await SrsService.buildExtraSession(allWords, 10);
                     if (extra.isEmpty) {
+                      if (!mounted) return;
                       setState(() {
                         _loading = false;
                       });
-
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text('No more new words available'),
                         ),
                       );
-
                       return;
                     }
                     final cards = _buildCards(extra.words, freq);
