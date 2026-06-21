@@ -22,6 +22,7 @@ class WordTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+ 
     return GestureDetector(
       onLongPress: onLongPress,
       onTap: onTap,
@@ -43,8 +44,18 @@ class WordTile extends StatelessWidget {
             Text(
               word.arabic,
               textDirection: TextDirection.rtl,
-              style: _arabicTextStyle(context, arabicFontSize),
+              style: _arabicTextStyle(
+                context,
+                arabicFontSize,
+                _getWordColor(
+                  context,
+                  word,
+                  true, // temporary, later connect to setting
+                ),
+              ),
             ),
+              
+              
             const SizedBox(height: 4),
             AnimatedOpacity(
               opacity: word.isKnown ? 0.0 : 1.0,
@@ -68,12 +79,41 @@ class WordTile extends StatelessWidget {
       ),
     );
   }
+
+//<<<<<<<< below this
+  Color _getWordColor(
+    BuildContext context,
+    QuranWord word,
+    bool colorCodingEnabled,
+  ) {
+    if (!colorCodingEnabled) {
+      return Theme.of(context).colorScheme.onSurface;
+    }
+
+    switch (word.wordType) {
+      case 'N':
+        return Colors.blue;
+
+      case 'V':
+        return Colors.red;
+
+      case 'P':
+        return Colors.green;
+
+      default:
+        return Theme.of(context).colorScheme.onSurface;
+    }
+  }
 }
 
-TextStyle _arabicTextStyle(BuildContext context, double size) {
+TextStyle _arabicTextStyle(
+  BuildContext context,
+  double size,
+  Color color,
+) {
   final display = context.watch<DisplayProvider>();
   final font = display.arabicFont;
-  final color = Theme.of(context).colorScheme.onSurface;
+
   switch (font) {
     case 'indopak':
       return TextStyle(
@@ -83,6 +123,7 @@ TextStyle _arabicTextStyle(BuildContext context, double size) {
         height: context.read<DisplayProvider>().lineHeight,
         wordSpacing: context.read<DisplayProvider>().wordSpacing,
       );
+
     case 'noorehuda':
       return TextStyle(
         fontFamily: 'NoorehudaFont',
@@ -90,8 +131,18 @@ TextStyle _arabicTextStyle(BuildContext context, double size) {
         color: color,
         height: 2.0,
       );
+
     case 'uthmani':
     default:
-      return GoogleFonts.amiriQuran(fontSize: size).copyWith(color: color);
+      return GoogleFonts.amiriQuran(
+        fontSize: size,
+      ).copyWith(
+        color: color,
+      );
   }
 }
+
+  
+
+  
+

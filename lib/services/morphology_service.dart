@@ -14,6 +14,7 @@ class MorphologyService {
   static Future<void> initialize() async {
     if (_loaded) return;
     await Future.wait([_loadCorpus(), _loadTerms()]);
+
     _loaded = true;
   }
 
@@ -44,20 +45,43 @@ class MorphologyService {
 
   static Future<void> _loadCorpus() async {
     final raw = await rootBundle.loadString('assets/data/quran_morphology.txt');
+    // for (final line in raw.split('\n')) {
+    //   final t = line.trim();
+    //   if (t.isEmpty || t.startsWith('#')) continue;
+    //   final tab = t.indexOf('\t');
+    //   if (tab < 0) continue;
+    //   final loc =
+    //       t.substring(0, tab).replaceAll('(', '').replaceAll(')', '').trim();
+    //   final tag = t.substring(tab + 1).trim();
+    //   final parts = loc.split(':');
+    //   if (parts.length < 4) continue;
+    //   final wordKey = '${parts[0]}:${parts[1]}:${parts[2]}';
+    //   final seg = WordSegment.parse(tag, int.tryParse(parts[3]) ?? 1);
+    //   _wordSegments.putIfAbsent(wordKey, () => []).add(seg);
+    // }
     for (final line in raw.split('\n')) {
       final t = line.trim();
       if (t.isEmpty || t.startsWith('#')) continue;
-      final tab = t.indexOf('\t');
-      if (tab < 0) continue;
+      final cols = t.split('\t');
+      if (cols.length < 4) continue;
       final loc =
-          t.substring(0, tab).replaceAll('(', '').replaceAll(')', '').trim();
-      final tag = t.substring(tab + 1).trim();
+          cols[0].replaceAll('(', '').replaceAll(')', '').trim();
+      final arabic = cols[1].trim();    
+      final pos = cols[2].trim();
+      final tag = cols[3].trim();
       final parts = loc.split(':');
       if (parts.length < 4) continue;
       final wordKey = '${parts[0]}:${parts[1]}:${parts[2]}';
-      final seg = WordSegment.parse(tag, int.tryParse(parts[3]) ?? 1);
+      final seg = WordSegment.parse(
+        arabic,
+        tag,
+        int.tryParse(parts[3]) ?? 1,
+        pos,
+      );
       _wordSegments.putIfAbsent(wordKey, () => []).add(seg);
     }
+
+
   }
 
   static Future<void> _loadTerms() async {
@@ -401,6 +425,42 @@ class MorphologyService {
     if (suffixes.isNotEmpty) return '↓ Suffix attached';
     return '';
   }
+  
+  //<<<<<<<<<<<<<< below all static
+  static String getWordType(int surah, int ayah, int pos) {
+    final segs = getSegments(surah, ayah, pos);
+
+    if (segs == null || segs.isEmpty) {
+      return '';
+    }
+
+    for (final seg in segs) {
+  }
+
+    // Verb highest priority
+    for (final seg in segs) {
+      if (seg.type == SegType.stem) {
+        if (seg.pos == 'V') return 'V';
+
+        if ([
+          'N',
+          'PN',
+          'PRON',
+          'DEM',
+          'REL',
+          'T',
+          'LOC'
+        ].contains(seg.pos)) {
+          return 'N';
+        }
+
+        return 'P';
+      }
+    }
+    // Everything else = particle
+    return 'P';                       
+  }
+  
 }
 
 // ── Data models ────────────────────────────────────────────────────────────────
@@ -421,6 +481,7 @@ class WordSegment {
   final String voice;
   final String state;
   final String verbForm;
+  final String arabic;
 
   WordSegment({
     required this.segNum,
@@ -436,28 +497,36 @@ class WordSegment {
     required this.voice,
     required this.state,
     required this.verbForm,
+    required this.arabic,
   });
 
-  factory WordSegment.parse(String tag, int segNum) {
+
+  
+
+  // factory WordSegment.parse(String tag, int segNum) {
+  factory WordSegment.parse(
+    String arabic,
+    String tag,
+    int segNum,
+    String posCode,
+  ) {
     SegType type = SegType.stem;
-    String pos = '', root = '', lemma = '', tense = '', person = '';
+    String pos = posCode, root = '', lemma = '', tense = '', person = '';
     String gender = '', number = '', gcase = '', voice = '', state = '';
     String verbForm = '';
 
     for (final token in tag.split('|')) {
       final t = token.trim();
-      if (t == 'PREFIX') {
+      if (t == 'PREF') {
         type = SegType.prefix;
         continue;
       }
-      if (t == 'SUFFIX') {
+
+      if (t == 'SUFF') {
         type = SegType.suffix;
         continue;
       }
-      if (t == 'STEM') {
-        type = SegType.stem;
-        continue;
-      }
+
       if (t.startsWith('POS:')) {
         pos = t.substring(4);
         continue;
@@ -532,6 +601,10 @@ class WordSegment {
       if (RegExp(r'^[IVX]+$').hasMatch(t)) verbForm = t;
     }
 
+    print(
+      'PARSE => seg=$segNum pos=$pos type=$type tag=$tag',
+    );
+
     return WordSegment(
       segNum: segNum,
       type: type,
@@ -546,9 +619,12 @@ class WordSegment {
       voice: voice,
       state: state,
       verbForm: verbForm,
+      arabic: arabic,
     );
   }
 }
+
+
 
 class SarfChain {
   final String root;
@@ -592,6 +668,9 @@ class SarfStep {
   final List<WordSegment> prefixes;
   final List<WordSegment> suffixes;
 
+
+  
+
   SarfStep({
     required this.arabic,
     required this.arabicUrdu,
@@ -607,3 +686,5 @@ class SarfStep {
 }
 
 enum SarfType { root, lemma, inflected, quranicForm }
+
+

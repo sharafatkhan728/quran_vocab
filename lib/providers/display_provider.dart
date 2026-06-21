@@ -7,12 +7,14 @@ class DisplayProvider extends ChangeNotifier {
   String _arabicFont = 'uthmani';
   double _lineHeight = 1.8;
   double _wordSpacing = 4;
+  bool _grammarColorEnabled = true; //<<<<<<<<<<<<<<<<<
 
   double get arabicFontSize => _arabicFontSize;
   double get urduFontSize => _urduFontSize;
   String get arabicFont => _arabicFont;
   double get lineHeight => _lineHeight;
   double get wordSpacing => _wordSpacing;
+  bool get grammarColorEnabled => _grammarColorEnabled; //<<<<<<<<<
 
   DisplayProvider() {
     _load();
@@ -25,8 +27,23 @@ class DisplayProvider extends ChangeNotifier {
     _arabicFont = prefs.getString('arabic_font') ?? 'uthmani';
     _lineHeight = prefs.getDouble('line_height') ?? 1.8;
     _wordSpacing = prefs.getDouble('word_spacing') ?? 4;
+    _grammarColorEnabled = //<<<<<<<<<<<<<<<<<<
+    prefs.getBool('grammar_color_enabled') ?? true; //<<<<<<<<<<
+    _enableWordColors =//<<<<<<<<<<<
+    prefs.getBool('enable_word_colors') ?? true;//<<<<<<<
     notifyListeners();
   }
+
+ //<<<<<<<<
+  bool _enableWordColors = true;
+  bool get enableWordColors => _enableWordColors;
+  Future<void> setEnableWordColors(bool value) async {
+    _enableWordColors = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('enable_word_colors', value);
+  }
+
 
   Future<void> setArabicSize(double v) async {
     _arabicFontSize = v;
@@ -61,5 +78,13 @@ class DisplayProvider extends ChangeNotifier {
     notifyListeners();
     final p = await SharedPreferences.getInstance();
     await p.setDouble('word_spacing', v);
+  }
+
+  Future<void> setGrammarColorEnabled(bool v) async {
+    _grammarColorEnabled = v;
+    notifyListeners();
+
+    final p = await SharedPreferences.getInstance();
+    await p.setBool('grammar_color_enabled', v);
   }
 }

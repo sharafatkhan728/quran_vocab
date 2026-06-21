@@ -15,6 +15,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/translation_service.dart';
 import 'package:flutter/services.dart';
 import '../data/ruku_data.dart';
+import '../services/morphology_service.dart';
 
 class SurahReaderScreen extends StatefulWidget {
   final Surah surah;
@@ -382,16 +383,26 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
               .map((w) {
             final wordId = '${widget.surah.id}:$ayahNum:${w['position']}';
             final arabicText = (w['text_uthmani'] ?? w['text'] ?? '') as String;
+         
+
             final normalized = WordProgressService.normalizeArabic(arabicText);
             final urduMeaning = (w['translation']?['text'] ?? '') as String;
             // Save urdu meaning for vocabulary screen
             WordProgressService.saveWordUrdu(normalized, urduMeaning);
             WordProgressService.saveWordOriginal(normalized, arabicText);
+            //<<<<<<<<
+            final position = w['position'] as int;
+
             return QuranWord(
               id: wordId,
               arabic: arabicText,
               urduMeaning: urduMeaning,
               transliteration: (w['transliteration']?['text'] ?? '') as String,
+              wordType: MorphologyService.getWordType(
+                widget.surah.id,
+                ayahNum,
+                position,
+              ),
               isKnown: _knownNormalizedWords.contains(normalized),
             );
           }).toList();
@@ -494,6 +505,7 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
             id: wordId,
             arabic: arabicWords[i],
             urduMeaning: i < urduWords.length ? urduWords[i] : '',
+            wordType: '',
             isKnown: _knownNormalizedWords.contains(normalized),
           );
         });
@@ -523,6 +535,7 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
                 arabic: w.arabic,
                 urduMeaning: w.urduMeaning,
                 transliteration: w.transliteration,
+                wordType: w.wordType,
                 isKnown: nowKnown,
               );
             }

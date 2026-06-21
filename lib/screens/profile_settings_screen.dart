@@ -392,6 +392,19 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
               onChanged: display.setWordSpacing,
               isDark: isDark,
             ),
+
+            const SizedBox(height: 12),
+
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: display.grammarColorEnabled,
+              onChanged: display.setGrammarColorEnabled,
+              title: const Text('Grammar Color Coding'),
+              subtitle: const Text(
+                'Highlight Nouns, Verbs and Particles',
+              ),
+              secondary: const Icon(Icons.palette),
+            ),
           ],
         ));
   }

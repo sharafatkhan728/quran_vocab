@@ -466,6 +466,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
           arabic: _current.arabic,
           urduMeaning: _current.urdu,
           transliteration: _current.transliteration,
+          wordType: '',
         ),
         surahId: _current.sampleSurah > 0 ? _current.sampleSurah : 1,
         ayahId: _current.sampleAyahNum > 0 ? _current.sampleAyahNum : 1,
