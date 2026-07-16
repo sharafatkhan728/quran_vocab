@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import '../main.dart';
+import 'main_navigation.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -143,7 +143,7 @@ class _AuthScreenState extends State<AuthScreen>
 
               // Google sign in
               _GoogleButton(onTap: _signInGoogle, loading: _loading),
-              
+
               const SizedBox(height: 12),
 
               OutlinedButton.icon(
@@ -289,10 +289,10 @@ class _GoogleButton extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Image.network(
-              'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
-              width: 20,
-              height: 20,
+            Image.asset(
+              'assets/images/google.svg',
+              width: 24,
+              height: 24,
               errorBuilder: (_, __, ___) =>
                   const Icon(Icons.g_mobiledata, size: 24),
             ),

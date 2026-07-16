@@ -38,12 +38,16 @@ class SrsService {
   /// Much faster than calling initCard() in a loop.
   static Future<void> initAllCards(List<String> words) async {
     final prefs = await SharedPreferences.getInstance();
-    final existingKeys = prefs.getKeys();
+    final batch = <String, String>{};
     for (final word in words) {
       final key = '$_pre$word';
-      if (!existingKeys.contains(key)) {
-        await prefs.setString(key, SrsCard.newCard(word).toRaw());
+      if (!prefs.containsKey(key)) {
+        batch[key] = SrsCard.newCard(word).toRaw();
       }
+    }
+    // Write all at once
+    for (final entry in batch.entries) {
+      await prefs.setString(entry.key, entry.value);
     }
   }
 
@@ -148,6 +152,7 @@ class SrsService {
     }
     return result;
   }
+
 
   /// Build today's session with correct priority order:
   /// 1. Overdue reviews (stage > 0, past due date) — highest priority

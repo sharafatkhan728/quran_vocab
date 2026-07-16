@@ -53,22 +53,6 @@ class WordGlossaryService {
     await _load(lang);
   }
 
-  // static Future<void> _load(String lang) async {
-  //   if (_cache.containsKey(lang)) return;
-  //   final source = glossaries[lang];
-  //   if (source == null) return;
-  //   try {
-  //     final raw = await rootBundle.loadString(source.assetPath);
-  //     final data = json.decode(raw) as Map<String, dynamic>;
-  //     // Format: {"1:1:1": "meaning", "1:1:2": "meaning2", ...}
-  //     // Strip HTML tags for English
-  //     _cache[lang] = data.map((k, v) =>
-  //         MapEntry(k, _stripHtml(v.toString())));
-  //   } catch (_) {
-  //     _cache[lang] = {};
-  //   }
-  // }
-
   static String _stripHtml(String html) =>
       html.replaceAll(RegExp(r'<[^>]*>'), '').trim();
 
@@ -94,12 +78,6 @@ class WordGlossaryService {
     return result;
   }
 
-  // /// For English: get colored HTML spans (without stripping)
-  // static String getRawByPosition(int surah, int ayah, int pos) {
-  //   if (_selectedLang != 'en') return getByPosition(surah, ayah, pos);
-  //   final l = 'en';
-  //   return _cache[l]?['$surah:$ayah:$pos'] ?? '';
-  // }
 
   static final Map<String, Map<String, String>> _rawCache =
       {}; // English raw HTML

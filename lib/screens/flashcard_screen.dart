@@ -241,7 +241,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
         _preloadCards(0);
       }
     } else if (mounted) {
-      Navigator.pop(context);
+      setState(() {});
     }
   }
 
@@ -270,7 +270,9 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     final initialized = await SrsService.isInitialized();
 
     if (!initialized) {
-      await SrsService.initAllCards(allWords);
+      for (final w in allWords) {
+        await SrsService.initCard(w);
+      }
       await SrsService.setInitialized();
     }
 
@@ -373,14 +375,12 @@ class _FlashcardScreenState extends State<FlashcardScreen>
       return;
     }
     HapticFeedback.mediumImpact();
+    final existingCard = await SrsService.getCard(_current.normalizedForLookup);
+    final wasNew = existingCard?.totalReviews == 0;
     final pts = await SrsService.markKnown(_current.normalizedForLookup);
     await WordProgressService.markAsKnown(_current.normalizedForLookup);
-    // Track if this was a new card
-    final card = await SrsService.getCard(_current.normalizedForLookup);
-    if (card?.totalReviews == 1) {
-      // just became 1 = was new
-      await SrsService.recordNewCardReviewed();
-    }
+    if (wasNew) await SrsService.recordNewCardReviewed();
+
     setState(() {
       _sessionPoints += pts;
       _totalPoints += pts;
@@ -477,7 +477,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
         ),
         surahId: _current.sampleSurah > 0 ? _current.sampleSurah : 1,
         ayahId: _current.sampleAyahNum > 0 ? _current.sampleAyahNum : 1,
-        wordPos: 1,
+        wordPos: _current.wordPositionInAyah > 0 ? _current.wordPositionInAyah : 1,
         ayahWords: [],
         isKnown: false,
         onKnownToggled: (_) {},
@@ -690,9 +690,10 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                   final rot = tx / screenW * 0.12;
                   return Transform(
                     alignment: Alignment.center,
+                    
                     transform: Matrix4.identity()
-                      ..setTranslationRaw(tx, 0.0, 0.0)
-                      ..rotateZ(rot),
+                        ..translate(tx, 0.0)
+                        ..rotateZ(rot),
                     child: ScaleTransition(
                       scale: _entryScale,
                       child: FadeTransition(opacity: _entryFade, child: child),

@@ -28,6 +28,7 @@ class QuranWord {
   QuranWord copyWith({
     bool? isKnown,
     String? urduMeaning,
+    
     List<WordSegment>? segments,
   }) => QuranWord(
     id: id,

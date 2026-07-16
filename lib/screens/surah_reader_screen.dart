@@ -112,7 +112,7 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
     await _loadFromLocal();
   }
 
-  Map<String, String> _urduLookup = {}; // normalized word → urdu (fallback)
+  final Map<String, String> _urduLookup = {}; // normalized word → urdu (fallback)
   Map<String, String> _glossaryLookup = {}; // "ayah:pos" → meaning (primary)
 
   Future<void> _loadUrduLookup() async {

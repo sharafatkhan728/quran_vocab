@@ -40,6 +40,7 @@ flutter:
   assets:
     - assets/fonts/
     - assets/data/
+    - assets/images/
     
   fonts:
     - family: JameelNoori

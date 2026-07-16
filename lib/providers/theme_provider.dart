@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+
 class ThemeProvider extends ChangeNotifier {
   bool _isDark = false;
   bool get isDark => _isDark;
 
   bool _isLoaded = false;
   bool get isLoaded => _isLoaded;
+
+  
 
   Future<void> _loadTheme() async {
     final prefs = await SharedPreferences.getInstance();
@@ -84,4 +87,6 @@ class ThemeProvider extends ChangeNotifier {
           behavior: SnackBarBehavior.floating,
         ),
       );
+
+  Future<void> loadSettings() async {}
 }

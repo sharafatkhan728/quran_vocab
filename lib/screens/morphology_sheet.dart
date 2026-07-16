@@ -1,18 +1,17 @@
 // ignore_for_file: unused_local_variable, curly_braces_in_flow_control_structures, unnecessary_brace_in_string_interps
 
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
 import '../models/word.dart';
 import '../providers/display_provider.dart';
 import '../services/morphology_service.dart';
 import '../services/word_progress_service.dart';
+import 'package:quran/quran.dart' as quran;
+import 'dart:async';
 
-// Export so word_detail_dialog.dart can import it
-export 'morphology_sheet.dart';
+StreamSubscription<PlayerState>? _audioSub;
 
 class MorphologySheet extends StatefulWidget {
   final QuranWord word;
@@ -63,20 +62,32 @@ class _MorphologySheetState extends State<MorphologySheet>
   final AudioPlayer _audio = AudioPlayer();
   String? _playingKey;
 
+
+
   @override
   void initState() {
     super.initState();
+
     _tabs = TabController(length: 2, vsync: this);
     _selectedWord = widget.word;
     _loadForWord(widget.word, widget.wordPos);
+
+    _audioSub = _audio.playerStateStream.listen((state) {
+      if (state.processingState == ProcessingState.completed) {
+        if (mounted) {
+          setState(() => _playingKey = null);
+        }
+      }
+    });
   }
 
   @override
-  void dispose() {
-    _tabs.dispose();
-    _audio.dispose();
-    super.dispose();
-  }
+    void dispose() {
+      _tabs.dispose();
+      _audioSub?.cancel();
+      _audio.dispose();
+      super.dispose();
+    }
 
   void _loadForWord(QuranWord word, int pos) {
     setState(() {
@@ -91,38 +102,35 @@ class _MorphologySheetState extends State<MorphologySheet>
     });
   }
 
+
   Future<void> _loadLemmaAyahs(String lemma, List<String> wordKeys) async {
     if (_lemmaAyahs.containsKey(lemma)) return;
     setState(() => _loadingAyahs = true);
-
     final ayahs = <Map<String, dynamic>>[];
-    // wordKeys format: surah:ayah:pos — show first 10
     final sample = wordKeys.take(10).toList();
 
     for (final key in sample) {
       final parts = key.split(':');
-      if (parts.length < 2) continue;
+      if (parts.length < 3) continue;
       final surahId = int.tryParse(parts[0]) ?? 0;
       final ayahId = int.tryParse(parts[1]) ?? 0;
-      final wordPos = parts.length >= 3 ? int.tryParse(parts[2]) ?? 1 : 1;
-
+      final wordPos = int.tryParse(parts[2]) ?? 1;
       try {
-        final url =
-            'https://api.qurancdn.com/api/qdc/verses/by_key/$surahId:$ayahId'
-            '?words=true&word_fields=text_uthmani,translation'
-            '&word_translation_language=ur';
-        final response = await http.get(Uri.parse(url));
-        if (response.statusCode == 200) {
-          final data = json.decode(response.body);
-          final wordsJson = data['verse']['words'] as List;
-          ayahs.add({
-            'surah': surahId,
-            'ayah': ayahId,
-            'targetPos': wordPos,
-            'words': wordsJson,
-            'key': '$surahId:$ayahId',
-          });
-        }
+        // Use local quran package instead of API
+        final verseWords = quran.getVerse(surahId, ayahId).split(' ')
+            .where((w) => w.trim().isNotEmpty).toList();
+        final wordsList = verseWords.asMap().entries.map((e) => {
+          'text_uthmani': e.value,
+          'position': e.key + 1,
+          'char_type_name': 'word',
+        }).toList();
+        ayahs.add({
+          'surah': surahId,
+          'ayah': ayahId,
+          'targetPos': wordPos,
+          'words': wordsList,
+          'key': '$surahId:$ayahId',
+        });
       } catch (_) {}
     }
 
@@ -134,27 +142,37 @@ class _MorphologySheetState extends State<MorphologySheet>
     }
   }
 
+
   Future<void> _playWordAudio(int surah, int ayah, int pos) async {
-    final key = '$surah:$ayah:$pos';
-    if (_playingKey == key) {
-      await _audio.stop();
+  final key = '$surah:$ayah:$pos';
+
+  if (_playingKey == key) {
+    await _audio.stop();
+    if (mounted) {
       setState(() => _playingKey = null);
-      return;
     }
-    final s = surah.toString().padLeft(3, '0');
-    final a = ayah.toString().padLeft(3, '0');
-    final w = pos.toString().padLeft(3, '0');
-    try {
-      await _audio.setUrl('https://audio.qurancdn.com/wbw/${s}_${a}_${w}.mp3');
-      await _audio.play();
-      setState(() => _playingKey = key);
-      _audio.playerStateStream.listen((state) {
-        if (state.processingState == ProcessingState.completed) {
-          if (mounted) setState(() => _playingKey = null);
-        }
-      });
-    } catch (_) {}
+    return;
   }
+
+  final s = surah.toString().padLeft(3, '0');
+  final a = ayah.toString().padLeft(3, '0');
+  final w = pos.toString().padLeft(3, '0');
+
+  try {
+    await _audio.setUrl(
+      'https://audio.qurancdn.com/wbw/${s}_${a}_${w}.mp3',
+    );
+
+    await _audio.play();
+
+    if (mounted) {
+      setState(() => _playingKey = key);
+    }
+
+    // No listener here anymore.
+  } catch (_) {}
+}
+
 
   @override
   Widget build(BuildContext context) {
@@ -400,7 +418,9 @@ class _MorphologySheetState extends State<MorphologySheet>
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
-              _selectedWord.urduMeaning,
+              _selectedWord.urduMeaning.isNotEmpty
+                  ? _selectedWord.urduMeaning
+                  : '—',
               textDirection: TextDirection.rtl,
               style: TextStyle(
                   fontSize: 14,
@@ -415,9 +435,6 @@ class _MorphologySheetState extends State<MorphologySheet>
 
   Widget _buildLinguisticExplanation(bool isDark) {
     if (_sarfChain == null) return const SizedBox.shrink();
-
-    final posExpanded = MorphologyService.expand(_sarfChain!.pos);
-    final isVerb = _sarfChain!.pos == 'V';
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -1070,10 +1087,7 @@ class _MorphologySheetState extends State<MorphologySheet>
   }
 
   String _getLemmaTranslation(String lemma) {
-    // Basic translation lookup — can be enhanced
-    final normalized = WordProgressService.normalizeArabic(lemma);
-    // Check our saved urdu meanings
-    return lemma; // placeholder — will show Arabic lemma
+    return lemma;
   }
 
   TextStyle _arabicStyle(DisplayProvider d, bool isDark, {double? size}) {
