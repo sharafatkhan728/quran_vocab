@@ -6,7 +6,7 @@ import '../services/sync_service.dart';
 class UserProvider extends ChangeNotifier {
   User? _user;
   Map<String, dynamic> _profile = {};
-  bool _restoring = false;
+  final bool _restoring = false;
 
   User? get user => _user;
   Map<String, dynamic> get profile => _profile;

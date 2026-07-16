@@ -1,30 +1,40 @@
+import '../services/morphology_service.dart';
+
 class QuranWord {
-  final String id;
-  final String arabic;
+  final String id;         // "surah:ayah:wordPos"
+  final String arabic;     // full word text with harkat
   final String urduMeaning;
   final String transliteration;
-  final String wordType;
-  final List<WordPart> parts;
+  final bool isKnown;
+  final List<WordSegment> segments; // morphology segments
 
-  bool isKnown;
-
-  QuranWord({
+  const QuranWord({
     required this.id,
     required this.arabic,
-    required this.urduMeaning,
+    this.urduMeaning = '',
     this.transliteration = '',
-    this.wordType = '',
-    this.parts = const [],
     this.isKnown = false,
+    this.segments = const [],
   });
-}
 
-class WordPart {
-  final String text;
-  final String pos;
+  /// Stem segment (main word, determines color/POS)
+  WordSegment? get stem =>
+      segments.where((s) => s.type == SegType.stem).firstOrNull;
 
-  const WordPart({
-    required this.text,
-    required this.pos,
-  });
+  String get root => stem?.root ?? '';
+  String get lemma => stem?.lemma ?? '';
+  String get pos => stem?.pos ?? '';
+
+  QuranWord copyWith({
+    bool? isKnown,
+    String? urduMeaning,
+    List<WordSegment>? segments,
+  }) => QuranWord(
+    id: id,
+    arabic: arabic,
+    urduMeaning: urduMeaning ?? this.urduMeaning,
+    transliteration: transliteration,
+    isKnown: isKnown ?? this.isKnown,
+    segments: segments ?? this.segments,
+  );
 }

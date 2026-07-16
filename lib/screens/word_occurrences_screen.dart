@@ -1,7 +1,5 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/surah.dart';
 import '../services/word_progress_service.dart';
@@ -52,92 +50,144 @@ class _WordOccurrencesScreenState extends State<WordOccurrencesScreen> {
   }
 
   Future<void> _loadOccurrences() async {
-    final prefs = await SharedPreferences.getInstance();
+    await SharedPreferences.getInstance();
     final normalized = WordProgressService.normalizeArabic(widget.word.arabic);
 
-    // Step 1: Find which surahs contain this word from local cache
-    final List<int> surahsWithWord = [];
-    for (int i = 1; i <= 114; i++) {
-      final raw = prefs.getStringList('surah_word_counts_$i');
-      if (raw == null) continue;
-      final has = raw.any((e) {
-        final p = e.split('|||');
-        return p.isNotEmpty && p[0] == normalized;
-      });
-      if (has) surahsWithWord.add(i);
-    }
+    setState(() { _isLoading = true; _totalSurahsToSearch = 114; });
 
-    if (mounted) {
-      setState(() {
-        _totalSurahsToSearch = surahsWithWord.length;
-        _isLoading = surahsWithWord.isNotEmpty;
-      });
-    }
+    for (int surahId = 1; surahId <= 114; surahId++) {
+      final verseCount = quran.getVerseCount(surahId);
+      final List<OccurrenceEntry> newEntries = [];
 
-    if (surahsWithWord.isEmpty) {
-      if (mounted) setState(() => _isLoading = false);
-      return;
-    }
+      for (int ayah = 1; ayah <= verseCount; ayah++) {
+        String verse = quran.getVerse(surahId, ayah);
+        if (ayah == 1 && surahId != 1 && surahId != 9) {
+          final parts = verse.split(' ');
+          if (parts.length > 4) verse = parts.skip(4).join(' ');
+        }
+        final words = verse.split(' ')
+            .where((w) => w.trim().isNotEmpty).toList();
+        bool found = false;
+        final List<WordToken> tokens = [];
 
-    // Step 2: For each surah, read verse data from local cache
-    // We saved verse-level data in surah_word_counts, but we need
-    // ayah text — fetch from API only for matching surahs (much fewer calls)
-    for (final surahId in surahsWithWord) {
-      try {
-        final url =
-            'https://api.qurancdn.com/api/qdc/verses/by_chapter/$surahId'
-            '?words=true&word_fields=text_uthmani'
-            '&word_translation_language=ur&per_page=300&page=1';
-        final response = await http.get(Uri.parse(url));
-        if (response.statusCode != 200) {
-          if (mounted) setState(() => _loadedSurahs++);
-          continue;
+        for (final w in words) {
+          final isMatch = WordProgressService.normalizeArabic(w) == normalized;
+          if (isMatch) found = true;
+          tokens.add(WordToken(arabic: w, isHighlighted: isMatch));
         }
 
-        final data = json.decode(response.body);
-        final verses = data['verses'] as List;
-        final List<OccurrenceEntry> newEntries = [];
-
-        for (final verse in verses) {
-          final ayahNum = verse['verse_number'] as int;
-          final wordsJson = verse['words'] as List;
-          bool found = false;
-          final List<WordToken> tokens = [];
-
-          for (final w in wordsJson) {
-            if (w['char_type_name'] == 'end') continue;
-            final arabic = (w['text_uthmani'] ?? '') as String;
-            final isMatch =
-                WordProgressService.normalizeArabic(arabic) == normalized;
-            if (isMatch) found = true;
-            tokens.add(WordToken(arabic: arabic, isHighlighted: isMatch));
-          }
-          if (found) {
-            newEntries.add(OccurrenceEntry(
-              surahId: surahId,
-              ayahNumber: ayahNum,
-              tokens: tokens,
-            ));
-          }
+        if (found) {
+          newEntries.add(OccurrenceEntry(
+            surahId: surahId,
+            ayahNumber: ayah,
+            tokens: tokens,
+          ));
         }
-
-        // Show results immediately as each surah loads
-        if (mounted) {
-          setState(() {
-            _occurrences.addAll(newEntries);
-            _loadedSurahs++;
-            if (_loadedSurahs >= _totalSurahsToSearch) {
-              _isLoading = false;
-            }
-          });
-        }
-      } catch (_) {
-        if (mounted) setState(() => _loadedSurahs++);
       }
+
+      if (newEntries.isNotEmpty && mounted) {
+        setState(() {
+          _occurrences.addAll(newEntries);
+          _loadedSurahs = surahId;
+        });
+      } else if (mounted) {
+        setState(() => _loadedSurahs = surahId);
+      }
+
+      // Yield every 5 surahs
+      if (surahId % 5 == 0) await Future.delayed(Duration.zero);
     }
 
     if (mounted) setState(() => _isLoading = false);
   }
+
+  // Future<void> _loadOccurrences() async {
+  //   final prefs = await SharedPreferences.getInstance();
+  //   final normalized = WordProgressService.normalizeArabic(widget.word.arabic);
+
+  //   // Step 1: Find which surahs contain this word from local cache
+  //   final List<int> surahsWithWord = [];
+  //   for (int i = 1; i <= 114; i++) {
+  //     final raw = prefs.getStringList('surah_word_counts_$i');
+  //     if (raw == null) continue;
+  //     final has = raw.any((e) {
+  //       final p = e.split('|||');
+  //       return p.isNotEmpty && p[0] == normalized;
+  //     });
+  //     if (has) surahsWithWord.add(i);
+  //   }
+
+  //   if (mounted) {
+  //     setState(() {
+  //       _totalSurahsToSearch = surahsWithWord.length;
+  //       _isLoading = surahsWithWord.isNotEmpty;
+  //     });
+  //   }
+
+  //   if (surahsWithWord.isEmpty) {
+  //     if (mounted) setState(() => _isLoading = false);
+  //     return;
+  //   }
+
+  //   // Step 2: For each surah, read verse data from local cache
+  //   // We saved verse-level data in surah_word_counts, but we need
+  //   // ayah text — fetch from API only for matching surahs (much fewer calls)
+  //   for (final surahId in surahsWithWord) {
+  //     try {
+  //       final url =
+  //           'https://api.qurancdn.com/api/qdc/verses/by_chapter/$surahId'
+  //           '?words=true&word_fields=text_uthmani'
+  //           '&word_translation_language=ur&per_page=300&page=1';
+  //       final response = await http.get(Uri.parse(url));
+  //       if (response.statusCode != 200) {
+  //         if (mounted) setState(() => _loadedSurahs++);
+  //         continue;
+  //       }
+
+  //       final data = json.decode(response.body);
+  //       final verses = data['verses'] as List;
+  //       final List<OccurrenceEntry> newEntries = [];
+
+  //       for (final verse in verses) {
+  //         final ayahNum = verse['verse_number'] as int;
+  //         final wordsJson = verse['words'] as List;
+  //         bool found = false;
+  //         final List<WordToken> tokens = [];
+
+  //         for (final w in wordsJson) {
+  //           if (w['char_type_name'] == 'end') continue;
+  //           final arabic = (w['text_uthmani'] ?? '') as String;
+  //           final isMatch =
+  //               WordProgressService.normalizeArabic(arabic) == normalized;
+  //           if (isMatch) found = true;
+  //           tokens.add(WordToken(arabic: arabic, isHighlighted: isMatch));
+  //         }
+  //         if (found) {
+  //           newEntries.add(OccurrenceEntry(
+  //             surahId: surahId,
+  //             ayahNumber: ayahNum,
+  //             tokens: tokens,
+  //           ));
+  //         }
+  //       }
+
+  //       // Show results immediately as each surah loads
+  //       if (mounted) {
+  //         setState(() {
+  //           _occurrences.addAll(newEntries);
+  //           _loadedSurahs++;
+  //           if (_loadedSurahs >= _totalSurahsToSearch) {
+  //             _isLoading = false;
+  //           }
+  //         });
+  //       }
+  //     } catch (_) {
+  //       if (mounted) setState(() => _loadedSurahs++);
+  //     }
+  //   }
+
+  //   if (mounted) setState(() => _isLoading = false);
+  // }
 
   void _openSurah(OccurrenceEntry o) {
     final surah = Surah(

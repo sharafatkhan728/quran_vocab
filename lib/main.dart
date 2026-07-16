@@ -14,18 +14,27 @@ import 'screens/profile_settings_screen.dart';
 import 'services/morphology_service.dart';
 import 'services/quran_cache_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'services/word_glossary_service.dart';
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
   await SharedPreferences.getInstance();
   await TranslationService.init();
+  await WordGlossaryService.init();
   // Initialize theme before showing UI to prevent flash
   final themeProvider = ThemeProvider();
   await Future.delayed(const Duration(milliseconds: 100)); // let prefs load
-  MorphologyService.initialize();
-  QuranCacheService.initialize();
-  QuranCacheService.buildWordIndex(); // background, no await
+
+  debugPrint('>>> Starting MorphologyService init');
+  await MorphologyService.initialize();
+  debugPrint('>>> MorphologyService done');
+  // Build word index in background
+  QuranCacheService.buildWordIndex();
+  debugPrint('>>> App starting');
+
+
   runApp(
     MultiProvider(
       providers: [

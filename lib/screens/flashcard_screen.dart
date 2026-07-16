@@ -222,16 +222,19 @@ class _FlashcardScreenState extends State<FlashcardScreen>
         setState(() => _loading = false);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No more new words available')));
+              const SnackBar(content: Text('No more new words available')));
         }
         return;
       }
       final cards = _buildCards(extra.words, freq);
       if (mounted) {
         setState(() {
-          _cards = cards; _currentIndex = 0;
-          _loading = false; _sessionDone = false;
-          _isFlipped = false; _hasBeenFlipped = false;
+          _cards = cards;
+          _currentIndex = 0;
+          _loading = false;
+          _sessionDone = false;
+          _isFlipped = false;
+          _hasBeenFlipped = false;
         });
         _entryCtrl.reset();
         _entryCtrl.forward();
@@ -297,8 +300,13 @@ class _FlashcardScreenState extends State<FlashcardScreen>
 
     if (result.isEmpty) {
       if (mounted) {
-        setState(() { _loading = false; _sessionDone = false; _cards = []; });
-        WidgetsBinding.instance.addPostFrameCallback((_) => _showLoadMoreWarning());
+        setState(() {
+          _loading = false;
+          _sessionDone = false;
+          _cards = [];
+        });
+        WidgetsBinding.instance
+            .addPostFrameCallback((_) => _showLoadMoreWarning());
       }
       return;
     }
@@ -466,7 +474,6 @@ class _FlashcardScreenState extends State<FlashcardScreen>
           arabic: _current.arabic,
           urduMeaning: _current.urdu,
           transliteration: _current.transliteration,
-          wordType: '',
         ),
         surahId: _current.sampleSurah > 0 ? _current.sampleSurah : 1,
         ayahId: _current.sampleAyahNum > 0 ? _current.sampleAyahNum : 1,

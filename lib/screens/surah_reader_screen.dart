@@ -1,7 +1,5 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import 'package:quran/quran.dart' as quran;
 import '../models/word.dart';
 import '../models/surah.dart';
@@ -16,6 +14,7 @@ import '../services/translation_service.dart';
 import 'package:flutter/services.dart';
 import '../data/ruku_data.dart';
 import '../services/morphology_service.dart';
+import '../services/word_glossary_service.dart';
 
 class SurahReaderScreen extends StatefulWidget {
   final Surah surah;
@@ -25,6 +24,7 @@ class SurahReaderScreen extends StatefulWidget {
   @override
   State<SurahReaderScreen> createState() => _SurahReaderScreenState();
 }
+
 //
 class _SurahReaderScreenState extends State<SurahReaderScreen> {
   bool _mushafMode = false;
@@ -68,26 +68,58 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
   //bool get _showBismillahHeader => widget.surah.id != 9;
   bool get _showBismillahHeader => widget.surah.id != 9 && widget.surah.id != 1;
 
+  late VoidCallback _scrollPositionListener;
+
+  @override
+  void dispose() {
+    _itemPositionsListener.itemPositions.removeListener(
+      _scrollPositionListener,
+    );
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
-    _loadKnownWords().then((_) => _fetchFromApi());
+    _initData();
     _loadBookmarks();
     _loadLastRead();
-    _itemPositionsListener.itemPositions.addListener(() {
+    _scrollPositionListener = () {
       final positions = _itemPositionsListener.itemPositions.value;
       if (positions.isEmpty) return;
-      final first = positions
-          .where((p) => p.itemLeadingEdge >= 0)
-          .fold<ItemPosition?>(
-              null,
-              (prev, curr) =>
-                  prev == null || curr.index < prev.index ? curr : prev);
+      final first =
+          positions.where((p) => p.itemLeadingEdge >= 0).fold<ItemPosition?>(
+                null,
+                (prev, curr) =>
+                    prev == null || curr.index < prev.index ? curr : prev,
+              );
       if (first != null && first.index > 0) {
         _saveLastRead(first.index);
       }
-    });
+    };
+    _itemPositionsListener.itemPositions.addListener(
+      _scrollPositionListener,
+    );
     _loadScholar().then((_) => _loadAllTranslationsInstant());
+  }
+
+  Future<void> _initData() async {
+    await Future.wait([
+      _loadKnownWords(),
+      _loadUrduLookup(),
+    ]);
+
+    await _loadFromLocal();
+  }
+
+  Map<String, String> _urduLookup = {}; // normalized word → urdu (fallback)
+  Map<String, String> _glossaryLookup = {}; // "ayah:pos" → meaning (primary)
+
+  Future<void> _loadUrduLookup() async {
+    // Primary source: bundled glossary by position (instant)
+    _glossaryLookup = WordGlossaryService.getSurahLookup(widget.surah.id);
+    // Skip prefs scan entirely — glossary covers all words
+    // urduLookup stays empty, fallback only used when glossary missing
   }
 
   Future<void> _loadLastRead() async {
@@ -192,52 +224,52 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        child: Directionality(
-          textDirection: TextDirection.rtl,
-          child: SizedBox(
-            width: double.infinity,
-            child: Wrap(
-              alignment: WrapAlignment.start,
-              crossAxisAlignment: WrapCrossAlignment.end,
-              textDirection: TextDirection.rtl,
-              spacing: 0,
-              runSpacing: 4,
-              children: [
-            // Words
-            ...words.map((word) => GestureDetector(
-                  onTap: () => _showWordDetail(word),
-                  onLongPress: () => _onWordLongPress(word),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 2),
-                    child: AnimatedOpacity(
-                      opacity: word.isKnown ? 0.35 : 1.0,
-                      duration: const Duration(milliseconds: 300),
-                      child: Text(
-                        word.arabic,
-                        textDirection: TextDirection.rtl,
-                        style: _mushafWordStyle(isDark, theme),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: Directionality(
+            textDirection: TextDirection.rtl,
+            child: SizedBox(
+              width: double.infinity,
+              child: Wrap(
+                alignment: WrapAlignment.start,
+                crossAxisAlignment: WrapCrossAlignment.start,
+                textDirection: TextDirection.rtl,
+                spacing: 0,
+                runSpacing: 4,
+                children: [
+                  // Words
+                  ...words.map((word) => GestureDetector(
+                        onTap: () => _showWordDetail(word),
+                        onLongPress: () => _onWordLongPress(word),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 2),
+                          child: AnimatedOpacity(
+                            opacity: word.isKnown ? 0.35 : 1.0,
+                            duration: const Duration(milliseconds: 300),
+                            child: Text(
+                              word.arabic,
+                              textDirection: TextDirection.rtl,
+                              style: _mushafWordStyle(isDark, theme),
+                            ),
+                          ),
+                        ),
+                      )),
+                  // Ayah end marker ﴾number﴿
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Text(
+                      ' ﴿${_toArabicNumeral(ayahNum)}﴾',
+                      textDirection: TextDirection.rtl,
+                      style: TextStyle(
+                        fontFamily: 'AmiriQuran',
+                        fontSize: _arabicFontSize - 4,
+                        color: const Color(0xFFD4AF37),
                       ),
                     ),
                   ),
-                )),
-              // Ayah end marker ﴾number﴿
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Text(
-                ' ﴿${_toArabicNumeral(ayahNum)}﴾',
-                textDirection: TextDirection.rtl,
-                style: TextStyle(
-                  fontFamily: 'AmiriQuran',
-                  fontSize: _arabicFontSize - 4,
-                  color: const Color(0xFFD4AF37),
-                ),
+                ],
               ),
             ),
-          ],
-        ),
-      ),
-       ) ),
+          )),
     );
   }
 
@@ -265,29 +297,6 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
     return n.toString().split('').map((d) => numerals[int.parse(d)]).join();
   }
 
-  Future<void> _preloadAllTranslations() async {
-    try {
-      final url =
-          'https://api.alquran.cloud/v1/surah/${widget.surah.id}/$_selectedScholar';
-      final res =
-          await http.get(Uri.parse(url)).timeout(const Duration(seconds: 10));
-      if (res.statusCode == 200) {
-        final data = json.decode(res.body);
-        final ayahs = data['data']['ayahs'] as List;
-        final prefs = await SharedPreferences.getInstance();
-        final Map<String, String> newTranslations = {};
-        for (final a in ayahs) {
-          final num = a['numberInSurah'] as int;
-          final text = a['text'] as String;
-          final cacheKey = 'trans_${_selectedScholar}_${widget.surah.id}_$num';
-          await prefs.setString(cacheKey, text);
-          newTranslations['$num'] = text;
-        }
-        if (mounted) setState(() => _ayahTranslations.addAll(newTranslations));
-      }
-    } catch (_) {}
-  }
-
   void _showScholarPicker() {
     showModalBottomSheet(
       context: context,
@@ -308,42 +317,20 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
                     ? const Icon(Icons.check, color: Color(0xFF1B4332))
                     : null,
                 onTap: () async {
-                  Navigator.pop(sheetContext); // close sheet first, only once
+                  Navigator.pop(sheetContext);
                   await TranslationService.setScholar(e.key);
                   if (!mounted) return;
                   setState(() {
                     _selectedScholar = e.key;
                     _ayahTranslations.clear();
                   });
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Row(
-                        children: [
-                          SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: Colors.white)),
-                          SizedBox(width: 12),
-                          Text('Switching translation...'),
-                        ],
-                      ),
-                      duration: Duration(seconds: 2),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                  _preloadAllTranslations();
+                  _loadAllTranslationsInstant();
                 },
               )),
           const SizedBox(height: 16),
         ],
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
   }
 
   // Islamic standard verse counts — matches any printed Quran
@@ -354,164 +341,76 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
     if (mounted) setState(() => _knownNormalizedWords = known);
   }
 
-// Fetch all ayahs from Quran.com API using correct Islamic numbering
-  Future<void> _fetchFromApi() async {
+  Future<void> _loadFromLocal() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
-    try {
-      // Fetch all verses of this surah in one API call
-      final url =
-          'https://api.qurancdn.com/api/qdc/verses/by_chapter/${widget.surah.id}'
-          '?words=true'
-          '&word_fields=text_uthmani,translation,transliteration'
-          '&word_translation_language=ur'
-          //'&per_page=300'; // get all at once
-          '&per_page=300&page=1'; // get all at once
 
-      final response = await http.get(Uri.parse(url));
+    final verseCount = quran.getVerseCount(widget.surah.id);
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final verses = data['verses'] as List;
+    // Build all words off the main thread using compute
+    // For now: batch in chunks to keep UI alive
+    final batchSize = 50;
+    for (int start = 1; start <= verseCount; start += batchSize) {
+      final end = (start + batchSize - 1).clamp(1, verseCount);
 
-        for (final verse in verses) {
-          final ayahNum = verse['verse_number'] as int;
-          final displayAyah = ayahNum;
+      final Map<int, List<QuranWord>> batch = {};
+      for (int ayah = start; ayah <= end; ayah++) {
+        batch[ayah] = MorphologyService.buildAyahWords(
+          widget.surah.id,
+          ayah,
+          _knownNormalizedWords,
+          urduLookup: _urduLookup,
+          glossaryLookup: _glossaryLookup,
+        );
+      }
 
-          final wordsJson = verse['words'] as List;
-          final words = wordsJson
-              .where((w) => w['char_type_name'] != 'end') // skip ۝ glyph
-              .map((w) {
-            final wordId = '${widget.surah.id}:$ayahNum:${w['position']}';
-            final arabicText = (w['text_uthmani'] ?? w['text'] ?? '') as String;
-         
+      if (!mounted) return;
+      setState(() => _ayahCache.addAll(batch));
 
-            final normalized = WordProgressService.normalizeArabic(arabicText);
-            final urduMeaning = (w['translation']?['text'] ?? '') as String;
-            // Save urdu meaning for vocabulary screen
-            WordProgressService.saveWordUrdu(normalized, urduMeaning);
-            WordProgressService.saveWordOriginal(normalized, arabicText);
-            //<<<<<<<<
-            final position = w['position'] as int;
+      // Yield to UI thread between batches
+      await Future.delayed(Duration.zero);
+    }
 
-            return QuranWord(
-              id: wordId,
-              arabic: arabicText,
-              urduMeaning: urduMeaning,
-              transliteration: (w['transliteration']?['text'] ?? '') as String,
-              wordType: MorphologyService.getWordType(
-                widget.surah.id,
-                ayahNum,
-                position,
-              ),
-              isKnown: _knownNormalizedWords.contains(normalized),
-            );
-          }).toList();
+    if (!mounted) return;
+    setState(() {
+      _totalAyahs = verseCount;
+      _isLoading = false;
+    });
 
-          if (mounted) {
-            setState(() => _ayahCache[displayAyah] = words);
-          }
-        }
-        //.........
+    // Save word data in background
+    _saveWordData();
 
-        // Save total unique words for this surah immediately after loading
-        final allWords = _ayahCache.values
-            .expand((words) => words)
-            .map((w) => WordProgressService.normalizeArabic(w.arabic))
-            .toSet();
-        // Save this surah's word list for cross-surah progress tracking
-        WordProgressService.saveSurahWordList(widget.surah.id, allWords);
-        // Save word occurrence counts for frequency calculation
+    if (widget.jumpToAyah != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _itemScrollController.jumpTo(index: widget.jumpToAyah!, alignment: 0.0);
+      });
+    }
+  } //<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+  void _saveWordData() {
+    // Fire and forget — never block UI
+    Future(() async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final allWords = <String>{};
         final wordCounts = <String, int>{};
+
         for (final words in _ayahCache.values) {
           for (final w in words) {
             final norm = WordProgressService.normalizeArabic(w.arabic);
+            allWords.add(norm);
             wordCounts[norm] = (wordCounts[norm] ?? 0) + 1;
+            if (w.urduMeaning.isNotEmpty) {
+              prefs.setString('urdu_$norm', w.urduMeaning);
+              prefs.setString('orig_$norm', w.arabic);
+            }
           }
         }
-        WordProgressService.saveSurahWordCounts(widget.surah.id, wordCounts);
-
-        // Also update known count immediately
-        final knownCount = _ayahCache.values
-            .expand((words) => words)
-            .where((w) => w.isKnown)
-            .map((w) => WordProgressService.normalizeArabic(w.arabic))
-            .toSet()
-            .length;
-        WordProgressService.updateSurahKnownCount(widget.surah.id, knownCount);
-
-        if (mounted) {
-          setState(() => _totalAyahs = _ayahCache.keys.length);
-        }
-      } else {
-        debugPrint('SurahReader: API status error ${response.statusCode}');
-        _buildFallback();
-      }
-    } catch (e) {
-      debugPrint('SurahReader: fetch error $e');
-
-      if (mounted) {
-        _buildFallback();
-
-        setState(() {
-          _totalAyahs = _ayahCache.keys.length;
-        });
-        // Preload all translations in background
-        _preloadAllTranslations();
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-
-        // Preload all translations for this surah in background
-        // TranslationService.preloadSurahTranslations(widget.surah.id);
-
-        if (widget.jumpToAyah != null) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _itemScrollController.jumpTo(
-              index: widget
-                  .jumpToAyah!, // index = ayah number (index 0 = bismillah)
-              alignment: 0.0,
-            );
-          });
-        }
-      }
-    }
-  }
-
-//...................................................................
-
-  void _buildFallback() {
-    debugPrint('SurahReader: using fallback, totalAyahs=$_totalAyahs');
-    if (_totalAyahs == 0) {
-      _totalAyahs = quran.getVerseCount(widget.surah.id);
-    }
-    debugPrint('SurahReader: fallback totalAyahs set to $_totalAyahs');
-    for (int ayah = 1; ayah <= _totalAyahs; ayah++) {
-      if (_ayahCache.containsKey(ayah)) continue;
-      try {
-        final arabicText = quran.getVerse(widget.surah.id, ayah);
-        final urduText = quran.getVerseTranslation(
-          widget.surah.id,
-          ayah,
-          translation: quran.Translation.urdu,
-        );
-        final arabicWords = arabicText.split(' ');
-        final urduWords = urduText.split(' ');
-        _ayahCache[ayah] = List.generate(arabicWords.length, (i) {
-          final wordId = '${widget.surah.id}:$ayah:${i + 1}';
-          final normalized =
-              WordProgressService.normalizeArabic(arabicWords[i]);
-          return QuranWord(
-            id: wordId,
-            arabic: arabicWords[i],
-            urduMeaning: i < urduWords.length ? urduWords[i] : '',
-            wordType: '',
-            isKnown: _knownNormalizedWords.contains(normalized),
-          );
-        });
+        await WordProgressService.saveSurahWordList(widget.surah.id, allWords);
+        await WordProgressService.saveSurahWordCounts(
+            widget.surah.id, wordCounts);
       } catch (_) {}
-    }
-    if (mounted) setState(() {});
+    });
   }
 
   Future<void> _onWordLongPress(QuranWord word) async {
@@ -535,7 +434,7 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
                 arabic: w.arabic,
                 urduMeaning: w.urduMeaning,
                 transliteration: w.transliteration,
-                wordType: w.wordType,
+                segments: w.segments,
                 isKnown: nowKnown,
               );
             }
@@ -681,6 +580,51 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
                     ),
                   ],
                 ),
+              ),
+              const SizedBox(height: 16),
+              Text('Word Meaning Language',
+                  style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: WordGlossaryService.glossaries.entries.map((e) {
+                  final selected = WordGlossaryService.selectedLang == e.key;
+                  return GestureDetector(
+                    onTap: () async {
+                      await WordGlossaryService.setLanguage(e.key);
+                      if (!mounted) return;
+                      setState(() {
+                        _glossaryLookup =
+                            WordGlossaryService.getSurahLookup(widget.surah.id);
+                      });
+                      await _loadFromLocal(); // rebuild all words with new language
+                      setModal(() {});
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? const Color(0xFF1B4332)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: selected
+                              ? const Color(0xFF1B4332)
+                              : Colors.grey.shade300,
+                        ),
+                      ),
+                      child: Text(e.value.name,
+                          style: TextStyle(
+                              color: selected ? Colors.white : Colors.grey,
+                              fontSize: 12,
+                              fontWeight: selected
+                                  ? FontWeight.bold
+                                  : FontWeight.normal)),
+                    ),
+                  );
+                }).toList(),
               ),
               const SizedBox(height: 24),
             ],
@@ -1163,52 +1107,34 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
                                         crossAxisAlignment:
                                             CrossAxisAlignment.end,
                                         children: [
-                                          
-                                          // Wrap(
-                                          //   alignment: WrapAlignment.end,
-                                          //   crossAxisAlignment: WrapCrossAlignment.end,
-                                          //   textDirection: TextDirection.rtl,
-                                          //   children: words
-                                          //       .map((word) => WordTile(
-                                          //             word: word,
-                                          //             arabicFontSize:
-                                          //                 _arabicFontSize,
-                                          //             urduFontSize:
-                                          //                 _urduFontSize,
-                                          //             onLongPress: () =>
-                                          //                 _onWordLongPress(
-                                          //                     word),
-                                          //             onTap: () =>
-                                          //                 _showWordDetail(word),
-                                          //           ))
-                                          //       .toList(),
-                                          // ),
-
-
                                           Directionality(
                                             textDirection: TextDirection.rtl,
                                             child: SizedBox(
                                               width: double.infinity,
                                               child: Wrap(
                                                 alignment: WrapAlignment.start,
-                                                crossAxisAlignment: WrapCrossAlignment.end,
-                                                textDirection: TextDirection.rtl,
+                                                crossAxisAlignment:
+                                                    WrapCrossAlignment.start,
+                                                textDirection:
+                                                    TextDirection.rtl,
                                                 children: words
                                                     .map((word) => WordTile(
                                                           word: word,
-                                                          arabicFontSize: _arabicFontSize,
-                                                          urduFontSize: _urduFontSize,
-                                                          onLongPress: () => _onWordLongPress(word),
-                                                          onTap: () => _showWordDetail(word),
+                                                          arabicFontSize:
+                                                              _arabicFontSize,
+                                                          urduFontSize:
+                                                              _urduFontSize,
+                                                          onLongPress: () =>
+                                                              _onWordLongPress(
+                                                                  word),
+                                                          onTap: () =>
+                                                              _showWordDetail(
+                                                                  word),
                                                         ))
                                                     .toList(),
                                               ),
                                             ),
                                           ),
-
-
-
-
                                           if (_showTranslation)
                                             Builder(builder: (ctx) {
                                               _loadTranslation(ayahNum);
