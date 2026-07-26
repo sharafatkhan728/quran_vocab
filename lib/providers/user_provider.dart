@@ -6,7 +6,7 @@ import '../services/sync_service.dart';
 class UserProvider extends ChangeNotifier {
   User? _user;
   Map<String, dynamic> _profile = {};
-  final bool _restoring = false;
+  bool _restoring = false;
 
   User? get user => _user;
   Map<String, dynamic> get profile => _profile;
@@ -21,29 +21,43 @@ class UserProvider extends ChangeNotifier {
 
   UserProvider() {
     FirebaseAuth.instance.authStateChanges().listen((user) async {
-      final wasLoggedOut = _user == null;
+      final previousUid = _user?.uid;
       _user = user;
       if (user != null) {
-        _loadProfile();
-        // Restore data from cloud on first login or account switch
-      
-        if (wasLoggedOut) {
-          // Run cloud restore in background
-          SyncService.syncDown();
+        if (previousUid != user.uid) {
+          _profile = {};
         }
+        _loadProfile(user.uid);
+        // Restore data from cloud on first login or account switch
+
+        if (previousUid != user.uid) {
+          _restoring = true;
+          notifyListeners();
+          try {
+            await SyncService.syncDown();
+          } finally {
+            if (_user?.uid == user.uid) {
+              _restoring = false;
+              notifyListeners();
+            }
+          }
+        }
+      }
+      if (user == null) {
+        _profile = {};
+        _restoring = false;
       }
       notifyListeners();
     });
   }
 
-  Future<void> _loadProfile() async {
-    if (_user == null) return;
+  Future<void> _loadProfile(String uid) async {
     try {
       final doc = await FirebaseFirestore.instance
           .collection('users')
-          .doc(_user!.uid)
+          .doc(uid)
           .get();
-      if (doc.exists) {
+      if (doc.exists && _user?.uid == uid) {
         _profile = doc.data() ?? {};
         notifyListeners();
       }

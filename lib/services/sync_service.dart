@@ -2,18 +2,8 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-
-/// Syncs all user learning data between SharedPreferences (local) and
-/// Firestore (cloud). Uses a debounce so rapid word taps only trigger
-/// one write instead of many.
-///
-/// Firestore structure:
-///   users/{uid}/progress/known_words   → {word: true, ...}
-///   users/{uid}/progress/srs_cards     → {word: "stage|date|ease|...", ...}
-///   users/{uid}/progress/daily_stats   → {date: count, ...}
-///   users/{uid}/progress/surah_data    → {surah_words_1: [...], ...}
-///   users/{uid}/progress/meta          → {lastSync: timestamp, ...}
+import 'package:sqflite/sqflite.dart';
+import '../database/database_manager.dart';
 
 class SyncService {
   SyncService._();
@@ -21,8 +11,8 @@ class SyncService {
   static final _db = FirebaseFirestore.instance;
   static Timer? _debounceTimer;
   static bool _syncing = false;
+  static bool _syncQueued = false;
 
-  // Stream controller so UI can show sync status
   static final _statusCtrl = StreamController<SyncStatus>.broadcast();
   static Stream<SyncStatus> get statusStream => _statusCtrl.stream;
   static SyncStatus _lastStatus = SyncStatus.idle;
@@ -36,95 +26,104 @@ class SyncService {
   // ── Public API ─────────────────────────────────────────────────────────────
 
   /// Call after any word toggle or SRS card update.
-  /// Waits 3 seconds of inactivity before actually writing to Firestore.
+  /// Waits 3 seconds of inactivity before writing to Firestore.
   static void scheduleSyncUp() {
     _debounceTimer?.cancel();
     _debounceTimer = Timer(const Duration(seconds: 3), () => syncUp());
   }
 
-  /// Push all local data to Firestore immediately.
+  /// Push all local SQLite user data to Firestore.
   static Future<void> syncUp() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    if (_syncing) return;
+    if (_syncing) {
+      _syncQueued = true;
+      return;
+    }
     _syncing = true;
     _emit(SyncStatus.syncing);
-
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final allKeys = prefs.getKeys();
+      final db = await DatabaseManager.db;
 
       // ── 1. Known words ────────────────────────────────────────────────────
-      final knownWords = <String, bool>{};
-      for (final k in allKeys) {
-        if (k.startsWith('known_word_')) {
-          final word = k.replaceFirst('known_word_', '');
-          knownWords[word] = true;
-        }
-      }
+      final knownRows = await db.rawQuery('''
+        SELECT v.arabic_clean
+        FROM known_words k
+        JOIN vocab_words v ON v.id = k.vocab_word_id
+      ''');
+      final knownWords = <String, bool>{
+        for (final r in knownRows) r['arabic_clean'] as String: true,
+      };
 
       // ── 2. SRS cards ──────────────────────────────────────────────────────
+      // Encode as "stage|nextSession|easeFactor|failCount|totalReviews|lastResult"
+      final srsRows = await db.query('srs_cards', where: 'is_deleted = 0');
       final srsCards = <String, String>{};
-      for (final k in allKeys) {
-        if (k.startsWith('srs_') &&
-            !k.contains('srs_total_points') &&
-            !k.contains('srs_initialized') &&
-            !k.contains('srs_session') &&
-            !k.contains('srs_today')) {
-          srsCards[k.replaceFirst('srs_', '')] = prefs.getString(k) ?? '';
-        }
+      for (final r in srsRows) {
+        final id = (r['vocab_word_id'] as int).toString();
+        srsCards[id] =
+            '${r['stage']}|${r['next_review_session']}|${r['ease_factor']}'
+            '|${r['fail_count']}|${r['total_reviews']}|${r['last_result']}';
       }
 
       // ── 3. Daily stats (last 90 days) ─────────────────────────────────────
-      final dailyStats = <String, int>{};
-      for (final k in allKeys) {
-        if (k.startsWith('daily_')) {
-          dailyStats[k] = prefs.getInt(k) ?? 0;
-        }
-      }
+      final today = DateTime.now();
+      final cutoff = today.subtract(const Duration(days: 90));
+      final cutoffKey =
+          '${cutoff.year}-${cutoff.month.toString().padLeft(2, '0')}-'
+          '${cutoff.day.toString().padLeft(2, '0')}';
+      final dailyRows = await db.query('daily_stats',
+          where: 'date_key >= ?', whereArgs: [cutoffKey]);
+      final dailyStats = <String, int>{
+        for (final r in dailyRows)
+          r['date_key'] as String: (r['words_learned'] as int? ?? 0),
+      };
 
-      // ── 4. Surah word lists only (skip urdu/orig — rebuilt on read) ──────
-      final surahData = <String, dynamic>{};
-      for (final k in allKeys) {
-        if (k.startsWith('surah_words_')) {
-          surahData[k] = prefs.getStringList(k) ?? [];
-        }
-        if (k.startsWith('surah_word_counts_')) {
-          surahData[k] = prefs.getStringList(k) ?? [];
-        }
-        // Skip urdu_ and orig_ keys — they are large and rebuilt automatically
-        // when the user opens surahs. Syncing them risks Firestore field limits.
-      }
+      // ── 4. Reading progress ───────────────────────────────────────────────
+      final progressRows = await db.query('reading_progress');
+      final readingProgress = <String, int>{
+        for (final r in progressRows)
+          (r['surah_id'] as int).toString(): (r['last_ayah'] as int? ?? 0),
+      };
 
-      // ── 5. Meta ───────────────────────────────────────────────────────────
-      final srsPoints = prefs.getInt('srs_total_points') ?? 0;
-      final longestStreak = prefs.getInt('longest_streak') ?? 0;
+      // ── 5. Bookmarks ──────────────────────────────────────────────────────
+      final bookmarkRows = await db.query('bookmarks');
+      final bookmarks = bookmarkRows
+          .map((r) => '${r['surah_id']}:${r['ayah_number']}')
+          .toList();
+
+      // ── 6. User meta ──────────────────────────────────────────────────────
+      final metaRows = await db.query('user_meta');
+      final srsPoints = _metaInt(metaRows, 'srs_total_points');
+      final longestStreak = _metaInt(metaRows, 'longest_streak');
+      final srsSessions = _metaInt(metaRows, 'srs_total_sessions');
 
       final ref = _db.collection('users').doc(uid).collection('progress');
-
-      // Firestore has 1MB doc limit — chunk large maps if needed
       final batch = _db.batch();
 
       batch.set(ref.doc('known_words'), knownWords);
       batch.set(ref.doc('srs_cards'), srsCards);
       batch.set(ref.doc('daily_stats'), dailyStats);
+      batch.set(ref.doc('reading_progress'), readingProgress);
+      batch.set(ref.doc('bookmarks'), {'list': bookmarks});
       batch.set(ref.doc('meta'), {
         'lastSync': FieldValue.serverTimestamp(),
         'srs_total_points': srsPoints,
         'longest_streak': longestStreak,
-        'srs_initialized': prefs.getBool('srs_initialized') ?? false,
-        'todayDate': prefs.getString('srs_today_date') ?? '',
-        'todayNew': prefs.getInt('srs_today_new') ?? 0,
+        'srs_total_sessions': srsSessions,
       });
 
       await batch.commit();
 
-      // Surah data can be large — write in a separate doc
-      // Split into chunks of 400 keys to stay under Firestore 1MB limit
-      final surahChunks = _chunkMap(surahData, 400);
-      for (int i = 0; i < surahChunks.length; i++) {
-        await ref.doc('surah_data_$i').set(surahChunks[i]);
-      }
+      // Store local sync timestamp in user_meta
+      await db.insert(
+        'user_meta',
+        {
+          'key': '_last_sync_ts',
+          'value': '${DateTime.now().millisecondsSinceEpoch}',
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
 
       _emit(SyncStatus.done);
     } catch (e) {
@@ -132,24 +131,26 @@ class SyncService {
       _emit(SyncStatus.error);
     } finally {
       _syncing = false;
+      if (_syncQueued) {
+        _syncQueued = false;
+        scheduleSyncUp();
+      }
     }
   }
 
-  /// Restore all data from Firestore to local SharedPreferences.
+  /// Restore all data from Firestore into local SQLite.
   /// Called on login. Will NOT overwrite local if local is newer.
   static Future<RestoreResult> syncDown() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return RestoreResult.noUser;
     _emit(SyncStatus.syncing);
-
     try {
       final ref = _db.collection('users').doc(uid).collection('progress');
-      final prefs = await SharedPreferences.getInstance();
+      final db = await DatabaseManager.db;
 
       // Check if cloud has any data at all
       final metaDoc = await ref.doc('meta').get();
       if (!metaDoc.exists) {
-        // No cloud data — upload what we have locally
         _emit(SyncStatus.idle);
         await syncUp();
         return RestoreResult.uploadedLocal;
@@ -157,85 +158,160 @@ class SyncService {
 
       final meta = metaDoc.data()!;
       final cloudTimestamp = meta['lastSync'] as Timestamp?;
-      final localLastSync = prefs.getInt('_last_sync_ts') ?? 0;
 
-      // If local data is newer than cloud, push local instead
+      // Compare cloud vs local timestamps
+      final localMetaRows = await db.query('user_meta',
+          where: 'key = ?', whereArgs: ['_last_sync_ts'], limit: 1);
+      final localLastSync = localMetaRows.isEmpty
+          ? 0
+          : int.tryParse(localMetaRows.first['value'] as String) ?? 0;
+
       if (cloudTimestamp != null) {
         final cloudMs = cloudTimestamp.millisecondsSinceEpoch;
         if (localLastSync > cloudMs) {
+          // Local is newer — push up instead
           _emit(SyncStatus.idle);
           await syncUp();
           return RestoreResult.uploadedLocal;
         }
       }
 
+      // Build vocab lookup once: arabic_clean → vocab_word_id
+      final vocabRows =
+          await db.query('vocab_words', columns: ['id', 'arabic_clean']);
+      final vocabMap = <String, int>{
+        for (final r in vocabRows)
+          r['arabic_clean'] as String: r['id'] as int,
+      };
+
+      final now = DateTime.now().millisecondsSinceEpoch;
+
       // ── Restore known words ───────────────────────────────────────────────
       final knownDoc = await ref.doc('known_words').get();
       if (knownDoc.exists) {
-        final data = knownDoc.data()!;
-        for (final entry in data.entries) {
-          await prefs.setBool('known_word_${entry.key}', true);
+        for (final entry in knownDoc.data()!.entries) {
+          final vocabId = vocabMap[entry.key];
+          if (vocabId == null) continue;
+          await db.insert(
+            'known_words',
+            {'vocab_word_id': vocabId, 'marked_at': now},
+            conflictAlgorithm: ConflictAlgorithm.ignore,
+          );
         }
       }
 
       // ── Restore SRS cards ─────────────────────────────────────────────────
       final srsDoc = await ref.doc('srs_cards').get();
       if (srsDoc.exists) {
-        final data = srsDoc.data()!;
-        for (final entry in data.entries) {
-          await prefs.setString('srs_${entry.key}', entry.value.toString());
+        for (final entry in srsDoc.data()!.entries) {
+          final vocabId = int.tryParse(entry.key);
+          if (vocabId == null) continue;
+          final parts = entry.value.toString().split('|');
+          await db.insert(
+            'srs_cards',
+            {
+              'vocab_word_id': vocabId,
+              'stage': int.tryParse(parts.elementAtOrNull(0) ?? '') ?? 0,
+              'next_review_session':
+                  int.tryParse(parts.elementAtOrNull(1) ?? '') ?? 0,
+              'ease_factor':
+                  double.tryParse(parts.elementAtOrNull(2) ?? '') ?? 2.5,
+              'fail_count':
+                  int.tryParse(parts.elementAtOrNull(3) ?? '') ?? 0,
+              'total_reviews':
+                  int.tryParse(parts.elementAtOrNull(4) ?? '') ?? 0,
+              'last_result':
+                  int.tryParse(parts.elementAtOrNull(5) ?? '') ?? -1,
+              'is_deleted': 0,
+              'created_at': now,
+              'updated_at': now,
+            },
+            conflictAlgorithm: ConflictAlgorithm.ignore,
+          );
         }
       }
 
       // ── Restore daily stats ───────────────────────────────────────────────
       final dailyDoc = await ref.doc('daily_stats').get();
       if (dailyDoc.exists) {
-        final data = dailyDoc.data()!;
-        for (final entry in data.entries) {
-          await prefs.setInt(entry.key, (entry.value as num).toInt());
+        for (final entry in dailyDoc.data()!.entries) {
+          await db.insert(
+            'daily_stats',
+            {
+              'date_key': entry.key,
+              'words_learned': (entry.value as num?)?.toInt() ?? 0,
+              'sessions': 0,
+              'points': 0,
+            },
+            conflictAlgorithm: ConflictAlgorithm.ignore,
+          );
         }
       }
 
-      // ── Restore meta ──────────────────────────────────────────────────────
-      await prefs.setInt(
-          'srs_total_points', (meta['srs_total_points'] as num?)?.toInt() ?? 0);
-      await prefs.setInt(
-          'longest_streak', (meta['longest_streak'] as num?)?.toInt() ?? 0);
-      await prefs.setBool(
-          'srs_initialized', meta['srs_initialized'] as bool? ?? false);
-      final todayDate = meta['todayDate'] as String?;
-      if (todayDate != null && todayDate.isNotEmpty) {
-        await prefs.setString('srs_today_date', todayDate);
-      }
-      final todayNew = meta['todayNew'];
-      if (todayNew != null) {
-        await prefs.setInt('srs_today_new', (todayNew as num).toInt());
-      }
-
-      // ── Restore surah data ────────────────────────────────────────────────
-      for (int i = 0; i < 5; i++) {
-        final surahDoc = await ref.doc('surah_data_$i').get();
-        if (!surahDoc.exists) break;
-        final data = surahDoc.data()!;
-        for (final entry in data.entries) {
-          final k = entry.key;
-          final v = entry.value;
-          if (k.startsWith('surah_words_') ||
-              k.startsWith('surah_word_counts_')) {
-            await prefs.setStringList(k, List<String>.from(v as List));
-          } else if (k.startsWith('urdu_') || k.startsWith('orig_')) {
-            await prefs.setString(k, v.toString());
-          }
+      // ── Restore reading progress ──────────────────────────────────────────
+      final progressDoc = await ref.doc('reading_progress').get();
+      if (progressDoc.exists) {
+        for (final entry in progressDoc.data()!.entries) {
+          final surahId = int.tryParse(entry.key);
+          final ayah = (entry.value as num?)?.toInt() ?? 0;
+          if (surahId == null || ayah == 0) continue;
+          await db.insert(
+            'reading_progress',
+            {
+              'surah_id': surahId,
+              'last_ayah': ayah,
+              'last_read_at': now,
+            },
+            conflictAlgorithm: ConflictAlgorithm.ignore,
+          );
         }
       }
 
-      // Save local timestamp so next restore can compare
-      await prefs.setInt(
-          '_last_sync_ts', DateTime.now().millisecondsSinceEpoch);
+      // ── Restore bookmarks ─────────────────────────────────────────────────
+      final bookmarkDoc = await ref.doc('bookmarks').get();
+      if (bookmarkDoc.exists) {
+        final list = bookmarkDoc.data()!['list'] as List? ?? [];
+        for (final b in list) {
+          final parts = b.toString().split(':');
+          if (parts.length < 2) continue;
+          final surahId = int.tryParse(parts[0]);
+          final ayahNum = int.tryParse(parts[1]);
+          if (surahId == null || ayahNum == null) continue;
+          await db.insert(
+            'bookmarks',
+            {
+              'surah_id': surahId,
+              'ayah_number': ayahNum,
+              'created_at': now,
+            },
+            conflictAlgorithm: ConflictAlgorithm.ignore,
+          );
+        }
+      }
+
+      // ── Restore user meta ─────────────────────────────────────────────────
+      final metaBatch = db.batch();
+      for (final entry in {
+        'srs_total_points':
+            '${(meta['srs_total_points'] as num?)?.toInt() ?? 0}',
+        'longest_streak':
+            '${(meta['longest_streak'] as num?)?.toInt() ?? 0}',
+        'srs_total_sessions':
+            '${(meta['srs_total_sessions'] as num?)?.toInt() ?? 0}',
+        '_last_sync_ts': '${DateTime.now().millisecondsSinceEpoch}',
+      }.entries) {
+        metaBatch.insert(
+          'user_meta',
+          {'key': entry.key, 'value': entry.value},
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      await metaBatch.commit(noResult: true);
 
       _emit(SyncStatus.done);
       return RestoreResult.restoredFromCloud;
     } catch (e) {
+      debugPrint('SyncService.syncDown error: $e');
       _emit(SyncStatus.error);
       return RestoreResult.error;
     }
@@ -258,17 +334,10 @@ class SyncService {
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
-  static List<Map<String, dynamic>> _chunkMap(
-      Map<String, dynamic> map, int chunkSize) {
-    final chunks = <Map<String, dynamic>>[];
-    final keys = map.keys.toList();
-    for (int i = 0; i < keys.length; i += chunkSize) {
-      final end = (i + chunkSize).clamp(0, keys.length);
-      final chunk = {for (final k in keys.sublist(i, end)) k: map[k]};
-      chunks.add(chunk);
-    }
-    if (chunks.isEmpty) chunks.add({});
-    return chunks;
+  static int _metaInt(List<Map<String, Object?>> rows, String key) {
+    final row = rows.where((r) => r['key'] == key).firstOrNull;
+    if (row == null) return 0;
+    return int.tryParse(row['value'] as String) ?? 0;
   }
 }
 

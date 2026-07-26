@@ -1,7 +1,10 @@
+// ignore_for_file: curly_braces_in_flow_control_structures, unused_local_variable
+
 import 'package:flutter/material.dart';
 import 'package:quran/quran.dart' as quran;
 import '../models/surah.dart';
 import '../services/word_progress_service.dart';
+import '../repositories/content_repository.dart';
 import 'surah_reader_screen.dart';
 import 'progress_screen.dart';
 import 'package:provider/provider.dart';
@@ -9,7 +12,7 @@ import '../providers/theme_provider.dart';
 import '../widgets/surah_search_delegate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'flashcard_screen.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'db_debug_screen.dart';
 
 class SurahListScreen extends StatefulWidget {
   const SurahListScreen({super.key});
@@ -21,8 +24,7 @@ class SurahListScreen extends StatefulWidget {
 class _SurahListScreenState extends State<SurahListScreen> {
   double _totalProgress = 0;
   Map<int, double> _surahProgress = {};
-  Map<int, int> _lastReadAyahs = {}; // surahId → ayahNum
-
+  Map<int, int> _lastReadAyahs = {};
   List<Map<String, dynamic>> _bookmarks = [];
 
   @override
@@ -34,26 +36,19 @@ class _SurahListScreenState extends State<SurahListScreen> {
   Future<void> _loadProgress() async {
     final progressPercent = await WordProgressService.getProgressPercent();
     final sp = await WordProgressService.getAllSurahProgress();
-    final prefs = await SharedPreferences.getInstance();
+
+    // ── Last-read positions from SQLite reading_progress ──────────────────
     final Map<int, int> lastRead = {};
     for (int i = 1; i <= 114; i++) {
-      final ayah = prefs.getInt('last_read_$i') ?? 0;
+      final ayah = await ContentRepository.getLastReadAyah(i);
       if (ayah > 1) lastRead[i] = ayah;
     }
     if (mounted) setState(() => _lastReadAyahs = lastRead);
 
-    final bList = prefs.getStringList('bookmarks') ?? [];
-    final bmarks = <Map<String, dynamic>>[];
-    for (final b in bList) {
-      final parts = b.split(':');
-      if (parts.length >= 2) {
-        final sid = int.tryParse(parts[0]) ?? 0;
-        final aid = int.tryParse(parts[1]) ?? 0;
-        bmarks.add(
-            {'surahId': sid, 'ayahId': aid, 'name': quran.getSurahName(sid)});
-      }
-    }
+    // ── Bookmarks from SQLite bookmarks table ─────────────────────────────
+    final bmarks = await ContentRepository.getAllBookmarks();
     if (mounted) setState(() => _bookmarks = bmarks);
+
     if (mounted) {
       setState(() {
         _totalProgress = progressPercent;
@@ -114,6 +109,11 @@ class _SurahListScreenState extends State<SurahListScreen> {
             ),
           ),
           IconButton(
+            icon: const Icon(Icons.bug_report),
+            onPressed: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const DbDebugScreen())),
+          ),
+          IconButton(
             icon: const Icon(Icons.bar_chart),
             onPressed: () => Navigator.push(
               context,
@@ -148,11 +148,13 @@ class _SurahListScreenState extends State<SurahListScreen> {
                               onTap: () async {
                                 final surah = Surah(
                                   id: b['surahId'],
-                                  englishName: quran.getSurahName(b['surahId']),
+                                  englishName:
+                                      quran.getSurahName(b['surahId']),
                                   arabicName:
                                       quran.getSurahNameArabic(b['surahId']),
                                   urduName: quran.getSurahName(b['surahId']),
-                                  verseCount: quran.getVerseCount(b['surahId']),
+                                  verseCount:
+                                      quran.getVerseCount(b['surahId']),
                                 );
                                 await Navigator.push(
                                     context,
@@ -197,7 +199,6 @@ class _SurahListScreenState extends State<SurahListScreen> {
                   itemCount: 114,
                   itemBuilder: (context, index) {
                     final id = index + 1;
-
                     return _SurahCard(
                       id: id,
                       surahProgress: _surahProgress[id] ?? 0,
@@ -210,7 +211,6 @@ class _SurahListScreenState extends State<SurahListScreen> {
                           urduName: quran.getSurahName(id),
                           verseCount: quran.getVerseCount(id),
                         );
-
                         await Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -220,11 +220,8 @@ class _SurahListScreenState extends State<SurahListScreen> {
                             ),
                           ),
                         );
-
                         await Future.delayed(
-                          const Duration(milliseconds: 300),
-                        );
-
+                            const Duration(milliseconds: 300));
                         _loadProgress();
                       },
                     );
@@ -233,7 +230,6 @@ class _SurahListScreenState extends State<SurahListScreen> {
               ),
             ],
           ),
-
           // Flashcard Entry Button
           Positioned(
             bottom: 20,
@@ -252,8 +248,6 @@ class _SurahListScreenState extends State<SurahListScreen> {
       ),
     );
   }
-
-  //................
 
   Widget _buildProgressHeader(BuildContext context) {
     return Container(
@@ -285,11 +279,12 @@ class _SurahCard extends StatefulWidget {
   final double surahProgress;
   final int? lastReadAyah;
   final VoidCallback onTap;
-  const _SurahCard(
-      {required this.id,
-      required this.surahProgress,
-      required this.onTap,
-      this.lastReadAyah});
+  const _SurahCard({
+    required this.id,
+    required this.surahProgress,
+    required this.onTap,
+    this.lastReadAyah,
+  });
 
   @override
   State<_SurahCard> createState() => _SurahCardState();
@@ -315,7 +310,6 @@ class _SurahCardState extends State<_SurahCard>
     _fade = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
     _slide = Tween<Offset>(begin: const Offset(0.05, 0), end: Offset.zero)
         .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
-    // Stagger entrance — only first 20 animate
     if (widget.id <= 20) {
       Future.delayed(Duration(milliseconds: widget.id * 40), () {
         if (mounted) _ctrl.forward();
@@ -379,68 +373,52 @@ class _SurahCardState extends State<_SurahCard>
                 splashColor: _gold.withValues(alpha: 0.1),
                 highlightColor: _gold.withValues(alpha: 0.05),
                 child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 12),
                   child: Row(
                     children: [
-                      // ── Left: Number + progress circle ──────────────
-                      Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              // Progress circle with % inside
-                              SizedBox(
-                                width: 60,
-                                height: 60,
-                                child: Stack(
-                                  alignment: Alignment.center,
-                                  children: [
-                                    CircularProgressIndicator(
-                                      value: widget.surahProgress / 100,
-                                      strokeWidth: 4,
-                                      backgroundColor:
-                                          Colors.grey.withValues(alpha: 0.2),
-                                      valueColor: AlwaysStoppedAnimation(
-                                        widget.surahProgress >= 100
-                                            ? _gold
-                                            : _green.withValues(alpha: 0.7),
-                                      ),
-                                    ),
-                                    Text(
-                                      '${widget.surahProgress.toStringAsFixed(0)}%',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
-                                        color: widget.surahProgress >= 100
-                                            ? _gold
-                                            : (isDark
-                                                ? Colors.white70
-                                                : _green),
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                      // Progress circle
+                      SizedBox(
+                        width: 60,
+                        height: 60,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            CircularProgressIndicator(
+                              value: widget.surahProgress / 100,
+                              strokeWidth: 4,
+                              backgroundColor:
+                                  Colors.grey.withValues(alpha: 0.2),
+                              valueColor: AlwaysStoppedAnimation(
+                                widget.surahProgress >= 100
+                                    ? _gold
+                                    : _green.withValues(alpha: 0.7),
                               ),
-                              const SizedBox(width: 5),
-                              // Makki/Madani + ayah count
-                            ],
-                          ),
-                        ],
+                            ),
+                            Text(
+                              '${widget.surahProgress.toStringAsFixed(0)}%',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: widget.surahProgress >= 100
+                                    ? _gold
+                                    : (isDark ? Colors.white70 : _green),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                       const SizedBox(width: 12),
-
-                      // ── Center: Names + info ──────────────────────────
+                      // Names + info
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              mainAxisAlignment:
+                                  MainAxisAlignment.spaceBetween,
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // English + revelation type
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment:
@@ -468,7 +446,8 @@ class _SurahCardState extends State<_SurahCard>
                                                     ? Colors.white
                                                     : const Color(0xFF1A1A1A),
                                               ),
-                                              overflow: TextOverflow.ellipsis,
+                                              overflow:
+                                                  TextOverflow.ellipsis,
                                             ),
                                           ),
                                         ],
@@ -477,7 +456,8 @@ class _SurahCardState extends State<_SurahCard>
                                       Row(
                                         children: [
                                           Container(
-                                            padding: const EdgeInsets.symmetric(
+                                            padding: const EdgeInsets
+                                                .symmetric(
                                                 horizontal: 6, vertical: 2),
                                             decoration: BoxDecoration(
                                               color: isMakki
@@ -489,10 +469,10 @@ class _SurahCardState extends State<_SurahCard>
                                                   BorderRadius.circular(6),
                                               border: Border.all(
                                                 color: isMakki
-                                                    ? Colors.orange
-                                                        .withValues(alpha: 0.4)
-                                                    : Colors.blue
-                                                        .withValues(alpha: 0.4),
+                                                    ? Colors.orange.withValues(
+                                                        alpha: 0.4)
+                                                    : Colors.blue.withValues(
+                                                        alpha: 0.4),
                                               ),
                                             ),
                                             child: Text(
@@ -515,25 +495,24 @@ class _SurahCardState extends State<_SurahCard>
                                                     ? Colors.white54
                                                     : Colors.grey.shade500),
                                           ),
-                                          if (widget.lastReadAyah != null)
-                                            Padding(
-                                              padding:
-                                                  const EdgeInsets.only(top: 3),
-                                              child: Text(
-                                                'Last Read: Ayah ${widget.lastReadAyah}',
-                                                style: const TextStyle(
-                                                  fontSize: 10,
-                                                  color: Color(0xFFD4AF37),
-                                                  fontWeight: FontWeight.w600,
-                                                ),
+                                          // Last read indicator
+                                          if (widget.lastReadAyah != null) ...[
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              'Last: ${widget.lastReadAyah}',
+                                              style: const TextStyle(
+                                                fontSize: 10,
+                                                color: Color(0xFFD4AF37),
+                                                fontWeight: FontWeight.w600,
                                               ),
                                             ),
+                                          ],
                                         ],
                                       ),
                                     ],
                                   ),
                                 ),
-                                // Arabic name — right side
+                                // Arabic name
                                 Text(
                                   quran.getSurahNameArabic(widget.id),
                                   textDirection: TextDirection.rtl,
@@ -549,7 +528,6 @@ class _SurahCardState extends State<_SurahCard>
                         ),
                       ),
                       const SizedBox(width: 8),
-                      // ── Right: Arrow ──────────────────────────────────
                       Icon(Icons.chevron_right,
                           color: _gold.withValues(alpha: 0.5), size: 20),
                     ],
@@ -567,6 +545,7 @@ class _SurahCardState extends State<_SurahCard>
 class _FlashcardEntryButton extends StatefulWidget {
   final VoidCallback onTap;
   const _FlashcardEntryButton({required this.onTap});
+
   @override
   State<_FlashcardEntryButton> createState() => _FlashcardEntryButtonState();
 }
@@ -642,7 +621,8 @@ class _FlashcardEntryButtonState extends State<_FlashcardEntryButton>
                       fontWeight: FontWeight.bold)),
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
                   color: const Color(0xFFD4AF37).withValues(alpha: 0.25),
                   borderRadius: BorderRadius.circular(8),

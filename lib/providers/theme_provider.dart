@@ -3,6 +3,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 
 class ThemeProvider extends ChangeNotifier {
+  ThemeProvider() {
+    _loadFuture = _loadTheme();
+  }
+
   bool _isDark = false;
   bool get isDark => _isDark;
 
@@ -10,6 +14,8 @@ class ThemeProvider extends ChangeNotifier {
   bool get isLoaded => _isLoaded;
 
   
+
+  late final Future<void> _loadFuture;
 
   Future<void> _loadTheme() async {
     final prefs = await SharedPreferences.getInstance();
@@ -27,10 +33,6 @@ class ThemeProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('arabic_font', font);
     notifyListeners();
-  }
-
-  ThemeProvider() {
-    _loadTheme();
   }
 
   Future<void> toggleTheme() async {
@@ -88,5 +90,8 @@ class ThemeProvider extends ChangeNotifier {
         ),
       );
 
-  Future<void> loadSettings() async {}
+  /// Wait for the same initial load started by the constructor.
+  /// This prevents startup from racing an empty placeholder method or loading
+  /// preferences twice.
+  Future<void> loadSettings() => _loadFuture;
 }

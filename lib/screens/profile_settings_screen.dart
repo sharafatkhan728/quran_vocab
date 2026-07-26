@@ -49,7 +49,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
         slivers: [
           // Profile header as sliver app bar
           SliverAppBar(
-            expandedHeight: 220,
+            expandedHeight: 280,
             pinned: true,
             backgroundColor: _green,
             foregroundColor: Colors.white,
@@ -153,24 +153,23 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     _buildTile(isDark,
                         icon: Icons.share,
                         iconColor: _teal,
-                        title: 'Share App',
+                        title: 'Share App (Coming Soon)',
                         onTap: () => _share()),
                     _buildTile(isDark,
                         icon: Icons.star_rate,
                         iconColor: _gold,
-                        title: 'Rate App',
+                        title: 'Rate App (Coming Soon)',
                         onTap: () => _rateApp()),
                     _buildTile(isDark,
                         icon: Icons.volunteer_activism,
                         iconColor: Colors.red,
-                        title: 'Donate',
+                        title: 'Donate (Coming Soon)',
                         subtitle: 'Support Quran learning',
                         onTap: () => _donate()),
                     _buildTile(isDark,
                         icon: Icons.shopping_bag,
                         iconColor: Colors.purple,
-                        title: 'Purchase Premium',
-                        subtitle: 'Coming soon',
+                        title: 'Purchase Premium (Coming Soon)',                        
                         onTap: () {}),
                   ]),
                   const SizedBox(height: 16),
@@ -186,22 +185,22 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     _buildTile(isDark,
                         icon: Icons.tour,
                         iconColor: _teal,
-                        title: 'App Tour',
+                        title: 'App Tour (Coming Soon)',
                         onTap: () {}),
                     _buildTile(isDark,
                         icon: Icons.help_outline,
                         iconColor: Colors.orange,
-                        title: 'FAQ',
+                        title: 'FAQ (Coming Soon)',
                         onTap: () {}),
                     _buildTile(isDark,
                         icon: Icons.support_agent,
                         iconColor: Colors.green,
-                        title: 'Support',
+                        title: 'Support (Coming Soon)',
                         onTap: () => _email()),
                     _buildTile(isDark,
                         icon: Icons.camera_alt,
                         iconColor: Colors.pink,
-                        title: 'Instagram',
+                        title: 'Instagram (Coming Soon)',
                         onTap: () => _instagram()),
                   ]),
                   const SizedBox(height: 16),
@@ -215,7 +214,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     _buildTile(isDark,
                         icon: Icons.lock,
                         iconColor: Colors.grey,
-                        title: 'Change Password',
+                        title: 'Change Password (Coming Soon)',
                         onTap: () => _changePassword()),
                     _buildTile(isDark,
                         icon: Icons.logout,
@@ -297,15 +296,15 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
         return TextStyle(
             fontFamily: 'IndoPak',
             fontSize: display.arabicFontSize,
-            height: display.lineHeight);
+            height: 1.8);
       case 'noorehuda':
         return TextStyle(
             fontFamily: 'NoorehudaFont',
             fontSize: display.arabicFontSize,
-            height: display.lineHeight);
+            height: 1.8);
       default:
         return GoogleFonts.amiriQuran(
-            fontSize: display.arabicFontSize, height: display.lineHeight);
+            fontSize: display.arabicFontSize, height: 1.8);
     }
   }
 
@@ -356,7 +355,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
               label: 'Arabic Size',
               value: display.arabicFontSize,
               min: 18,
-              max: 42,
+              max: 80,
               onChanged: display.setArabicSize,
               isDark: isDark,
             ),
@@ -366,32 +365,11 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
               label: 'Urdu Size',
               value: display.urduFontSize,
               min: 10,
-              max: 24,
+              max: 40,
               onChanged: display.setUrduSize,
               isDark: isDark,
             ),
 
-            // Line height
-            _slider(
-              label: 'Line Height',
-              value: display.lineHeight,
-              min: 1.2,
-              max: 3.0,
-              divisions: 18,
-              onChanged: display.setLineHeight,
-              isDark: isDark,
-            ),
-
-            // Word spacing
-            _slider(
-              label: 'Word Spacing',
-              value: display.wordSpacing,
-              min: 0,
-              max: 12,
-              divisions: 12,
-              onChanged: display.setWordSpacing,
-              isDark: isDark,
-            ),
 
             const SizedBox(height: 12),
 

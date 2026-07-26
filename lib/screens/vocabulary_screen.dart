@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/word_progress_service.dart';
-import '../services/quran_preloader_service.dart';
 import 'word_occurrences_screen.dart';
 import '../providers/display_provider.dart';
 import 'package:provider/provider.dart';
+
 
 class VocabularyScreen extends StatefulWidget {
   const VocabularyScreen({super.key});
@@ -20,8 +20,6 @@ class _VocabularyScreenState extends State<VocabularyScreen>
   List<WordEntry> _knownWords = [];
   List<WordEntry> _unknownWords = [];
   bool _isLoading = true;
-  bool _isPreloading = false;
-  int _preloadProgress = 0;
   String _searchQuery = '';
   String _sortBy = 'frequency';
   final TextEditingController _searchController = TextEditingController();
@@ -33,24 +31,8 @@ class _VocabularyScreenState extends State<VocabularyScreen>
     _initLoad();
   }
 
-  Future<void> _initLoad() async {
-//<<<<<
-    final isLoaded = await QuranPreloaderService.isFullyLoaded();
-    if (!isLoaded) {
-      setState(() => _isPreloading = true);
-      await QuranPreloaderService.loadAllSurahs(
-        onProgress: (surahId, total) async {
-          if (mounted) {
-            setState(() => _preloadProgress = surahId);
-            // Refresh word list every 10 surahs so user sees words appearing
-            if (surahId % 10 == 0) await _loadWords();
-          }
-        },
-      );
-      if (mounted) setState(() => _isPreloading = false);
-    }
+Future<void> _initLoad() async {
     await _loadWords();
-    //<<<<<<<
   }
 
   @override
@@ -283,40 +265,8 @@ class _VocabularyScreenState extends State<VocabularyScreen>
             },
           ),
           Expanded(
-            child: _isPreloading
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(32),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Text('Loading Quran vocabulary...',
-                              style: TextStyle(
-                                  fontSize: 16, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 24),
-                          LinearProgressIndicator(
-                            value: _preloadProgress / 114,
-                            backgroundColor: Colors.grey.shade300,
-                            valueColor:
-                                const AlwaysStoppedAnimation(Color(0xFF1B4332)),
-                            minHeight: 8,
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            'Surah $_preloadProgress of 114',
-                            style: TextStyle(color: Colors.grey.shade600),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'This happens only once',
-                            style: TextStyle(
-                                fontSize: 12, color: Colors.grey.shade500),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                : _isLoading
+            child: _isLoading
+
                     ? const Center(
                         child:
                             CircularProgressIndicator(color: Color(0xFF1B4332)))

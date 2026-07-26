@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sqflite/sqflite.dart';
+import '../database/database_manager.dart';
 import '../services/word_progress_service.dart';
 import 'package:quran/quran.dart' as quran;
 
 class ProgressScreen extends StatefulWidget {
   const ProgressScreen({super.key});
+
   @override
   State<ProgressScreen> createState() => _ProgressScreenState();
 }
@@ -71,7 +73,7 @@ class _ProgressScreenState extends State<ProgressScreen>
   }
 
   Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
+    final db = await DatabaseManager.db;
     final known = await WordProgressService.getAllKnownWords();
     final freq = await WordProgressService.getWordFrequencies();
     final p = await WordProgressService.getProgressPercent();
@@ -83,41 +85,65 @@ class _ProgressScreenState extends State<ProgressScreen>
       if ((surahProg[i] ?? 0) >= 100) completed.add(i);
     }
 
-    // Streak calculation
+    // ── Load all daily_stats in one query ─────────────────────────────────
+    final dailyRows = await db.query('daily_stats');
+    final dailyMap = <String, int>{
+      for (final r in dailyRows)
+        r['date_key'] as String: (r['words_learned'] as int? ?? 0),
+    };
+
+    // ── Load user_meta for longest_streak ─────────────────────────────────
+    final metaRows = await db.query('user_meta',
+        where: 'key = ?', whereArgs: ['longest_streak'], limit: 1);
+    final storedLongest = metaRows.isEmpty
+        ? 0
+        : int.tryParse(metaRows.first['value'] as String) ?? 0;
+
+    // ── Today key ─────────────────────────────────────────────────────────
     final today = DateTime.now();
     final todayKey =
         '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
-    final todayCount = prefs.getInt('daily_$todayKey') ?? 0;
+    final todayCount = dailyMap[todayKey] ?? 0;
 
+    // ── Streak calculation from dailyMap ──────────────────────────────────
     int streak = 0;
-    int longest = prefs.getInt('longest_streak') ?? 0;
     for (int d = 0; d < 365; d++) {
       final day = today.subtract(Duration(days: d));
       final key =
           '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
-      if ((prefs.getInt('daily_$key') ?? 0) > 0) {
+      if ((dailyMap[key] ?? 0) > 0) {
         streak++;
       } else if (d > 0) {
         break;
       }
     }
 
-    // Week learned
+    // ── Update longest streak in SQLite if beaten ─────────────────────────
+    final newLongest = math.max(streak, storedLongest);
+    if (newLongest > storedLongest) {
+      await db.insert(
+        'user_meta',
+        {'key': 'longest_streak', 'value': '$newLongest'},
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+
+    // ── Week total ─────────────────────────────────────────────────────────
     int weekTotal = 0;
     for (int d = 0; d < 7; d++) {
       final day = today.subtract(Duration(days: d));
       final key =
           '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
-      weekTotal += prefs.getInt('daily_$key') ?? 0;
+      weekTotal += dailyMap[key] ?? 0;
     }
 
-    // Heatmap (last 12 weeks)
+    // ── Heatmap (last 12 weeks = 84 days) ─────────────────────────────────
     final heatmap = <String, int>{};
     for (int d = 0; d < 84; d++) {
       final day = today.subtract(Duration(days: d));
       final key =
           '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
-      heatmap[key] = prefs.getInt('daily_$key') ?? 0;
+      heatmap[key] = dailyMap[key] ?? 0;
     }
 
     if (mounted) {
@@ -128,7 +154,7 @@ class _ProgressScreenState extends State<ProgressScreen>
         _completedSurahs = completed;
         _surahProgress = surahProg;
         _currentStreak = streak;
-        _longestStreak = math.max(streak, longest);
+        _longestStreak = newLongest;
         _todayLearned = todayCount;
         _weekLearned = weekTotal;
         _heatmapData = heatmap;
@@ -188,7 +214,7 @@ class _ProgressScreenState extends State<ProgressScreen>
     );
   }
 
-  // ── Main ring ───────────────────────────────────────────────────────────────
+  // ── Main ring ─────────────────────────────────────────────────────────────
   Widget _buildMainRing(bool isDark) {
     return AnimatedBuilder(
       animation: _ringAnim,
@@ -259,8 +285,8 @@ class _ProgressScreenState extends State<ProgressScreen>
                       decoration: BoxDecoration(
                         color: _gold.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                            color: _gold.withValues(alpha: 0.4)),
+                        border:
+                            Border.all(color: _gold.withValues(alpha: 0.4)),
                       ),
                       child: Text(
                         '$_knownCount words',
@@ -287,54 +313,47 @@ class _ProgressScreenState extends State<ProgressScreen>
     );
   }
 
-  // ── Streak row ──────────────────────────────────────────────────────────────
+  // ── Streak row ────────────────────────────────────────────────────────────
   Widget _buildStreakRow(bool isDark) {
     return Row(
       children: [
         Expanded(
-          child: _miniCard(
-            isDark,
-            icon: Icons.local_fire_department,
-            iconColor: Colors.orange,
-            value: '$_currentStreak',
-            label: 'Day Streak',
-          ),
+          child: _miniCard(isDark,
+              icon: Icons.local_fire_department,
+              iconColor: Colors.orange,
+              value: '$_currentStreak',
+              label: 'Day Streak'),
         ),
         const SizedBox(width: 12),
         Expanded(
-          child: _miniCard(
-            isDark,
-            icon: Icons.today,
-            iconColor: _teal,
-            value: '$_todayLearned',
-            label: 'Today',
-          ),
+          child: _miniCard(isDark,
+              icon: Icons.today,
+              iconColor: _teal,
+              value: '$_todayLearned',
+              label: 'Today'),
         ),
         const SizedBox(width: 12),
         Expanded(
-          child: _miniCard(
-            isDark,
-            icon: Icons.date_range,
-            iconColor: _navy,
-            value: '$_weekLearned',
-            label: 'This Week',
-          ),
+          child: _miniCard(isDark,
+              icon: Icons.date_range,
+              iconColor: _navy,
+              value: '$_weekLearned',
+              label: 'This Week'),
         ),
       ],
     );
   }
 
-  // ── Stat grid ───────────────────────────────────────────────────────────────
+  // ── Stat grid ─────────────────────────────────────────────────────────────
   Widget _buildStatGrid(bool isDark) {
     final items = [
       _S('Known', '$_knownCount', Icons.check_circle, Colors.green),
       _S('Discovered', '$_discoveredCount', Icons.explore, _teal),
       _S('Remaining', '${14870 - _knownCount}', Icons.hourglass_empty,
           Colors.orange),
-      _S('Completed\nSurahs', '${_completedSurahs.length}',
-          Icons.menu_book, _gold),
+      _S('Completed\nSurahs', '${_completedSurahs.length}', Icons.menu_book,
+          _gold),
     ];
-
     return GridView.count(
       crossAxisCount: 2,
       shrinkWrap: true,
@@ -377,7 +396,8 @@ class _ProgressScreenState extends State<ProgressScreen>
                   textAlign: TextAlign.center,
                   style: TextStyle(
                       fontSize: 10,
-                      color: isDark ? Colors.white60 : Colors.grey.shade600)),
+                      color:
+                          isDark ? Colors.white60 : Colors.grey.shade600)),
             ],
           ),
         );
@@ -385,7 +405,7 @@ class _ProgressScreenState extends State<ProgressScreen>
     );
   }
 
-  // ── Progress bars ───────────────────────────────────────────────────────────
+  // ── Progress bars ─────────────────────────────────────────────────────────
   Widget _buildProgressBars(bool isDark) {
     final bars = [
       _B('Words Known', _knownCount / 14870, Colors.green),
@@ -393,7 +413,6 @@ class _ProgressScreenState extends State<ProgressScreen>
       _B('300 Core Words (80% Quran)', math.min(_knownCount / 300, 1.0), _gold),
       _B('Surahs Completed', _completedSurahs.length / 114, _emerald),
     ];
-
     return AnimatedBuilder(
       animation: _barAnim,
       builder: (_, __) => _card(
@@ -443,7 +462,7 @@ class _ProgressScreenState extends State<ProgressScreen>
     );
   }
 
-  // ── Milestone journey ───────────────────────────────────────────────────────
+  // ── Milestone journey ─────────────────────────────────────────────────────
   Widget _buildMilestoneJourney(bool isDark) {
     final milestones = [
       _M(50, 'Beginner', Icons.star_outline),
@@ -455,7 +474,6 @@ class _ProgressScreenState extends State<ProgressScreen>
       _M(7000, 'Advanced', Icons.diamond),
       _M(14870, 'Complete!', Icons.mosque),
     ];
-
     return _card(
       isDark,
       title: 'Spiritual Journey',
@@ -466,7 +484,6 @@ class _ProgressScreenState extends State<ProgressScreen>
             style: TextStyle(fontSize: 12, color: Colors.grey),
           ),
           const SizedBox(height: 20),
-          // Staircase visual
           SizedBox(
             height: 140,
             child: AnimatedBuilder(
@@ -483,7 +500,6 @@ class _ProgressScreenState extends State<ProgressScreen>
             ),
           ),
           const SizedBox(height: 12),
-          // Milestone chips
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -504,8 +520,8 @@ class _ProgressScreenState extends State<ProgressScreen>
                       color: reached
                           ? _gold.withValues(alpha: 0.2)
                           : isNext
-                              ? _emerald
-                                  .withValues(alpha: 0.1 + _pulseAnim.value * 0.1)
+                              ? _emerald.withValues(
+                                  alpha: 0.1 + _pulseAnim.value * 0.1)
                               : Colors.transparent,
                       border: Border.all(
                         color: reached
@@ -527,20 +543,18 @@ class _ProgressScreenState extends State<ProgressScreen>
                                     ? _emerald
                                     : Colors.grey),
                         const SizedBox(width: 4),
-                        Text(
-                          m.label,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: reached
-                                ? _gold
-                                : isNext
-                                    ? _emerald
-                                    : Colors.grey,
-                            fontWeight: reached
-                                ? FontWeight.bold
-                                : FontWeight.normal,
-                          ),
-                        ),
+                        Text(m.label,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: reached
+                                  ? _gold
+                                  : isNext
+                                      ? _emerald
+                                      : Colors.grey,
+                              fontWeight: reached
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            )),
                       ],
                     ),
                   );
@@ -553,11 +567,11 @@ class _ProgressScreenState extends State<ProgressScreen>
     );
   }
 
-  // ── Heatmap ─────────────────────────────────────────────────────────────────
+  // ── Heatmap ───────────────────────────────────────────────────────────────
   Widget _buildHeatmap(bool isDark) {
     final today = DateTime.now();
-    final days = List.generate(84, (i) => today.subtract(Duration(days: 83 - i)));
-
+    final days =
+        List.generate(84, (i) => today.subtract(Duration(days: 83 - i)));
     return _card(
       isDark,
       title: 'Learning Heatmap (12 weeks)',
@@ -602,7 +616,8 @@ class _ProgressScreenState extends State<ProgressScreen>
           const SizedBox(height: 8),
           Row(
             children: [
-              const Text('Less', style: TextStyle(fontSize: 9, color: Colors.grey)),
+              const Text('Less',
+                  style: TextStyle(fontSize: 9, color: Colors.grey)),
               const SizedBox(width: 4),
               ...['12', '30', '60', '80'].asMap().entries.map((e) {
                 final colors = [
@@ -622,7 +637,8 @@ class _ProgressScreenState extends State<ProgressScreen>
                 );
               }),
               const SizedBox(width: 4),
-              const Text('More', style: TextStyle(fontSize: 9, color: Colors.grey)),
+              const Text('More',
+                  style: TextStyle(fontSize: 9, color: Colors.grey)),
             ],
           ),
         ],
@@ -630,7 +646,7 @@ class _ProgressScreenState extends State<ProgressScreen>
     );
   }
 
-  // ── Completed surahs ────────────────────────────────────────────────────────
+  // ── Completed surahs ──────────────────────────────────────────────────────
   Widget _buildCompletedSurahs(bool isDark) {
     if (_completedSurahs.isEmpty) {
       return _card(
@@ -655,7 +671,6 @@ class _ProgressScreenState extends State<ProgressScreen>
         ),
       );
     }
-
     return _card(
       isDark,
       title: 'Completed Surahs 🎉',
@@ -672,8 +687,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                 borderRadius: BorderRadius.circular(12),
                 gradient: LinearGradient(
                   colors: [
-                    _gold.withValues(
-                        alpha: 0.8 + _pulseAnim.value * 0.2),
+                    _gold.withValues(alpha: 0.8 + _pulseAnim.value * 0.2),
                     _green.withValues(alpha: 0.9),
                   ],
                   begin: Alignment.topLeft,
@@ -682,10 +696,9 @@ class _ProgressScreenState extends State<ProgressScreen>
                 border: Border.all(color: _gold, width: 1.5),
                 boxShadow: [
                   BoxShadow(
-                    color: _gold.withValues(alpha: 0.3),
-                    blurRadius: 8,
-                    spreadRadius: 1,
-                  ),
+                      color: _gold.withValues(alpha: 0.3),
+                      blurRadius: 8,
+                      spreadRadius: 1),
                 ],
               ),
               child: Column(
@@ -693,19 +706,16 @@ class _ProgressScreenState extends State<ProgressScreen>
                 children: [
                   const Icon(Icons.star, color: Colors.white, size: 16),
                   const SizedBox(height: 4),
-                  Text(
-                    '$id',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 18,
-                    ),
-                  ),
+                  Text('$id',
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18)),
                   Text(
                     quran.getSurahName(id).split('-').last.trim(),
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
-                        color: Colors.white70, fontSize: 8),
+                    style:
+                        const TextStyle(color: Colors.white70, fontSize: 8),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -718,7 +728,7 @@ class _ProgressScreenState extends State<ProgressScreen>
     );
   }
 
-  // ── Achievements ────────────────────────────────────────────────────────────
+  // ── Achievements ──────────────────────────────────────────────────────────
   Widget _buildAchievements(bool isDark) {
     final badges = [
       _Badge('First Word', Icons.star, _knownCount >= 1, Colors.amber),
@@ -733,7 +743,6 @@ class _ProgressScreenState extends State<ProgressScreen>
       _Badge('First Surah', Icons.menu_book,
           _completedSurahs.isNotEmpty, Colors.purple),
     ];
-
     return _card(
       isDark,
       title: 'Achievements',
@@ -759,11 +768,11 @@ class _ProgressScreenState extends State<ProgressScreen>
                   width: b.unlocked ? 2 : 1,
                 ),
               ),
-              child: Icon(
-                b.icon,
-                color: b.unlocked ? b.color : Colors.grey.withValues(alpha: 0.3),
-                size: 28,
-              ),
+              child: Icon(b.icon,
+                  color: b.unlocked
+                      ? b.color
+                      : Colors.grey.withValues(alpha: 0.3),
+                  size: 28),
             ),
           );
         }).toList(),
@@ -771,7 +780,7 @@ class _ProgressScreenState extends State<ProgressScreen>
     );
   }
 
-  // ── Motivation ──────────────────────────────────────────────────────────────
+  // ── Motivation ────────────────────────────────────────────────────────────
   Widget _buildMotivation(bool isDark) {
     final msg = _getMotivation(_percent);
     return Container(
@@ -813,7 +822,7 @@ class _ProgressScreenState extends State<ProgressScreen>
     );
   }
 
-  // ── Helpers ─────────────────────────────────────────────────────────────────
+  // ── Helpers ───────────────────────────────────────────────────────────────
   Widget _card(bool isDark, {required Widget child, String? title}) {
     return Container(
       width: double.infinity,
@@ -876,8 +885,7 @@ class _ProgressScreenState extends State<ProgressScreen>
           Text(label,
               style: TextStyle(
                   fontSize: 10,
-                  color:
-                      isDark ? Colors.white54 : Colors.grey.shade600)),
+                  color: isDark ? Colors.white54 : Colors.grey.shade600)),
         ],
       ),
     );
@@ -964,7 +972,6 @@ class _StaircasePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     const gold = Color(0xFFD4AF37);
     const emerald = Color(0xFF00897B);
-
     final stepW = size.width / milestones.length;
     final maxH = size.height * 0.85;
 
@@ -974,7 +981,6 @@ class _StaircasePainter extends CustomPainter {
       final stepH = (maxH / milestones.length) * (i + 1);
       final x = i * stepW;
       final y = size.height - stepH;
-
       final paint = Paint()
         ..style = PaintingStyle.fill
         ..color = reached
@@ -982,12 +988,9 @@ class _StaircasePainter extends CustomPainter {
             : (isDark
                 ? const Color.fromARGB(31, 110, 19, 19)
                 : Colors.grey.shade200);
-
       final rect = Rect.fromLTWH(x + 2, y, stepW - 4, stepH);
       canvas.drawRRect(
           RRect.fromRectAndRadius(rect, const Radius.circular(4)), paint);
-
-      // Border
       final borderPaint = Paint()
         ..style = PaintingStyle.stroke
         // ignore: deprecated_member_use
@@ -1001,19 +1004,15 @@ class _StaircasePainter extends CustomPainter {
     // Person marker
     final personX = math.min(known, milestones.last.words);
     final idx = milestones.indexWhere((m) => personX < m.words);
-    final markerIdx = idx == -1 ? milestones.length - 1 : math.max(0, idx - 1);
-    final mx = (markerIdx * stepW + stepW / 2);
+    final markerIdx =
+        idx == -1 ? milestones.length - 1 : math.max(0, idx - 1);
+    final mx = markerIdx * stepW + stepW / 2;
     final stepH = (maxH / milestones.length) * (markerIdx + 1);
     final my = size.height - stepH - 16;
-
-    final markerPaint = Paint()
-      ..color = emerald
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(Offset(mx, my), 10 * progress, markerPaint);
-    final innerPaint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(Offset(mx, my), 5 * progress, innerPaint);
+    canvas.drawCircle(Offset(mx, my), 10 * progress,
+        Paint()..color = emerald..style = PaintingStyle.fill);
+    canvas.drawCircle(Offset(mx, my), 5 * progress,
+        Paint()..color = Colors.white..style = PaintingStyle.fill);
   }
 
   @override

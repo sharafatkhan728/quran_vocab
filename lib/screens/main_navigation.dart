@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import 'surah_list_screen.dart';
 import 'vocabulary_screen.dart';
-import 'progress_screen.dart';
 import 'profile_settings_screen.dart';
 
 class MainNavigation extends StatefulWidget {
@@ -18,7 +17,6 @@ class _MainNavigationState extends State<MainNavigation> {
   final List<Widget> _screens = const [
     SurahListScreen(),
     VocabularyScreen(),
-    ProgressScreen(),
     ProfileSettingsScreen(),
   ];
 
@@ -43,11 +41,6 @@ class _MainNavigationState extends State<MainNavigation> {
             icon: Icon(Icons.abc_outlined),
             selectedIcon: Icon(Icons.abc),
             label: 'Vocabulary',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.bar_chart_outlined),
-            selectedIcon: Icon(Icons.bar_chart),
-            label: 'Progress',
           ),
           NavigationDestination(
             icon: Icon(Icons.person_outline),

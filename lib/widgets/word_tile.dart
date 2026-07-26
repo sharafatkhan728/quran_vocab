@@ -8,54 +8,67 @@ import '../services/word_glossary_service.dart';
 
 class WordTile extends StatelessWidget {
   final QuranWord word;
-  final double arabicFontSize;
-  final double urduFontSize;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
 
   const WordTile({
     super.key,
     required this.word,
-    required this.arabicFontSize,
-    required this.urduFontSize,
     required this.onTap,
     required this.onLongPress,
   });
 
-  // POS → color mapping
   static Color _posColor(String pos, bool isDark) {
     switch (pos) {
-      case 'V':
-        return Colors.red.shade400; // verb
-      case 'N':
-        return Colors.blue.shade400; // noun
-      case 'PN':
-        return Colors.blue.shade600; // proper noun
-      case 'P':
-        return Colors.green.shade500; // preposition/particle
-      case 'CONJ':
-        return Colors.green.shade400; // conjunction
-      case 'PRON':
-        return Colors.orange.shade400; // pronoun
-      case 'DEM':
-        return Colors.orange.shade300; // demonstrative
-      case 'REL':
-        return Colors.purple.shade400; // relative
-      case 'ADJ':
-        return Colors.teal.shade400; // adjective
-      case 'NEG':
-        return Colors.red.shade300; // negation
+      case 'V': return Colors.red.shade400;
+      case 'N': return Colors.blue.shade400;
+      case 'PN': return Colors.blue.shade600;
+      case 'P': return Colors.green.shade500;
+      case 'CONJ': return Colors.green.shade400;
+      case 'PRON': return Colors.orange.shade400;
+      case 'DEM': return Colors.orange.shade300;
+      case 'REL': return Colors.purple.shade400;
+      case 'ADJ': return Colors.teal.shade400;
+      case 'NEG': return Colors.red.shade300;
       default:
         return isDark ? Colors.white70 : Colors.grey.shade700;
     }
+  }
+
+  /// Use colorHex from database if available, fall back to hardcoded map.
+  static Color _wordColor(QuranWord word, bool isDark) {
+    final hex = word.colorHex;
+    if (hex.isNotEmpty && hex != '#888888') {
+      try {
+        return Color(int.parse(hex.replaceFirst('#', '0xFF')));
+      } catch (_) {}
+    }
+    return _posColor(word.pos, isDark);
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final display = context.watch<DisplayProvider>();
+    final arabicFontSize = display.arabicFontSize;
+    final urduFontSize = display.urduFontSize;
 
-    final segments = word.segments.where((s) => s.pos.isNotEmpty).toList();
+    if (word.isWaqf) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 1),
+        child: Text(
+          word.arabic,
+          textDirection: TextDirection.rtl,
+          style: TextStyle(
+            fontSize: arabicFontSize * 0.7,
+            color: isDark ? Colors.white38 : Colors.grey.shade400,
+          ),
+        ),
+      );
+    }
+
+    final segments =
+        word.segments.where((s) => s.pos.isNotEmpty).toList();
 
     return GestureDetector(
       onTap: onTap,
@@ -67,26 +80,21 @@ class WordTile extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.center,
           mainAxisAlignment: MainAxisAlignment.start,
           children: [
-            // Arabic — NEVER fades, NEVER moves
             segments.length > 1
-                ? _buildSegmentedWord(segments, display, isDark)
-                : _buildSingleWord(display, isDark),
-
+                ? _buildSegmentedWord(
+                    segments, display, isDark, arabicFontSize)
+                : _buildSingleWord(word, display, isDark, arabicFontSize),
             const SizedBox(height: 2),
-
-            // Urdu/meaning — hides when known, but keeps space to avoid shift
-            // Urdu/meaning — keeps BOTH width and height
-
             if (word.urduMeaning.isNotEmpty)
               SizedBox(
                 width: 50,
                 child: Visibility(
                   visible: !word.isKnown,
-                  maintainState: true,
-                  maintainAnimation: true,
+                  maintainState: false,
+                  maintainAnimation: false,
                   child: Align(
                     alignment: Alignment.topCenter,
-                    child: _buildMeaning(isDark),
+                    child: _buildMeaning(isDark, urduFontSize),
                   ),
                 ),
               ),
@@ -96,10 +104,9 @@ class WordTile extends StatelessWidget {
     );
   }
 
-  Widget _buildMeaning(bool isDark) {
+  Widget _buildMeaning(bool isDark, double urduFontSize) {
     final lang = WordGlossaryService.selectedLang;
     final meaningText = word.urduMeaning;
-
     Widget textWidget;
     if (lang == 'en') {
       final rawHtml = WordGlossaryService.getRawByPosition(
@@ -111,14 +118,16 @@ class WordTile extends StatelessWidget {
           ? _buildEnglishMeaning(rawHtml, urduFontSize, isDark)
           : Text(meaningText,
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: urduFontSize,
-                  color: isDark ? Colors.white54 : Colors.grey.shade600));
+              style: TextStyle(
+                  fontSize: urduFontSize,
+                  color: isDark
+                      ? Colors.white54
+                      : Colors.grey.shade600));
     } else {
       textWidget = Text(
         meaningText,
         textDirection: TextDirection.rtl,
         textAlign: TextAlign.center,
-        // Wrap after 3 words
         softWrap: true,
         maxLines: 3,
         overflow: TextOverflow.ellipsis,
@@ -130,17 +139,14 @@ class WordTile extends StatelessWidget {
         ),
       );
     }
-
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         textWidget,
-        // Faint line — same width as text, not full screen
         IntrinsicWidth(
           child: Container(
             height: 0.5,
-            // Minimum width so line is always visible
             constraints: const BoxConstraints(minWidth: 20),
             margin: const EdgeInsets.only(top: 2),
             decoration: BoxDecoration(
@@ -154,13 +160,9 @@ class WordTile extends StatelessWidget {
     );
   }
 
-  /// Whole word, colored by stem POS
-  Widget _buildSingleWord(DisplayProvider display, bool isDark) {
-    final pos = word.pos;
-    final color = pos.isNotEmpty
-        ? _posColor(pos, isDark)
-        : (isDark ? Colors.white : const Color(0xFF1A1A1A));
-
+  Widget _buildSingleWord(QuranWord word, DisplayProvider display,
+      bool isDark, double arabicFontSize) {
+    final color = _wordColor(word, isDark);
     return Text(
       word.arabic,
       textDirection: TextDirection.rtl,
@@ -168,19 +170,31 @@ class WordTile extends StatelessWidget {
     );
   }
 
-  Widget _buildSegmentedWord(
-      List<WordSegment> segs, DisplayProvider display, bool isDark) {
-    final segTexts = MorphologyService.extractSegmentTexts(word.arabic, segs);
-
-    // Use RichText with TextSpan — keeps word together, no breaking
+  Widget _buildSegmentedWord(List<WordSegment> segs,
+      DisplayProvider display, bool isDark, double arabicFontSize) {
+    final segTexts =
+        MorphologyService.extractSegmentTexts(word.arabic, segs);
     return RichText(
       textDirection: TextDirection.rtl,
       text: TextSpan(
         children: segTexts.map((st) {
-          final pos = st.seg?.pos ?? '';
-          final color = pos.isNotEmpty
-              ? _posColor(pos, isDark)
-              : (isDark ? Colors.white : const Color(0xFF1A1A1A));
+          final segPos = st.seg?.pos ?? '';
+          final segColorHex = st.seg?.colorHex ?? '';
+          Color color;
+          if (segColorHex.isNotEmpty && segColorHex != '#888888') {
+            try {
+              color = Color(
+                  int.parse(segColorHex.replaceFirst('#', '0xFF')));
+            } catch (_) {
+              color = segPos.isNotEmpty
+                  ? _posColor(segPos, isDark)
+                  : (isDark ? Colors.white : const Color(0xFF1A1A1A));
+            }
+          } else {
+            color = segPos.isNotEmpty
+                ? _posColor(segPos, isDark)
+                : (isDark ? Colors.white : const Color(0xFF1A1A1A));
+          }
           return TextSpan(
             text: st.text,
             style: _arabicStyle(display, color, arabicFontSize),
@@ -190,28 +204,27 @@ class WordTile extends StatelessWidget {
     );
   }
 
-  // Parse English HTML meaning like <span class='p'>In</span>
   static Widget _buildEnglishMeaning(
       String rawHtml, double fontSize, bool isDark) {
     if (!rawHtml.contains('<span')) {
       return Text(rawHtml,
           style: TextStyle(
               fontSize: fontSize,
-              color: isDark ? Colors.white54 : Colors.grey.shade600));
+              color:
+                  isDark ? Colors.white54 : Colors.grey.shade600));
     }
-
     final spans = <InlineSpan>[];
     final regex = RegExp(r"<span class='(\w+)'>(.*?)</span>");
     int last = 0;
-
     for (final match in regex.allMatches(rawHtml)) {
-      // Text before span
       if (match.start > last) {
         spans.add(TextSpan(
             text: rawHtml.substring(last, match.start),
             style: TextStyle(
                 fontSize: fontSize,
-                color: isDark ? Colors.white54 : Colors.grey.shade600)));
+                color: isDark
+                    ? Colors.white54
+                    : Colors.grey.shade600)));
       }
       final cls = match.group(1) ?? '';
       final text = match.group(2) ?? '';
@@ -221,7 +234,9 @@ class WordTile extends StatelessWidget {
           style: TextStyle(
               fontSize: fontSize,
               color: color,
-              fontWeight: cls == 'pn' ? FontWeight.w600 : FontWeight.normal)));
+              fontWeight: cls == 'pn'
+                  ? FontWeight.w600
+                  : FontWeight.normal)));
       last = match.end;
     }
     if (last < rawHtml.length) {
@@ -229,9 +244,10 @@ class WordTile extends StatelessWidget {
           text: rawHtml.substring(last),
           style: TextStyle(
               fontSize: fontSize,
-              color: isDark ? Colors.white54 : Colors.grey.shade600)));
+              color: isDark
+                  ? Colors.white54
+                  : Colors.grey.shade600)));
     }
-
     return RichText(
       textAlign: TextAlign.center,
       text: TextSpan(children: spans),
@@ -240,26 +256,25 @@ class WordTile extends StatelessWidget {
 
   static Color _englishSpanColor(String cls, bool isDark) {
     switch (cls) {
-      case 'v':
-        return Colors.red.shade400; // verb
-      case 'n':
-        return Colors.blue.shade400; // noun
-      case 'pn':
-        return Colors.blue.shade600; // proper noun
-      case 'p':
-        return Colors.green.shade500; // preposition/particle
-      case 'paren':
-        return Colors.grey.shade400; // parenthetical
+      case 'v': return Colors.red.shade400;
+      case 'n': return Colors.blue.shade400;
+      case 'pn': return Colors.blue.shade600;
+      case 'p': return Colors.green.shade500;
+      case 'paren': return Colors.grey.shade400;
       default:
         return isDark ? Colors.white70 : Colors.grey.shade700;
     }
   }
 
-  TextStyle _arabicStyle(DisplayProvider d, Color color, double size) {
+  TextStyle _arabicStyle(
+      DisplayProvider d, Color color, double size) {
     switch (d.arabicFont) {
       case 'indopak':
         return TextStyle(
-            fontFamily: 'IndoPak', fontSize: size, color: color, height: 1.8);
+            fontFamily: 'IndoPak',
+            fontSize: size,
+            color: color,
+            height: 1.8);
       case 'noorehuda':
         return TextStyle(
             fontFamily: 'NoorehudaFont',

@@ -94,26 +94,59 @@ class SurahSearchDelegate extends SearchDelegate<String> {
       itemCount: results.length,
       itemBuilder: (context, index) {
         final id = results[index];
-        return ListTile(
-          leading: CircleAvatar(
-            backgroundColor: Theme.of(context).colorScheme.primary,
-            child: Text(
-              '$id',
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-            ),
-          ),
-          title: Text(
-            quran.getSurahNameArabic(id),
-            textDirection: TextDirection.rtl,
-            style: const TextStyle(fontSize: 18),
-          ),
-          subtitle: Text(
-            '${quran.getSurahName(id)} • ${quran.getVerseCount(id)} verses',
-          ),
+
+        return GestureDetector(
           onTap: () {
             close(context, '');
             onSurahSelected(id, null);
           },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: CircleAvatar(
+                    radius: 20,
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    child: Text(
+                      '$id',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          quran.getSurahNameArabic(id),
+                          textDirection: TextDirection.rtl,
+                          style: const TextStyle(
+                            fontFamily: 'NoorehudaFont',
+                            fontSize: 25,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        '${quran.getSurahName(id)} • ${quran.getVerseCount(id)} verses',
+                        style: const TextStyle(
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         );
       },
     );

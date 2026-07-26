@@ -8,21 +8,19 @@ import '../providers/display_provider.dart';
 import '../providers/user_provider.dart';
 import '../services/srs_service.dart';
 import '../services/word_progress_service.dart';
-import '../services/quran_cache_service.dart';
 import '../services/translation_service.dart';
 import '../services/morphology_service.dart';
 import 'morphology_sheet.dart';
+import '../repositories/vocabulary_repository.dart';
 import '../models/word.dart';
 
 // ── FlashWord model ─────────────────────────────────────────────────────────
-
 class FlashWord {
-  final String arabic; // original with harkat
-  final String normalizedForLookup; // normalized for SRS keys
+  final String arabic;
+  final String normalizedForLookup;
   final String urdu;
   final int frequency;
-  late final String normalizedArabic; // for ayah search
-
+  late final String normalizedArabic;
   String transliteration = '';
   String root = '';
   String sampleAyahArabic = '';
@@ -46,31 +44,21 @@ class FlashWord {
 
   Future<void> loadAyah() async {
     if (ayahLoaded) return;
-    ayahLoaded = true;
-
-    // Try fast index first
-    final loc = QuranCacheService.findWordLocation(normalizedArabic);
-    if (loc != null) {
-      sampleAyahArabic = loc['arabic'] as String;
-      sampleSurah = loc['surah'] as int;
-      sampleAyahNum = loc['ayah'] as int;
-      wordPositionInAyah = loc['pos'] as int;
-      TranslationService.getAyahTranslation(sampleSurah, sampleAyahNum)
-          .then((t) => sampleAyahTranslation = t ?? '');
-      return;
-    }
-
-    // Fallback: wait for index to build then retry
-    await Future.delayed(const Duration(seconds: 2));
-    final loc2 = QuranCacheService.findWordLocation(normalizedArabic);
-    if (loc2 != null) {
-      sampleAyahArabic = loc2['arabic'] as String;
-      sampleSurah = loc2['surah'] as int;
-      sampleAyahNum = loc2['ayah'] as int;
-      wordPositionInAyah = loc2['pos'] as int;
-      TranslationService.getAyahTranslation(sampleSurah, sampleAyahNum)
-          .then((t) => sampleAyahTranslation = t ?? '');
-    }
+    try {
+      final vocab =
+          await VocabularyRepository.getByArabicClean(normalizedArabic);
+      if (vocab == null) return;
+      if (vocab.firstSurahId == 0) return;
+      sampleSurah = vocab.firstSurahId;
+      sampleAyahNum = vocab.firstAyahNumber;
+      wordPositionInAyah = vocab.firstWordPosition;
+      sampleAyahArabic =
+          await VocabularyRepository.getAyahArabic(sampleSurah, sampleAyahNum);
+      sampleAyahTranslation = await TranslationService.getAyahTranslation(
+              sampleSurah, sampleAyahNum) ??
+          '';
+      ayahLoaded = true;
+    } catch (_) {}
   }
 
   Future<void> loadRoot() async {
@@ -78,8 +66,6 @@ class FlashWord {
     rootLoaded = true;
     if (!MorphologyService.isLoaded) return;
     if (sampleSurah == 0 || sampleAyahNum == 0) return;
-
-    // Use exact position found in loadAyah
     final segs = MorphologyService.getSegments(
         sampleSurah, sampleAyahNum, wordPositionInAyah);
     if (segs != null) {
@@ -90,8 +76,6 @@ class FlashWord {
         }
       }
     }
-
-    // Try nearby positions (position might be off by 1)
     for (int offset = -2; offset <= 2; offset++) {
       if (offset == 0) continue;
       final p = wordPositionInAyah + offset;
@@ -114,9 +98,9 @@ class FlashWord {
 }
 
 // ── Screen ──────────────────────────────────────────────────────────────────
-
 class FlashcardScreen extends StatefulWidget {
   const FlashcardScreen({super.key});
+
   @override
   State<FlashcardScreen> createState() => _FlashcardScreenState();
 }
@@ -132,9 +116,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
   int _totalPoints = 0;
   int _sessionPoints = 0;
   bool _loading = true;
-
   SessionBuildResult? _sessionResult;
-
   bool _sessionDone = false;
   bool _isFlipped = false;
   bool _hasBeenFlipped = false;
@@ -156,25 +138,23 @@ class _FlashcardScreenState extends State<FlashcardScreen>
   @override
   void initState() {
     super.initState();
-
     _flipCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 450));
+        vsync: this, duration: const Duration(milliseconds: 350));
     _entryCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 400));
+        vsync: this, duration: const Duration(milliseconds: 280));
     _dismissCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 300));
-
+        vsync: this, duration: const Duration(milliseconds: 220));
     _flipAnim = Tween<double>(begin: 0, end: 1)
         .animate(CurvedAnimation(parent: _flipCtrl, curve: Curves.easeInOut));
-    _entryScale = Tween<double>(begin: 0.85, end: 1.0).animate(
-        CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOutBack));
+    _entryScale = Tween<double>(begin: 0.92, end: 1.0).animate(
+        CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOutCubic));
     _entryFade = Tween<double>(begin: 0, end: 1)
         .animate(CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOut));
     _dismissOffset = Tween<Offset>(begin: Offset.zero, end: const Offset(2, 0))
-        .animate(CurvedAnimation(parent: _dismissCtrl, curve: Curves.easeIn));
+        .animate(
+            CurvedAnimation(parent: _dismissCtrl, curve: Curves.easeInCubic));
     _dismissFade = Tween<double>(begin: 1, end: 0)
         .animate(CurvedAnimation(parent: _dismissCtrl, curve: Curves.easeIn));
-
     _loadSession();
   }
 
@@ -186,6 +166,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     _audio.dispose();
     super.dispose();
   }
+
+  // ── Session loading ─────────────────────────────────────────────────────
 
   Future<void> _showLoadMoreWarning() async {
     final confirm = await showDialog<bool>(
@@ -245,36 +227,32 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     }
   }
 
-  // ── Session loading ─────────────────────────────────────────────────────
-
   Future<void> _loadSession({bool forceNew = false}) async {
-    // Capture context-dependent values before any await
     final dailyGoal = context.read<UserProvider>().dailyGoal;
-
     setState(() {
       _loading = true;
       _sessionDone = false;
     });
-
     if (forceNew) {
       await SrsService.clearSession();
     }
     _totalPoints = await SrsService.getTotalPoints();
-
     final freq = await WordProgressService.getWordFrequencies();
     final sorted = freq.entries.toList()
       ..sort((a, b) => b.value.frequency.compareTo(a.value.frequency));
-    final allWords =
-        sorted.where((e) => e.value.urdu.isNotEmpty).map((e) => e.key).toList();
+    final allWords = sorted.map((e) => e.key).toList();
 
-    final initialized = await SrsService.isInitialized();
-
-    if (!initialized) {
-      for (final w in allWords) {
-        await SrsService.initCard(w);
+    if (allWords.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _cards = [];
+        });
       }
-      await SrsService.setInitialized();
+      return;
     }
+
+    await SrsService.initMissingCards(allWords);
 
     if (!forceNew) {
       final saved = await SrsService.loadSession();
@@ -297,7 +275,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
       }
     }
 
-    // Build fresh session
+    await SrsService.startNewSession();
     final result = await SrsService.buildSession(allWords.toList(), dailyGoal);
 
     if (result.isEmpty) {
@@ -313,9 +291,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
       return;
     }
 
-    // Show session breakdown to user
     _sessionResult = result;
-
     final cards = _buildCards(result.words, freq);
     if (mounted) {
       setState(() {
@@ -346,7 +322,6 @@ class _FlashcardScreenState extends State<FlashcardScreen>
 
   Future<void> _preloadCards(int from) async {
     final end = (from + 5).clamp(0, _cards.length);
-    // Load all in parallel
     await Future.wait([
       for (int i = from; i < end; i++)
         _cards[i].loadAyah().then((_) => _cards[i].loadRoot()).then((_) {
@@ -380,12 +355,13 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     final pts = await SrsService.markKnown(_current.normalizedForLookup);
     await WordProgressService.markAsKnown(_current.normalizedForLookup);
     if (wasNew) await SrsService.recordNewCardReviewed();
-
+    if (!mounted) return;
     setState(() {
       _sessionPoints += pts;
       _totalPoints += pts;
     });
     await _animateDismiss(toRight: true);
+    if (!mounted) return;
     _nextCard();
   }
 
@@ -396,6 +372,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     }
     HapticFeedback.mediumImpact();
     await SrsService.markUnknown(_current.normalizedForLookup);
+    if (!mounted) return;
     final remaining = _cards.length - _currentIndex - 1;
     if (remaining > 2) {
       final insertAt =
@@ -404,12 +381,15 @@ class _FlashcardScreenState extends State<FlashcardScreen>
       _cards.insert(insertAt.clamp(0, _cards.length), card);
     }
     await _animateDismiss(toRight: false);
+    if (!mounted) return;
     _nextCard();
   }
 
   Future<void> _deleteCard() async {
     await SrsService.deleteCard(_current.normalizedForLookup);
+    if (!mounted) return;
     await _animateDismiss(toRight: true);
+    if (!mounted) return;
     _nextCard();
   }
 
@@ -477,7 +457,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
         ),
         surahId: _current.sampleSurah > 0 ? _current.sampleSurah : 1,
         ayahId: _current.sampleAyahNum > 0 ? _current.sampleAyahNum : 1,
-        wordPos: _current.wordPositionInAyah > 0 ? _current.wordPositionInAyah : 1,
+        wordPos:
+            _current.wordPositionInAyah > 0 ? _current.wordPositionInAyah : 1,
         ayahWords: [],
         isKnown: false,
         onKnownToggled: (_) {},
@@ -490,7 +471,6 @@ class _FlashcardScreenState extends State<FlashcardScreen>
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-
     if (_loading) {
       return Scaffold(
         backgroundColor:
@@ -503,7 +483,6 @@ class _FlashcardScreenState extends State<FlashcardScreen>
         body: const Center(child: CircularProgressIndicator(color: _gold)),
       );
     }
-
     if (_sessionDone) return _buildSummaryScreen(isDark);
     if (_cards.isEmpty) return _buildAllDoneScreen(isDark);
 
@@ -530,7 +509,6 @@ class _FlashcardScreenState extends State<FlashcardScreen>
       body: Column(
         children: [
           _buildProgress(isDark),
-          // Show session breakdown once at start
           if (_currentIndex == 0 && _sessionResult != null)
             _buildSessionBanner(isDark),
           Expanded(child: _buildCardArea(isDark)),
@@ -589,7 +567,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
         onTap: _flip,
         onHorizontalDragStart: (_) => setState(() => _isDragging = true),
         onHorizontalDragUpdate: (d) {
-          if (!_isFlipped) return; // block drag before flip
+          if (!_isFlipped) return;
           setState(() {
             _dragX += d.delta.dx;
             if (_dragX > 50) {
@@ -625,13 +603,13 @@ class _FlashcardScreenState extends State<FlashcardScreen>
         child: Stack(
           alignment: Alignment.center,
           children: [
-            // ── Behind card 3 (deepest) ──────────────────────────────
+            // Behind card 3
             Positioned(
               top: 0,
-              left: 12,
-              right: 12,
+              left: 8,
+              right: 8,
               child: Container(
-                height: 24,
+                height: 170,
                 decoration: BoxDecoration(
                   color: isDark
                       ? const Color(0xFF0A1E11)
@@ -649,19 +627,19 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                 ),
               ),
             ),
-            // ── Behind card 2 ────────────────────────────────────────
+            // Behind card 2
             Positioned(
-              top: 10,
-              left: 6,
-              right: 6,
+              top: 8,
+              left: 4,
+              right: 4,
               child: Container(
-                height: 22,
+                height: 500,
                 decoration: BoxDecoration(
                   color: isDark
                       ? const Color(0xFF0F2518)
                       : const Color(0xFFF0EAD8),
                   borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(24)),
+                      const BorderRadius.vertical(top: Radius.circular(25)),
                   border: Border.all(color: _gold.withValues(alpha: 0.25)),
                   boxShadow: [
                     BoxShadow(
@@ -673,7 +651,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                 ),
               ),
             ),
-            // ── Main card ────────────────────────────────────────────
+            // Main card
             Padding(
               padding: const EdgeInsets.only(top: 20),
               child: AnimatedBuilder(
@@ -690,10 +668,9 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                   final rot = tx / screenW * 0.12;
                   return Transform(
                     alignment: Alignment.center,
-                    
                     transform: Matrix4.identity()
-                        ..translate(tx, 0.0)
-                        ..rotateZ(rot),
+                      ..translate(tx, 0.0, 0.0)
+                      ..rotateZ(rot),
                     child: ScaleTransition(
                       scale: _entryScale,
                       child: FadeTransition(opacity: _entryFade, child: child),
@@ -702,7 +679,6 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                 },
                 child: Stack(
                   children: [
-                    // Flip animation
                     AnimatedBuilder(
                       animation: _flipAnim,
                       builder: (_, __) {
@@ -723,7 +699,6 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                         );
                       },
                     ),
-                    // Swipe overlay
                     if (_swipeHint != null && _isFlipped)
                       Positioned.fill(
                         child: AnimatedOpacity(
@@ -738,7 +713,9 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                             ),
                             child: Center(
                               child: Text(
-                                _swipeHint == 'known' ? '✓ Known' : '✗ Unknown',
+                                _swipeHint == 'known'
+                                    ? '✓ Known'
+                                    : '✗ Unknown',
                                 style: TextStyle(
                                   fontSize: 32,
                                   fontWeight: FontWeight.bold,
@@ -761,8 +738,6 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     );
   }
 
-  // ── Card decoration (same for front and back) ──────────────────────────
-
   BoxDecoration _cardDecoration(bool isDark) => BoxDecoration(
         borderRadius: BorderRadius.circular(24),
         gradient: LinearGradient(
@@ -782,25 +757,25 @@ class _FlashcardScreenState extends State<FlashcardScreen>
         ],
       );
 
-  // ── Front card ──────────────────────────────────────────────────────────
-
   Widget _buildFrontCard(DisplayProvider display, bool isDark) {
     return Container(
       width: double.infinity,
-      constraints: const BoxConstraints(minHeight: 460),
+      constraints: BoxConstraints(
+        minHeight: MediaQuery.of(context).size.height * 0.70,
+        maxHeight: MediaQuery.of(context).size.height * 0.72,
+      ),
       decoration: _cardDecoration(isDark),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Top row: frequency + delete
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
                   decoration: BoxDecoration(
                     color: _gold.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
@@ -825,14 +800,13 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                       shape: BoxShape.circle,
                       color: Colors.red.withValues(alpha: 0.1),
                     ),
-                    child: const Icon(Icons.close, size: 16, color: Colors.red),
+                    child:
+                        const Icon(Icons.close, size: 16, color: Colors.red),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 18),
-
-            // Arabic word + audio button
+            const SizedBox(height: 55),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -840,7 +814,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                   _current.arabic,
                   textDirection: TextDirection.rtl,
                   textAlign: TextAlign.center,
-                  style: _arabicStyle(display, isDark, 52),
+                  style: _arabicStyle(display, isDark, 60),
                 ),
                 const SizedBox(width: 10),
                 GestureDetector(
@@ -851,8 +825,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: Colors.blue.withValues(alpha: 0.1),
-                      border:
-                          Border.all(color: Colors.blue.withValues(alpha: 0.4)),
+                      border: Border.all(
+                          color: Colors.blue.withValues(alpha: 0.4)),
                     ),
                     child: const Icon(Icons.volume_up_rounded,
                         color: Colors.blue, size: 18),
@@ -860,9 +834,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-
-            // Transliteration
+            const SizedBox(height: 12),
             Text(
               _current.transliteration,
               style: TextStyle(
@@ -871,8 +843,6 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                   color: isDark ? Colors.white54 : Colors.grey.shade500),
             ),
             const SizedBox(height: 14),
-
-            // Divider
             Row(children: [
               Expanded(child: Divider(color: _gold.withValues(alpha: 0.3))),
               Padding(
@@ -883,8 +853,6 @@ class _FlashcardScreenState extends State<FlashcardScreen>
               Expanded(child: Divider(color: _gold.withValues(alpha: 0.3))),
             ]),
             const SizedBox(height: 12),
-
-            // Sample ayah (Arabic only — no translation on front)
             if (_current.sampleAyahArabic.isNotEmpty)
               Flexible(
                 child: Text(
@@ -892,20 +860,18 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                   textDirection: TextDirection.rtl,
                   textAlign: TextAlign.center,
                   style:
-                      _arabicStyle(display, isDark, 17).copyWith(height: 1.9),
+                      _arabicStyle(display, isDark, 25).copyWith(height: 1.9),
                   maxLines: 5,
                   overflow: TextOverflow.ellipsis,
                 ),
               )
             else
               Text('Loading ayah...',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade400)),
-
+                  style:
+                      TextStyle(fontSize: 12, color: Colors.grey.shade400)),
             const SizedBox(height: 14),
-
-            // Tap to flip hint
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 8),
               decoration: BoxDecoration(
                 color: _gold.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(20),
@@ -930,32 +896,32 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     );
   }
 
-  // ── Back card ──────────────────────────────────────────────────────────
-
   Widget _buildBackCard(DisplayProvider display, bool isDark) {
     return Container(
       width: double.infinity,
-      constraints: const BoxConstraints(minHeight: 460),
+      constraints: BoxConstraints(
+        minHeight: MediaQuery.of(context).size.height * 0.70,
+        maxHeight: MediaQuery.of(context).size.height * 0.72,
+      ),
       decoration: _cardDecoration(isDark),
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Arabic + root + audio
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Root box
                 if (_current.root.isNotEmpty)
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
                       color: _gold.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: _gold.withValues(alpha: 0.35)),
+                      border:
+                          Border.all(color: _gold.withValues(alpha: 0.35)),
                     ),
                     child: Column(children: [
                       Text('Root',
@@ -963,10 +929,9 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                               fontSize: 9, color: Colors.grey.shade400)),
                       const SizedBox(height: 2),
                       Text(
-                        // Space between each root letter
                         _current.root.characters.join('  '),
                         textDirection: TextDirection.rtl,
-                        style: _arabicStyle(display, isDark, 16)
+                        style: _arabicStyle(display, isDark, 25)
                             .copyWith(color: _gold),
                       ),
                     ]),
@@ -980,14 +945,12 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                 const SizedBox(width: 10),
                 GestureDetector(
                   onTap: _playAudio,
-                  child:
-                      const Icon(Icons.volume_up, color: Colors.blue, size: 20),
+                  child: const Icon(Icons.volume_up,
+                      color: Colors.blue, size: 20),
                 ),
               ],
             ),
             const SizedBox(height: 4),
-
-            // Frequency
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -998,32 +961,25 @@ class _FlashcardScreenState extends State<FlashcardScreen>
               ],
             ),
             const SizedBox(height: 4),
-
-            // Transliteration
             Text(_current.transliteration,
                 style: TextStyle(
                     fontSize: 13,
                     fontStyle: FontStyle.italic,
                     color: isDark ? Colors.white54 : Colors.grey.shade500)),
-
             const Divider(height: 20),
-
-            // Urdu meaning — JameelNoori font
             Text(
               _current.urdu,
               textDirection: TextDirection.rtl,
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontFamily: 'JameelNoori',
-                fontSize: display.urduFontSize + 6,
+                fontSize: display.urduFontSize + 20,
                 color: isDark ? const Color(0xFF7EC8A0) : _teal,
                 fontWeight: FontWeight.w700,
                 height: 1.8,
               ),
             ),
             const SizedBox(height: 14),
-
-            // Sample ayah with translation
             if (_current.sampleAyahArabic.isNotEmpty) ...[
               Container(
                 width: double.infinity,
@@ -1038,8 +994,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                     _current.sampleAyahArabic,
                     textDirection: TextDirection.rtl,
                     textAlign: TextAlign.center,
-                    style:
-                        _arabicStyle(display, isDark, 17).copyWith(height: 1.9),
+                    style: _arabicStyle(display, isDark, 23)
+                        .copyWith(height: 1.9),
                   ),
                   if (_current.sampleAyahTranslation.isNotEmpty) ...[
                     const SizedBox(height: 8),
@@ -1050,7 +1006,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                       style: TextStyle(
                         fontFamily: 'JameelNoori',
                         fontSize: 13,
-                        color: isDark ? Colors.white60 : Colors.grey.shade600,
+                        color:
+                            isDark ? Colors.white60 : Colors.grey.shade600,
                         height: 1.5,
                       ),
                     ),
@@ -1059,13 +1016,11 @@ class _FlashcardScreenState extends State<FlashcardScreen>
               ),
               const SizedBox(height: 12),
             ],
-
-            // Learn More button
             GestureDetector(
               onTap: _openMorphology,
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 10),
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
                     colors: [_green, _teal],
@@ -1078,7 +1033,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.school_outlined, color: Colors.white, size: 16),
+                    Icon(Icons.school_outlined,
+                        color: Colors.white, size: 16),
                     SizedBox(width: 6),
                     Text('Learn More About This Word',
                         style: TextStyle(
@@ -1122,7 +1078,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(16),
                 color: Colors.red.withValues(alpha: 0.1),
-                border: Border.all(color: Colors.red.withValues(alpha: 0.5)),
+                border:
+                    Border.all(color: Colors.red.withValues(alpha: 0.5)),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -1159,7 +1116,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(16),
                 color: Colors.green.withValues(alpha: 0.1),
-                border: Border.all(color: Colors.green.withValues(alpha: 0.5)),
+                border: Border.all(
+                    color: Colors.green.withValues(alpha: 0.5)),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -1212,11 +1170,11 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                   border: Border.all(color: _gold.withValues(alpha: 0.3)),
                 ),
                 child: Column(children: [
-                  _summaryRow('Cards reviewed', '${_cards.length}', Icons.style,
-                      isDark),
+                  _summaryRow('Cards reviewed', '${_cards.length}',
+                      Icons.style, isDark),
                   const Divider(height: 16),
-                  _summaryRow(
-                      'Points earned', '+$_sessionPoints', Icons.stars, isDark),
+                  _summaryRow('Points earned', '+$_sessionPoints',
+                      Icons.stars, isDark),
                   const Divider(height: 16),
                   _summaryRow('Total points', '$_totalPoints',
                       Icons.emoji_events, isDark),
@@ -1228,7 +1186,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                 decoration: BoxDecoration(
                   color: _gold.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: _gold.withValues(alpha: 0.2)),
+                  border:
+                      Border.all(color: _gold.withValues(alpha: 0.2)),
                 ),
                 child: Text(
                   'Consistency is better than speed.\n'
@@ -1236,7 +1195,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                   textAlign: TextAlign.center,
                   style: TextStyle(
                       fontSize: 13,
-                      color: isDark ? Colors.white70 : Colors.grey.shade700,
+                      color:
+                          isDark ? Colors.white70 : Colors.grey.shade700,
                       height: 1.5),
                 ),
               ),
@@ -1246,14 +1206,14 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _green,
                   foregroundColor: Colors.white,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 40, vertical: 14),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14)),
                 ),
                 child: const Text('Back to Quran',
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    style: TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.bold)),
               ),
             ],
           ),
@@ -1290,8 +1250,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
       decoration: BoxDecoration(
         color: const Color(0xFF1B4332).withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(10),
-        border:
-            Border.all(color: const Color(0xFF1B4332).withValues(alpha: 0.2)),
+        border: Border.all(
+            color: const Color(0xFF1B4332).withValues(alpha: 0.2)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -1300,7 +1260,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
             _bannerChip('📚 ${r.overdueCount} review', Colors.blue),
           if (r.failedCount > 0)
             _bannerChip('❌ ${r.failedCount} failed', Colors.red),
-          if (r.newCount > 0) _bannerChip('🆕 ${r.newCount} new', Colors.green),
+          if (r.newCount > 0)
+            _bannerChip('🆕 ${r.newCount} new', Colors.green),
         ],
       ),
     );
@@ -1316,7 +1277,9 @@ class _FlashcardScreenState extends State<FlashcardScreen>
       ),
       child: Text(label,
           style: TextStyle(
-              fontSize: 11, color: color, fontWeight: FontWeight.w600)),
+              fontSize: 11,
+              color: color,
+              fontWeight: FontWeight.w600)),
     );
   }
 
@@ -1335,9 +1298,15 @@ class _FlashcardScreenState extends State<FlashcardScreen>
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Text('✅', style: TextStyle(fontSize: 64)),
+              Text(
+                _sessionResult == null ? '📖' : '✅',
+                style: const TextStyle(fontSize: 64),
+              ),
               const SizedBox(height: 16),
-              Text('All Caught Up!',
+              Text(
+                  _sessionResult == null
+                      ? 'Open a Surah First!'
+                      : 'All Caught Up!',
                   style: TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
@@ -1348,22 +1317,26 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                 decoration: BoxDecoration(
                   color: _gold.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: _gold.withValues(alpha: 0.25)),
+                  border:
+                      Border.all(color: _gold.withValues(alpha: 0.25)),
                 ),
                 child: Text(
-                  '⚠️ Learning too many words at once can cause forgetting.\n\n'
-                  'Go slow and consistent — 5 words a day = 1,825 words a year!\n\n'
-                  'Come back tomorrow for your next session. 🌙',
+                  _sessionResult == null
+                      ? '📖 Open any Surah from the Quran tab first.\n\n'
+                          'Words you encounter will appear here for spaced repetition learning.\n\n'
+                          'Start with Al-Fatiha or Al-Baqarah!'
+                      : '⚠️ Learning too many words at once can cause forgetting.\n\n'
+                          'Go slow and consistent — 5 words a day = 1,825 words a year!\n\n'
+                          'Come back tomorrow for your next session. 🌙',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                       fontSize: 13,
-                      color: isDark ? Colors.white70 : Colors.grey.shade700,
+                      color:
+                          isDark ? Colors.white70 : Colors.grey.shade700,
                       height: 1.6),
                 ),
               ),
               const SizedBox(height: 16),
-
-              // Session stats
               if (_sessionResult != null) ...[
                 const SizedBox(height: 12),
                 Container(
@@ -1372,98 +1345,35 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                     color: const Color(0xFF1B4332).withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                        color: const Color(0xFF1B4332).withValues(alpha: 0.2)),
+                        color:
+                            const Color(0xFF1B4332).withValues(alpha: 0.2)),
                   ),
                   child: Column(children: [
                     _statsRow('📚 Overdue reviews',
                         '${_sessionResult!.overdueCount}'),
-                    _statsRow(
-                        '❌ Failed cards', '${_sessionResult!.failedCount}'),
-                    _statsRow(
-                        '🆕 New cards today', '${_sessionResult!.newCount}'),
+                    _statsRow('❌ Failed cards',
+                        '${_sessionResult!.failedCount}'),
+                    _statsRow('🆕 New cards today',
+                        '${_sessionResult!.newCount}'),
                   ]),
                 ),
               ],
               const SizedBox(height: 16),
-
-              // Option to load more anyway
-
-              OutlinedButton.icon(
-                onPressed: () async {
-                  final confirm = await showDialog<bool>(
-                    context: context,
-                    builder: (_) => AlertDialog(
-                      title: const Text('⚠️ Daily Limit Reached'),
-                      content: const Text(
-                        'You have completed today\'s learning session.\n\n'
-                        'Learning too many new words at once reduces retention '
-                        'and increases forgetting.\n\n'
-                        'Consistent daily practice (5–10 words) is far more '
-                        'effective than cramming.\n\n'
-                        'Do you still want to continue with new words today?',
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, false),
-                          child: const Text('No, I\'ll wait'),
-                        ),
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.orange),
-                          onPressed: () => Navigator.pop(context, true),
-                          child: const Text('Yes, continue',
-                              style: TextStyle(color: Colors.white)),
-                        ),
-                      ],
-                    ),
-                  );
-                  if (confirm == true && mounted) {
-                    setState(() {
-                      _sessionDone = false;
-                      _loading = true;
-                    });
-
-                    final freq = await WordProgressService.getWordFrequencies();
-                    final allWords = freq.keys.toList();
-                    final extra =
-                        await SrsService.buildExtraSession(allWords, 10);
-                    if (extra.isEmpty) {
-                      if (!mounted) return;
-                      setState(() {
-                        _loading = false;
-                      });
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('No more new words available'),
-                        ),
-                      );
-                      return;
-                    }
-                    final cards = _buildCards(extra.words, freq);
-                    setState(() {
-                      _cards = cards;
-                      _currentIndex = 0;
-                      _sessionDone = false;
-                      _isFlipped = false;
-                      _hasBeenFlipped = false;
-                    });
-                    _entryCtrl.reset();
-                    _entryCtrl.forward();
-                    _preloadCards(0);
-                  }
-                },
-                icon: const Icon(Icons.add_card),
-                label: const Text('Load More Cards (Not Recommended)'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.orange,
-                  side: const BorderSide(color: Colors.orange),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              if (_sessionResult != null)
+                OutlinedButton.icon(
+                  onPressed: () => _showLoadMoreWarning(),
+                  icon: const Icon(Icons.add_card),
+                  label:
+                      const Text('Load More Cards (Not Recommended)'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.orange,
+                    side: const BorderSide(color: Colors.orange),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 12),
+                  ),
                 ),
-              ),
-
               const SizedBox(height: 12),
               ElevatedButton(
                 onPressed: () => Navigator.pop(context),
@@ -1483,7 +1393,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     );
   }
 
-  Widget _summaryRow(String label, String value, IconData icon, bool isDark) {
+  Widget _summaryRow(
+      String label, String value, IconData icon, bool isDark) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -1497,7 +1408,9 @@ class _FlashcardScreenState extends State<FlashcardScreen>
         ]),
         Text(value,
             style: const TextStyle(
-                fontSize: 16, fontWeight: FontWeight.bold, color: _gold)),
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: _gold)),
       ],
     );
   }
@@ -1507,7 +1420,10 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     switch (d.arabicFont) {
       case 'indopak':
         return TextStyle(
-            fontFamily: 'IndoPak', fontSize: size, color: color, height: 1.4);
+            fontFamily: 'IndoPak',
+            fontSize: size,
+            color: color,
+            height: 1.4);
       case 'noorehuda':
         return TextStyle(
             fontFamily: 'NoorehudaFont',

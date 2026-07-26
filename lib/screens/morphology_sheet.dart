@@ -1,5 +1,4 @@
 // ignore_for_file: unused_local_variable, curly_braces_in_flow_control_structures, unnecessary_brace_in_string_interps
-
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:just_audio/just_audio.dart';
@@ -8,8 +7,9 @@ import '../models/word.dart';
 import '../providers/display_provider.dart';
 import '../services/morphology_service.dart';
 import '../services/word_progress_service.dart';
-import 'package:quran/quran.dart' as quran;
 import 'dart:async';
+import '../repositories/morphology_repository.dart';
+import '../repositories/content_repository.dart';
 
 StreamSubscription<PlayerState>? _audioSub;
 
@@ -62,78 +62,108 @@ class _MorphologySheetState extends State<MorphologySheet>
   final AudioPlayer _audio = AudioPlayer();
   String? _playingKey;
 
-
-
   @override
   void initState() {
     super.initState();
-
     _tabs = TabController(length: 2, vsync: this);
     _selectedWord = widget.word;
     _loadForWord(widget.word, widget.wordPos);
-
     _audioSub = _audio.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed) {
-        if (mounted) {
-          setState(() => _playingKey = null);
-        }
+        if (mounted) setState(() => _playingKey = null);
       }
     });
   }
 
   @override
-    void dispose() {
-      _tabs.dispose();
-      _audioSub?.cancel();
-      _audio.dispose();
-      super.dispose();
-    }
+  void dispose() {
+    _tabs.dispose();
+    _audioSub?.cancel();
+    _audio.dispose();
+    super.dispose();
+  }
+
+  // ── Data loading ───────────────────────────────────────────────────────────
 
   void _loadForWord(QuranWord word, int pos) {
     setState(() {
       _selectedWord = word;
-      _sarfChain = MorphologyService.buildSarfChain(
-          widget.surahId, widget.ayahId, pos, word.arabic);
-      _rootForms = _sarfChain?.root.isNotEmpty == true
-          ? MorphologyService.getRootForms(_sarfChain!.root)
-          : null;
+      _sarfChain = null;
+      _rootForms = null;
       _expandedLemma = null;
       _lemmaAyahs = {};
     });
+    _loadForWordAsync(word, pos);
   }
 
+  Future<void> _loadForWordAsync(QuranWord word, int pos) async {
+    // Fetch segments from SQLite via MorphologyRepository
+    final segRows = await MorphologyRepository.getSegmentsByPosition(
+        widget.surahId, widget.ayahId, pos);
+
+    SarfChain? chain;
+    Map<String, List<String>>? rootForms;
+
+    if (segRows.isNotEmpty) {
+      final segments = segRows.map(WordSegment.fromRow).toList();
+      // buildSarfChainFromSegments lives inside MorphologyService so it can
+      // freely call all private helpers without any API exposure.
+      chain = MorphologyService.buildSarfChainFromSegments(
+          segments, word.arabic);
+    }
+
+    if (chain != null && chain.root.isNotEmpty) {
+      final forms = await MorphologyRepository.getRootForms(chain.root);
+      // Convert Map<lemma, List<{surahId,ayahNumber,position}>>
+      // to Map<lemma, List<"surah:ayah:pos">> expected by the UI.
+      rootForms = forms.map((lemma, occurrences) => MapEntry(
+            lemma,
+            occurrences
+                .map((o) =>
+                    '${o['surahId']}:${o['ayahNumber']}:${o['position']}')
+                .toList(),
+          ));
+    }
+
+    if (mounted) {
+      setState(() {
+        _sarfChain = chain;
+        _rootForms = rootForms;
+      });
+    }
+  }
 
   Future<void> _loadLemmaAyahs(String lemma, List<String> wordKeys) async {
     if (_lemmaAyahs.containsKey(lemma)) return;
     setState(() => _loadingAyahs = true);
     final ayahs = <Map<String, dynamic>>[];
     final sample = wordKeys.take(10).toList();
-
     for (final key in sample) {
       final parts = key.split(':');
       if (parts.length < 3) continue;
       final surahId = int.tryParse(parts[0]) ?? 0;
-      final ayahId = int.tryParse(parts[1]) ?? 0;
+      final ayahNumber = int.tryParse(parts[1]) ?? 0;
       final wordPos = int.tryParse(parts[2]) ?? 1;
       try {
-        // Use local quran package instead of API
-        final verseWords = quran.getVerse(surahId, ayahId).split(' ')
-            .where((w) => w.trim().isNotEmpty).toList();
-        final wordsList = verseWords.asMap().entries.map((e) => {
-          'text_uthmani': e.value,
-          'position': e.key + 1,
-          'char_type_name': 'word',
-        }).toList();
+        final ayahRow = await ContentRepository.getAyah(surahId, ayahNumber);
+        if (ayahRow == null) continue;
+        final wordRows = await ContentRepository.getWordsForAyah(ayahRow.id);
+        final wordsList = wordRows
+            .map((w) => {
+                  'text_uthmani': w.arabicText,
+                  'position': w.position,
+                  'char_type_name': w.isWaqf == 1 ? 'end' : 'word',
+                })
+            .toList();
         ayahs.add({
           'surah': surahId,
-          'ayah': ayahId,
+          'ayah': ayahNumber,
           'targetPos': wordPos,
           'words': wordsList,
-          'key': '$surahId:$ayahId',
+          'key': '$surahId:$ayahNumber',
         });
       } catch (_) {}
     }
-
     if (mounted) {
       setState(() {
         _lemmaAyahs[lemma] = ayahs;
@@ -142,37 +172,24 @@ class _MorphologySheetState extends State<MorphologySheet>
     }
   }
 
-
   Future<void> _playWordAudio(int surah, int ayah, int pos) async {
-  final key = '$surah:$ayah:$pos';
-
-  if (_playingKey == key) {
-    await _audio.stop();
-    if (mounted) {
-      setState(() => _playingKey = null);
+    final key = '$surah:$ayah:$pos';
+    if (_playingKey == key) {
+      await _audio.stop();
+      if (mounted) setState(() => _playingKey = null);
+      return;
     }
-    return;
+    final s = surah.toString().padLeft(3, '0');
+    final a = ayah.toString().padLeft(3, '0');
+    final w = pos.toString().padLeft(3, '0');
+    try {
+      await _audio.setUrl('https://audio.qurancdn.com/wbw/${s}_${a}_${w}.mp3');
+      await _audio.play();
+      if (mounted) setState(() => _playingKey = key);
+    } catch (_) {}
   }
 
-  final s = surah.toString().padLeft(3, '0');
-  final a = ayah.toString().padLeft(3, '0');
-  final w = pos.toString().padLeft(3, '0');
-
-  try {
-    await _audio.setUrl(
-      'https://audio.qurancdn.com/wbw/${s}_${a}_${w}.mp3',
-    );
-
-    await _audio.play();
-
-    if (mounted) {
-      setState(() => _playingKey = key);
-    }
-
-    // No listener here anymore.
-  } catch (_) {}
-}
-
+  // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -189,7 +206,7 @@ class _MorphologySheetState extends State<MorphologySheet>
       ),
       child: Column(
         children: [
-          // ── Handle ────────────────────────────────────────────────────
+          // Handle
           Center(
             child: Container(
               margin: const EdgeInsets.only(top: 10, bottom: 4),
@@ -201,11 +218,9 @@ class _MorphologySheetState extends State<MorphologySheet>
               ),
             ),
           ),
-
-          // ── Header: word + tabs ───────────────────────────────────────
+          // Header
           _buildHeader(display, isDark),
-
-          // ── Tabs ──────────────────────────────────────────────────────
+          // Tabs
           Container(
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             decoration: BoxDecoration(
@@ -220,7 +235,8 @@ class _MorphologySheetState extends State<MorphologySheet>
                 color: _green,
                 borderRadius: BorderRadius.circular(10),
                 boxShadow: [
-                  BoxShadow(color: _green.withValues(alpha: 0.3), blurRadius: 6)
+                  BoxShadow(
+                      color: _green.withValues(alpha: 0.3), blurRadius: 6)
                 ],
               ),
               indicatorSize: TabBarIndicatorSize.tab,
@@ -232,8 +248,7 @@ class _MorphologySheetState extends State<MorphologySheet>
               tabs: const [Tab(text: 'Details'), Tab(text: 'Usages')],
             ),
           ),
-
-          // ── Tab content ───────────────────────────────────────────────
+          // Tab content
           Expanded(
             child: TabBarView(
               controller: _tabs,
@@ -256,7 +271,6 @@ class _MorphologySheetState extends State<MorphologySheet>
       ),
       child: Row(
         children: [
-          // Arabic word (selected)
           Text(
             _selectedWord.arabic,
             textDirection: TextDirection.rtl,
@@ -311,21 +325,17 @@ class _MorphologySheetState extends State<MorphologySheet>
   }
 
   // ── Tab 1: Details ─────────────────────────────────────────────────────────
+
   Widget _buildDetailsTab(DisplayProvider display, bool isDark) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Ayah with clickable words
           _buildClickableAyah(display, isDark),
           const SizedBox(height: 16),
-
-          // Linguistic explanation
           _buildLinguisticExplanation(isDark),
           const SizedBox(height: 16),
-
-          // Sarf breakdown
           _buildSarfBreakdown(display, isDark),
         ],
       ),
@@ -343,7 +353,6 @@ class _MorphologySheetState extends State<MorphologySheet>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          // Surah:Ayah badge
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -366,7 +375,6 @@ class _MorphologySheetState extends State<MorphologySheet>
             ],
           ),
           const SizedBox(height: 10),
-          // Words as clickable chips
           Wrap(
             alignment: WrapAlignment.end,
             textDirection: TextDirection.rtl,
@@ -380,7 +388,6 @@ class _MorphologySheetState extends State<MorphologySheet>
                   ? int.tryParse(wParts[2]) ?? (idx + 1)
                   : (idx + 1);
               final isSelected = w.id == _selectedWord.id;
-
               return GestureDetector(
                 onTap: () => _loadForWord(w, wPos),
                 child: AnimatedContainer(
@@ -410,7 +417,6 @@ class _MorphologySheetState extends State<MorphologySheet>
             }).toList(),
           ),
           const SizedBox(height: 8),
-          // Selected word meaning
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
@@ -435,7 +441,6 @@ class _MorphologySheetState extends State<MorphologySheet>
 
   Widget _buildLinguisticExplanation(bool isDark) {
     if (_sarfChain == null) return const SizedBox.shrink();
-
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -461,7 +466,6 @@ class _MorphologySheetState extends State<MorphologySheet>
             ],
           ),
           const SizedBox(height: 10),
-          // Grammar summary in natural language (like the screenshot)
           Text(
             _buildNaturalExplanation(isDark),
             style: TextStyle(
@@ -470,7 +474,6 @@ class _MorphologySheetState extends State<MorphologySheet>
                 height: 1.6),
           ),
           const SizedBox(height: 10),
-          // Grammar chips
           Wrap(
             spacing: 6,
             runSpacing: 6,
@@ -485,7 +488,6 @@ class _MorphologySheetState extends State<MorphologySheet>
     if (_sarfChain == null) return '';
     final s = _sarfChain!;
     final parts = <String>[];
-
     if (_showUrdu) {
       if (s.root.isNotEmpty) {
         parts.add('لفظ "${_selectedWord.arabic}" کا جذر "${s.root}" ہے۔');
@@ -519,8 +521,9 @@ class _MorphologySheetState extends State<MorphologySheet>
       }
       if (s.pos == 'V') {
         final tense = MorphologyService.expand(s.tense);
-        if (s.tense.isNotEmpty)
+        if (s.tense.isNotEmpty) {
           parts.add('This is a ${tense.toLowerCase()} verb.');
+        }
         if (s.person.isNotEmpty) {
           final desc = [
             if (s.person.isNotEmpty)
@@ -532,8 +535,9 @@ class _MorphologySheetState extends State<MorphologySheet>
           ].join(', ');
           if (desc.isNotEmpty) parts.add('Subject: $desc.');
         }
-        if (s.voice == 'PASS')
+        if (s.voice == 'PASS') {
           parts.add('Voice: passive — the subject receives the action.');
+        }
       }
       if (s.pos == 'N') {
         final state = {'DEF': 'definite', 'INDEF': 'indefinite'}[s.state] ?? '';
@@ -547,7 +551,6 @@ class _MorphologySheetState extends State<MorphologySheet>
         if (gcase.isNotEmpty) parts.add('Grammatical case: $gcase.');
       }
     }
-
     return parts.isEmpty
         ? (_showUrdu
             ? 'اس لفظ کا صرفی تجزیہ دستیاب ہے۔'
@@ -559,7 +562,6 @@ class _MorphologySheetState extends State<MorphologySheet>
     if (_sarfChain == null) return [];
     final s = _sarfChain!;
     final chips = <Widget>[];
-
     void addChip(String label, Color color) {
       chips.add(Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -575,20 +577,25 @@ class _MorphologySheetState extends State<MorphologySheet>
     }
 
     if (s.pos.isNotEmpty) addChip(MorphologyService.expand(s.pos), _green);
-    if (s.tense.isNotEmpty)
+    if (s.tense.isNotEmpty) {
       addChip(MorphologyService.expand(s.tense), Colors.blue);
+    }
     if (s.person.isNotEmpty) addChip('${s.person}P', Colors.teal);
-    if (s.gender.isNotEmpty)
+    if (s.gender.isNotEmpty) {
       addChip(MorphologyService.expand(s.gender), Colors.pink);
-    if (s.number.isNotEmpty)
+    }
+    if (s.number.isNotEmpty) {
       addChip(MorphologyService.expand(s.number), Colors.orange);
-    if (s.grammaticalCase.isNotEmpty)
+    }
+    if (s.grammaticalCase.isNotEmpty) {
       addChip(MorphologyService.expand(s.grammaticalCase), Colors.purple);
-    if (s.voice.isNotEmpty)
+    }
+    if (s.voice.isNotEmpty) {
       addChip(MorphologyService.expand(s.voice), Colors.indigo);
-    if (s.state.isNotEmpty)
+    }
+    if (s.state.isNotEmpty) {
       addChip(MorphologyService.expand(s.state), Colors.brown);
-
+    }
     return chips;
   }
 
@@ -614,9 +621,7 @@ class _MorphologySheetState extends State<MorphologySheet>
         ),
       );
     }
-
     final steps = _sarfChain!.steps;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -676,7 +681,6 @@ class _MorphologySheetState extends State<MorphologySheet>
         icon = Icons.auto_stories;
         break;
     }
-
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
@@ -739,7 +743,6 @@ class _MorphologySheetState extends State<MorphologySheet>
                       color: isDark ? Colors.white60 : Colors.grey.shade600,
                       height: 1.5),
                 ),
-                // Show prefix/suffix details for quranicForm
                 if (step.prefixes.isNotEmpty || step.suffixes.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
@@ -810,6 +813,7 @@ class _MorphologySheetState extends State<MorphologySheet>
   }
 
   // ── Tab 2: Usages ──────────────────────────────────────────────────────────
+
   Widget _buildUsagesTab(DisplayProvider display, bool isDark) {
     if (_sarfChain == null || _sarfChain!.root.isEmpty) {
       return Center(
@@ -825,7 +829,6 @@ class _MorphologySheetState extends State<MorphologySheet>
         ),
       );
     }
-
     final root = _sarfChain!.root;
     final forms = _rootForms ?? {};
     final totalOccurrences =
@@ -837,12 +840,13 @@ class _MorphologySheetState extends State<MorphologySheet>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Root summary header (like screenshot)
+          // Root summary header
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color:
-                  isDark ? Colors.white.withValues(alpha: 0.04) : Colors.white,
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.04)
+                  : Colors.white,
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: _gold.withValues(alpha: 0.25)),
             ),
@@ -854,13 +858,15 @@ class _MorphologySheetState extends State<MorphologySheet>
                       _showUrdu ? 'جذر: ' : 'Root: ',
                       style: TextStyle(
                           fontSize: 14,
-                          color:
-                              isDark ? Colors.white70 : Colors.grey.shade600),
+                          color: isDark
+                              ? Colors.white70
+                              : Colors.grey.shade600),
                     ),
                     Text(
                       root,
                       textDirection: TextDirection.rtl,
-                      style: GoogleFonts.amiriQuran(fontSize: 24, color: _gold),
+                      style:
+                          GoogleFonts.amiriQuran(fontSize: 24, color: _gold),
                     ),
                     const Spacer(),
                     Container(
@@ -907,14 +913,12 @@ class _MorphologySheetState extends State<MorphologySheet>
             ),
           ),
           const SizedBox(height: 12),
-
           // Forms list
           ...forms.entries.map((entry) {
             final lemma = entry.key;
             final wordKeys = entry.value;
             final isExpanded = _expandedLemma == lemma;
             final ayahs = _lemmaAyahs[lemma];
-
             return Container(
               margin: const EdgeInsets.only(bottom: 10),
               decoration: BoxDecoration(
@@ -926,7 +930,6 @@ class _MorphologySheetState extends State<MorphologySheet>
               ),
               child: Column(
                 children: [
-                  // Form header row (like screenshot)
                   GestureDetector(
                     onTap: () {
                       setState(() {
@@ -941,7 +944,6 @@ class _MorphologySheetState extends State<MorphologySheet>
                           horizontal: 14, vertical: 12),
                       child: Row(
                         children: [
-                          // English meaning placeholder
                           Expanded(
                             child: Text(
                               _getLemmaTranslation(lemma),
@@ -952,13 +954,12 @@ class _MorphologySheetState extends State<MorphologySheet>
                                       : Colors.grey.shade600),
                             ),
                           ),
-                          // Count
                           Text(
                             '${wordKeys.length} times',
-                            style: const TextStyle(fontSize: 12, color: _gold),
+                            style:
+                                const TextStyle(fontSize: 12, color: _gold),
                           ),
                           const SizedBox(width: 10),
-                          // Arabic lemma
                           Text(
                             lemma,
                             textDirection: TextDirection.rtl,
@@ -967,9 +968,10 @@ class _MorphologySheetState extends State<MorphologySheet>
                                 color: isDark ? Colors.white : _green),
                           ),
                           const SizedBox(width: 8),
-                          // Expand arrow
                           Icon(
-                            isExpanded ? Icons.expand_less : Icons.expand_more,
+                            isExpanded
+                                ? Icons.expand_less
+                                : Icons.expand_more,
                             color: Colors.grey,
                             size: 20,
                           ),
@@ -977,11 +979,10 @@ class _MorphologySheetState extends State<MorphologySheet>
                       ),
                     ),
                   ),
-
-                  // Expanded: ayahs list
                   if (isExpanded) ...[
                     Divider(
-                        height: 1, color: Colors.grey.withValues(alpha: 0.15)),
+                        height: 1,
+                        color: Colors.grey.withValues(alpha: 0.15)),
                     if (_loadingAyahs)
                       const Padding(
                         padding: EdgeInsets.all(16),
@@ -1021,11 +1022,9 @@ class _MorphologySheetState extends State<MorphologySheet>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          // Surah:Ayah badge + audio
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Audio for whole ayah word
               GestureDetector(
                 onTap: () => _playWordAudio(surahId, ayahId, targetPos),
                 child: Icon(
@@ -1037,25 +1036,27 @@ class _MorphologySheetState extends State<MorphologySheet>
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: _green,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text('$surahId:$ayahId',
-                    style: const TextStyle(color: Colors.white, fontSize: 10)),
+                    style:
+                        const TextStyle(color: Colors.white, fontSize: 10)),
               ),
             ],
           ),
           const SizedBox(height: 6),
-          // Ayah words with highlight
           Wrap(
             alignment: WrapAlignment.end,
             textDirection: TextDirection.rtl,
             spacing: 2,
             runSpacing: 2,
-            children:
-                wordsJson.where((w) => w['char_type_name'] != 'end').map((w) {
+            children: wordsJson
+                .where((w) => w['char_type_name'] != 'end')
+                .map((w) {
               final arabic = (w['text_uthmani'] ?? '') as String;
               final isMatch =
                   WordProgressService.normalizeArabic(arabic) == normalized;
@@ -1086,9 +1087,7 @@ class _MorphologySheetState extends State<MorphologySheet>
     );
   }
 
-  String _getLemmaTranslation(String lemma) {
-    return lemma;
-  }
+  String _getLemmaTranslation(String lemma) => lemma;
 
   TextStyle _arabicStyle(DisplayProvider d, bool isDark, {double? size}) {
     final sz = size ?? d.arabicFontSize;
@@ -1096,19 +1095,15 @@ class _MorphologySheetState extends State<MorphologySheet>
     switch (d.arabicFont) {
       case 'indopak':
         return TextStyle(
-            fontFamily: 'IndoPak',
-            fontSize: sz,
-            color: color,
-            height: d.lineHeight);
+            fontFamily: 'IndoPak', fontSize: sz, color: color, height: 1.8);
       case 'noorehuda':
         return TextStyle(
             fontFamily: 'NoorehudaFont',
             fontSize: sz,
             color: color,
-            height: d.lineHeight);
+            height: 1.8);
       default:
-        return GoogleFonts.amiriQuran(
-            fontSize: sz, color: color, height: d.lineHeight);
+        return GoogleFonts.amiriQuran(fontSize: sz, color: color, height: 1.8);
     }
   }
 }
