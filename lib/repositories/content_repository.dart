@@ -225,7 +225,7 @@ class ContentRepository {
   }
 
   /// All translations for a surah — used for pre-loading.
-  /// Returns Map<ayahNumber, translationText>.
+  /// Returns `Map<ayahNumber, translationText>`.
   static Future<Map<int, String>> getSurahTranslations(
       int surahId, String language, String scholarKey) async {
     final db = await DatabaseManager.db;
@@ -262,7 +262,7 @@ class ContentRepository {
   }
 
   /// Morphology segments for ALL words in an ayah — one query instead of N.
-  /// Returns Map<ayahWordId, List<MorphSegmentRow>>.
+  // / Returns Map<ayahWordId, List<MorphSegmentRow>>.
   static Future<Map<int, List<MorphSegmentRow>>> getSegmentsForAyah(
       int ayahId) async {
     final db = await DatabaseManager.db;

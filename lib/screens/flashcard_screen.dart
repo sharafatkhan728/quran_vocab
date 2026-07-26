@@ -9,7 +9,6 @@ import '../providers/user_provider.dart';
 import '../services/srs_service.dart';
 import '../services/word_progress_service.dart';
 import '../services/translation_service.dart';
-import '../services/morphology_service.dart';
 import 'morphology_sheet.dart';
 import '../repositories/vocabulary_repository.dart';
 import '../models/word.dart';
@@ -64,36 +63,16 @@ class FlashWord {
   Future<void> loadRoot() async {
     if (rootLoaded || root.isNotEmpty) return;
     rootLoaded = true;
-    if (!MorphologyService.isLoaded) return;
-    if (sampleSurah == 0 || sampleAyahNum == 0) return;
-    final segs = MorphologyService.getSegments(
-        sampleSurah, sampleAyahNum, wordPositionInAyah);
-    if (segs != null) {
-      for (final seg in segs) {
-        if (seg.type == SegType.stem && seg.root.isNotEmpty) {
-          root = seg.root;
-          return;
-        }
+    try {
+      // Root is already stored in vocab_words JOIN roots — no in-memory
+      // corpus needed. VocabularyRepository.getByArabicClean() returns it
+      // directly from the SQLite query.
+      final vocab =
+          await VocabularyRepository.getByArabicClean(normalizedArabic);
+      if (vocab != null && vocab.root.isNotEmpty) {
+        root = vocab.root;
       }
-    }
-    for (int offset = -2; offset <= 2; offset++) {
-      if (offset == 0) continue;
-      final p = wordPositionInAyah + offset;
-      if (p < 1) continue;
-      final s = MorphologyService.getSegments(sampleSurah, sampleAyahNum, p);
-      if (s == null) continue;
-      for (final seg in s) {
-        if (seg.type == SegType.stem && seg.root.isNotEmpty) {
-          final segNorm =
-              seg.lemma.replaceAll(RegExp(r'[\u064B-\u065F\u0670\u0640]'), '');
-          if (segNorm.contains(normalizedArabic) ||
-              normalizedArabic.contains(segNorm)) {
-            root = seg.root;
-            return;
-          }
-        }
-      }
-    }
+    } catch (_) {}
   }
 }
 

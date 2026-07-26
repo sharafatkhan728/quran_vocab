@@ -5,38 +5,56 @@ import '../repositories/srs_repository.dart';
 import '../database/database_manager.dart';
 
 class WordProgressService {
-  static const String _prefix = 'known_word_';
-
   static String normalizeArabic(String text) =>
       text.replaceAll(RegExp(r'[\u064B-\u065F\u0670\u0640]'), '').trim();
 
+  // ── Known word actions ────────────────────────────────────────────────────
+
   static Future<void> markAsKnown(String arabicText) async {
     final clean = normalizeArabic(arabicText);
-    final vocab = await VocabularyRepository.getByArabicClean(clean);
-    if (vocab == null) return;
-    await VocabularyRepository.markKnown(vocab.id);
+    final db = await DatabaseManager.db;
+    // Look up id directly — avoids full VocabularyRepository overhead
+    final rows = await db.query('vocab_words',
+        columns: ['id'],
+        where: 'arabic_clean = ?',
+        whereArgs: [clean],
+        limit: 1);
+    if (rows.isEmpty) return;
+    final id = rows.first['id'] as int;
+    await VocabularyRepository.markKnown(id);
     _scheduleDailyUpdate();
   }
 
   static Future<void> markAsUnknown(String arabicText) async {
     final clean = normalizeArabic(arabicText);
-    final vocab = await VocabularyRepository.getByArabicClean(clean);
-    if (vocab == null) return;
-    await VocabularyRepository.markUnknown(vocab.id);
+    final db = await DatabaseManager.db;
+    final rows = await db.query('vocab_words',
+        columns: ['id'],
+        where: 'arabic_clean = ?',
+        whereArgs: [clean],
+        limit: 1);
+    if (rows.isEmpty) return;
+    final id = rows.first['id'] as int;
+    await VocabularyRepository.markUnknown(id);
   }
 
   static Future<bool> toggleWord(String arabicText) async {
     final clean = normalizeArabic(arabicText);
-    final vocab = await VocabularyRepository.getByArabicClean(clean);
-    if (vocab == null) return false;
     final db = await DatabaseManager.db;
-    final rows = await db.query('known_words',
-        where: 'vocab_word_id = ?', whereArgs: [vocab.id], limit: 1);
-    if (rows.isNotEmpty) {
-      await VocabularyRepository.markUnknown(vocab.id);
+    final rows = await db.query('vocab_words',
+        columns: ['id'],
+        where: 'arabic_clean = ?',
+        whereArgs: [clean],
+        limit: 1);
+    if (rows.isEmpty) return false;
+    final id = rows.first['id'] as int;
+    final known = await db.query('known_words',
+        where: 'vocab_word_id = ?', whereArgs: [id], limit: 1);
+    if (known.isNotEmpty) {
+      await VocabularyRepository.markUnknown(id);
       return false;
     } else {
-      await VocabularyRepository.markKnown(vocab.id);
+      await VocabularyRepository.markKnown(id);
       _scheduleDailyUpdate();
       return true;
     }
@@ -44,12 +62,17 @@ class WordProgressService {
 
   static Future<bool> isKnown(String arabicText) async {
     final clean = normalizeArabic(arabicText);
-    final vocab = await VocabularyRepository.getByArabicClean(clean);
-    if (vocab == null) return false;
     final db = await DatabaseManager.db;
-    final rows = await db.query('known_words',
-        where: 'vocab_word_id = ?', whereArgs: [vocab.id], limit: 1);
-    return rows.isNotEmpty;
+    final rows = await db.query('vocab_words',
+        columns: ['id'],
+        where: 'arabic_clean = ?',
+        whereArgs: [clean],
+        limit: 1);
+    if (rows.isEmpty) return false;
+    final id = rows.first['id'] as int;
+    final known = await db.query('known_words',
+        where: 'vocab_word_id = ?', whereArgs: [id], limit: 1);
+    return known.isNotEmpty;
   }
 
   static Future<Set<String>> getAllKnownWords() =>
@@ -63,7 +86,6 @@ class WordProgressService {
   static int get totalUniqueWords => 14870;
 
   /// Returns frequency map from SQLite vocab_words table.
-  /// Used by flashcard session builder and vocabulary screen.
   static Future<Map<String, WordData>> getWordFrequencies() async {
     final rows = await VocabularyRepository.getAllWordsByFrequency();
     return {
@@ -76,59 +98,66 @@ class WordProgressService {
     };
   }
 
-  // ── Surah progress ────────────────────────────────────────────────────────
-
+  // ── Surah progress — two queries total (not 228) ──────────────────────────
   static Future<Map<int, double>> getAllSurahProgress() async {
     final db = await DatabaseManager.db;
+
+    // Query 1: total unique vocab words per surah
+    final totalRows = await db.rawQuery('''
+      SELECT a.surah_id, COUNT(DISTINCT aw.vocab_word_id) AS cnt
+      FROM ayah_words aw
+      JOIN ayahs a ON a.id = aw.ayah_id
+      WHERE aw.is_waqf = 0 AND aw.vocab_word_id IS NOT NULL
+      GROUP BY a.surah_id
+    ''');
+    final totals = <int, int>{
+      for (final r in totalRows)
+        r['surah_id'] as int: (r['cnt'] as int? ?? 0)
+    };
+
+    // Query 2: known unique vocab words per surah
+    final knownRows = await db.rawQuery('''
+      SELECT a.surah_id, COUNT(DISTINCT aw.vocab_word_id) AS cnt
+      FROM ayah_words aw
+      JOIN ayahs a ON a.id = aw.ayah_id
+      JOIN known_words kw ON kw.vocab_word_id = aw.vocab_word_id
+      WHERE aw.is_waqf = 0
+      GROUP BY a.surah_id
+    ''');
+    final knowns = <int, int>{
+      for (final r in knownRows)
+        r['surah_id'] as int: (r['cnt'] as int? ?? 0)
+    };
+
+    // Build result map for all 114 surahs
     final result = <int, double>{};
     for (int i = 1; i <= 114; i++) {
-      final totalRows = await db.rawQuery('''
-        SELECT COUNT(DISTINCT aw.vocab_word_id) AS cnt
-        FROM ayah_words aw
-        JOIN ayahs a ON a.id = aw.ayah_id
-        WHERE a.surah_id = ? AND aw.is_waqf = 0 AND aw.vocab_word_id IS NOT NULL
-      ''', [i]);
-      final total = (totalRows.first['cnt'] as int?) ?? 0;
-      if (total == 0) { result[i] = 0; continue; }
-
-      final knownRows = await db.rawQuery('''
-        SELECT COUNT(DISTINCT aw.vocab_word_id) AS cnt
-        FROM ayah_words aw
-        JOIN ayahs a ON a.id = aw.ayah_id
-        JOIN known_words kw ON kw.vocab_word_id = aw.vocab_word_id
-        WHERE a.surah_id = ? AND aw.is_waqf = 0
-      ''', [i]);
-      final knownCount = (knownRows.first['cnt'] as int?) ?? 0;
-      result[i] = (knownCount / total * 100).clamp(0, 100);
+      final total = totals[i] ?? 0;
+      if (total == 0) {
+        result[i] = 0;
+      } else {
+        result[i] = ((knowns[i] ?? 0) / total * 100).clamp(0, 100);
+      }
     }
     return result;
   }
 
   static void recalculateAllSurahProgress() {
-    // No-op — progress is now calculated on demand from SQLite
-    // Left in place so existing call sites compile unchanged
+    // No-op — progress calculated on demand from SQLite
   }
 
-  // ── Legacy methods kept for compile compatibility ─────────────────────────
-  // These are called from surah_reader_screen._saveWordData
-  // They are no-ops now because the database is built during import
-
+  // ── Legacy no-ops kept for compile compatibility ──────────────────────────
   static Future<void> saveSurahWordList(
       int surahId, Set<String> normalizedWords) async {}
-
   static Future<void> saveSurahWordCounts(
       int surahId, Map<String, int> wordCounts) async {}
-
   static Future<void> saveWordUrdu(String normalized, String urdu) async {}
-
   static Future<void> saveWordOriginal(
       String normalized, String original) async {}
-
   static Future<void> markSurahWordsLoaded(
       int surahId, Set<String> arabicWords) async {}
 
   // ── Daily stat helper ─────────────────────────────────────────────────────
-
   static Timer? _dailyTimer;
   static void _scheduleDailyUpdate() {
     _dailyTimer?.cancel();
@@ -137,7 +166,7 @@ class WordProgressService {
     });
   }
 
-  // ── Kept for migration_manager and sync_service compatibility ─────────────
+  // ── Kept for migration_manager compatibility ──────────────────────────────
   static Future<SharedPreferences?> getPrefsInstance() async =>
       SharedPreferences.getInstance();
 }

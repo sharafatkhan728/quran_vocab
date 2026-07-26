@@ -400,7 +400,9 @@ class _WordDetailDialogState extends State<WordDetailDialog> {
 
   TextStyle _arabicStyle(ThemeProvider theme, bool isDark, double size) {
     final color = isDark ? Colors.white : const Color(0xFF1A1A1A);
-    switch (theme.arabicFont) {
+    // arabicFont now lives in DisplayProvider only
+    final display = context.read<DisplayProvider>();
+    switch (display.arabicFont) {
       case 'indopak':
         return TextStyle(
             fontFamily: 'IndoPak', fontSize: size, color: color, height: 1.6);
@@ -416,32 +418,3 @@ class _WordDetailDialogState extends State<WordDetailDialog> {
     }
   }
 }
-//   Widget _actionBtn({
-//     required IconData icon,
-//     required String label,
-//     required Color color,
-//     required VoidCallback onTap,
-//   }) {
-//     return GestureDetector(
-//       onTap: onTap,
-//       child: Column(
-//         mainAxisSize: MainAxisSize.min,
-//         children: [
-//           Container(
-//             width: 48,
-//             height: 48,
-//             decoration: BoxDecoration(
-//               shape: BoxShape.circle,
-//               color: color.withValues(alpha: 0.12),
-//               border: Border.all(color: color.withValues(alpha: 0.35)),
-//             ),
-//             child: Icon(icon, color: color, size: 22),
-//           ),
-//           const SizedBox(height: 4),
-//           Text(label,
-//               style: TextStyle(fontSize: 10, color: Colors.grey.shade500)),
-//         ],
-//       ),
-//     );
-//   }
-// }

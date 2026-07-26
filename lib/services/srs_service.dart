@@ -1,11 +1,35 @@
+import '../database/database_manager.dart';
 import '../repositories/srs_repository.dart';
-import '../repositories/vocabulary_repository.dart';
 
 export '../repositories/srs_repository.dart' show SrsCardRow;
 
 class SrsService {
   static const List<int> _intervalSessions = [1, 2, 3, 5, 8, 13, 21, 34];
   static int _currentSession = 0;
+
+  // ── Bulk vocab cache ──────────────────────────────────────────────────────
+  // Loaded once per session — one query replaces 14,876 sequential lookups.
+  static Map<String, int>? _cleanToId; // arabic_clean → vocab_word_id
+  static Map<int, String>? _idToClean; // vocab_word_id → arabic_clean
+
+  static Future<void> _ensureVocabCache() async {
+    if (_cleanToId != null) return;
+    final db = await DatabaseManager.db;
+    final rows =
+        await db.query('vocab_words', columns: ['id', 'arabic_clean']);
+    _cleanToId = {
+      for (final r in rows) r['arabic_clean'] as String: r['id'] as int
+    };
+    _idToClean = {
+      for (final r in rows) r['id'] as int: r['arabic_clean'] as String
+    };
+  }
+
+  /// Call this when vocab_words table changes (e.g. after re-import).
+  static void clearVocabCache() {
+    _cleanToId = null;
+    _idToClean = null;
+  }
 
   // ── Session counter ───────────────────────────────────────────────────────
 
@@ -22,23 +46,23 @@ class SrsService {
   // ── Card access ───────────────────────────────────────────────────────────
 
   static Future<SrsCardRow?> getCard(String normalizedArabic) async {
-    final vocab =
-        await VocabularyRepository.getByArabicClean(normalizedArabic);
-    if (vocab == null) return null;
-    return SrsRepository.getCard(vocab.id);
+    await _ensureVocabCache();
+    final id = _cleanToId![normalizedArabic];
+    if (id == null) return null;
+    return SrsRepository.getCard(id);
   }
 
   // ── Review actions ────────────────────────────────────────────────────────
 
-  /// Mark as Known — advance stage, increase ease. Returns points earned.
+  /// Mark word as known. Returns points earned.
   static Future<int> markKnown(String normalizedArabic) async {
-    final vocab =
-        await VocabularyRepository.getByArabicClean(normalizedArabic);
-    if (vocab == null) return 0;
-    final existing = await SrsRepository.getCard(vocab.id);
+    await _ensureVocabCache();
+    final id = _cleanToId![normalizedArabic];
+    if (id == null) return 0;
+    final existing = await SrsRepository.getCard(id);
     final old = existing ??
         SrsCardRow(
-          vocabWordId: vocab.id,
+          vocabWordId: id,
           stage: 0,
           nextReviewSession: 0,
           easeFactor: 2.5,
@@ -47,12 +71,11 @@ class SrsService {
           lastResult: -1,
           isDeleted: 0,
         );
-    final newStage =
-        (old.stage + 1).clamp(0, _intervalSessions.length - 1);
+    final newStage = (old.stage + 1).clamp(0, _intervalSessions.length - 1);
     final newEase = (old.easeFactor + 0.1).clamp(1.3, 2.5);
     final pts = _pointsForStage(newStage);
     await SrsRepository.upsertCard(SrsCardRow(
-      vocabWordId: vocab.id,
+      vocabWordId: id,
       stage: newStage,
       nextReviewSession: _currentSession + _intervalSessions[newStage],
       easeFactor: newEase,
@@ -65,15 +88,15 @@ class SrsService {
     return pts;
   }
 
-  /// Mark as Unknown — drop stage, schedule sooner.
+  /// Mark word as unknown — drops stage, schedules sooner.
   static Future<void> markUnknown(String normalizedArabic) async {
-    final vocab =
-        await VocabularyRepository.getByArabicClean(normalizedArabic);
-    if (vocab == null) return;
-    final existing = await SrsRepository.getCard(vocab.id);
+    await _ensureVocabCache();
+    final id = _cleanToId![normalizedArabic];
+    if (id == null) return;
+    final existing = await SrsRepository.getCard(id);
     final old = existing ??
         SrsCardRow(
-          vocabWordId: vocab.id,
+          vocabWordId: id,
           stage: 0,
           nextReviewSession: 0,
           easeFactor: 2.5,
@@ -83,7 +106,7 @@ class SrsService {
           isDeleted: 0,
         );
     await SrsRepository.upsertCard(SrsCardRow(
-      vocabWordId: vocab.id,
+      vocabWordId: id,
       stage: (old.stage - 2).clamp(0, _intervalSessions.length - 1),
       nextReviewSession: _currentSession + 1,
       easeFactor: (old.easeFactor - 0.2).clamp(1.3, 2.5),
@@ -96,10 +119,10 @@ class SrsService {
 
   /// Soft-delete a card (hidden from future sessions).
   static Future<void> deleteCard(String normalizedArabic) async {
-    final vocab =
-        await VocabularyRepository.getByArabicClean(normalizedArabic);
-    if (vocab == null) return;
-    await SrsRepository.deleteCard(vocab.id);
+    await _ensureVocabCache();
+    final id = _cleanToId![normalizedArabic];
+    if (id == null) return;
+    await SrsRepository.deleteCard(id);
   }
 
   // ── Points ────────────────────────────────────────────────────────────────
@@ -144,8 +167,22 @@ class SrsService {
     int dailyGoal,
   ) async {
     _currentSession = await getCurrentSession();
-    final vocabIds = await _wordsToIds(allWords);
+
+    // Load vocab cache once — replaces N sequential getByArabicClean calls
+    await _ensureVocabCache();
+    final cleanToId = _cleanToId!;
+
+    // Map words → ids entirely in memory (zero DB queries)
+    final vocabIds = <int>[];
+    for (final w in allWords) {
+      final id = cleanToId[w];
+      if (id != null) vocabIds.add(id);
+    }
+
+    // One bulk query — insert any missing card rows
     await SrsRepository.initMissingCards(vocabIds);
+
+    // One query — load all cards into memory
     final allCards = await SrsRepository.loadAllCards();
 
     final overdueReviews = <_CardWithPriority>[];
@@ -154,11 +191,12 @@ class SrsService {
 
     for (int i = 0; i < allWords.length; i++) {
       final word = allWords[i];
-      final vocab = await VocabularyRepository.getByArabicClean(word);
-      if (vocab == null) continue;
-      final card = allCards[vocab.id] ??
+      final id = cleanToId[word];
+      if (id == null) continue;
+
+      final card = allCards[id] ??
           SrsCardRow(
-            vocabWordId: vocab.id,
+            vocabWordId: id,
             stage: 0,
             nextReviewSession: 0,
             easeFactor: 2.5,
@@ -167,6 +205,7 @@ class SrsService {
             lastResult: -1,
             isDeleted: 0,
           );
+
       if (card.stage > 0 && card.totalReviews > 0) {
         if (_currentSession >= card.nextReviewSession) {
           final overdue = _currentSession - card.nextReviewSession;
@@ -203,12 +242,14 @@ class SrsService {
 
   static Future<SessionBuildResult> buildExtraSession(
       List<String> allWords, int batchSize) async {
+    await _ensureVocabCache();
+    final cleanToId = _cleanToId!;
     final allCards = await SrsRepository.loadAllCards();
     final unseen = <String>[];
     for (final word in allWords) {
-      final vocab = await VocabularyRepository.getByArabicClean(word);
-      if (vocab == null) continue;
-      final card = allCards[vocab.id];
+      final id = cleanToId[word];
+      if (id == null) continue;
+      final card = allCards[id];
       if (card == null || card.totalReviews == 0) {
         unseen.add(word);
         if (unseen.length >= batchSize) break;
@@ -235,20 +276,26 @@ class SrsService {
     return pts[stage.clamp(0, pts.length - 1)];
   }
 
+  /// arabic_clean strings → vocab_word_ids using in-memory cache.
+  /// Zero DB queries after first call.
   static Future<List<int>> _wordsToIds(List<String> words) async {
+    await _ensureVocabCache();
     final ids = <int>[];
     for (final w in words) {
-      final vocab = await VocabularyRepository.getByArabicClean(w);
-      if (vocab != null) ids.add(vocab.id);
+      final id = _cleanToId![w];
+      if (id != null) ids.add(id);
     }
     return ids;
   }
 
+  /// vocab_word_ids → arabic_clean strings using in-memory cache.
+  /// Zero DB queries after first call.
   static Future<List<String>> _idsToWords(List<int> ids) async {
+    await _ensureVocabCache();
     final words = <String>[];
     for (final id in ids) {
-      final vocab = await VocabularyRepository.getById(id);
-      if (vocab != null) words.add(vocab.arabicClean);
+      final w = _idToClean![id];
+      if (w != null) words.add(w);
     }
     return words;
   }

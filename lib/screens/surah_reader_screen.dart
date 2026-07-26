@@ -13,6 +13,7 @@ import '../services/word_glossary_service.dart';
 import '../services/word_progress_service.dart';
 import '../widgets/word_tile.dart';
 import '../widgets/word_detail_dialog.dart';
+import '../providers/display_provider.dart';
 
 class SurahReaderScreen extends StatefulWidget {
   final Surah surah;
@@ -454,10 +455,11 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
 
   Widget _fontChip(String label, String key, ThemeProvider theme,
       StateSetter setModal) {
-    final sel = theme.arabicFont == key;
+    final display = context.read<DisplayProvider>();
+    final sel = display.arabicFont == key;
     return GestureDetector(
       onTap: () {
-        theme.setArabicFont(key);
+        display.setArabicFont(key);
         setModal(() {});
       },
       child: Container(
@@ -875,7 +877,8 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
 
   TextStyle _mushafStyle(ThemeProvider theme, bool isDark) {
     final color = isDark ? Colors.white : const Color(0xFF1A1A1A);
-    switch (theme.arabicFont) {
+    final display = context.read<DisplayProvider>();
+    switch (display.arabicFont) {
       case 'indopak':
         return TextStyle(
             fontFamily: 'IndoPak',

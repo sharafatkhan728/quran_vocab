@@ -4,6 +4,7 @@ import '../services/word_progress_service.dart';
 import 'word_occurrences_screen.dart';
 import '../providers/display_provider.dart';
 import 'package:provider/provider.dart';
+import 'vocabulary_search_screen.dart';
 
 
 class VocabularyScreen extends StatefulWidget {
@@ -176,6 +177,11 @@ Future<void> _initLoad() async {
           ],
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.search),
+            onPressed: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const VocabularySearchScreen())),
+          ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.sort, color: Colors.white),
             onSelected: (val) {
