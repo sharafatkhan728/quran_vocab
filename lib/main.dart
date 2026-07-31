@@ -1,19 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'providers/theme_provider.dart';
-import 'screens/surah_list_screen.dart';
-import 'screens/vocabulary_screen.dart';
-import 'screens/progress_screen.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'providers/user_provider.dart';
 import 'providers/display_provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'screens/auth_screen.dart';
-import 'screens/profile_settings_screen.dart';
 import 'services/translation_service.dart';
 import 'services/word_glossary_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/splash_screen.dart';
+import 'screens/main_navigation.dart';
+
 
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -101,58 +99,6 @@ class _AppGate extends StatelessWidget {
         }
         return const AuthScreen();
       },
-    );
-  }
-}
-
-class MainNavigation extends StatefulWidget {
-  const MainNavigation({super.key});
-
-  @override
-  State<MainNavigation> createState() => _MainNavigationState();
-}
-
-class _MainNavigationState extends State<MainNavigation> {
-  int _currentIndex = 0;
-
-  final List<Widget> _screens = const [
-    SurahListScreen(),
-    VocabularyScreen(),
-    ProgressScreen(),
-    ProfileSettingsScreen(),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: IndexedStack(index: _currentIndex, children: _screens),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: (i) => setState(() => _currentIndex = i),
-        backgroundColor: Theme.of(context).cardColor,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.menu_book_outlined),
-            selectedIcon: Icon(Icons.menu_book),
-            label: 'Quran',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.abc_outlined),
-            selectedIcon: Icon(Icons.abc),
-            label: 'Vocabulary',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.bar_chart_outlined),
-            selectedIcon: Icon(Icons.bar_chart),
-            label: 'Progress',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: 'Profile',
-          ),
-        ],
-      ),
     );
   }
 }

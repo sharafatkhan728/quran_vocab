@@ -1,7 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 
 class VocabRootImporter {
-  final Database db;
+  final DatabaseExecutor db;
   VocabRootImporter(this.db);
 
   Future<void> run() async {

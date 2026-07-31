@@ -3,37 +3,42 @@ import 'package:flutter/services.dart';
 import 'package:sqflite/sqflite.dart';
 import '../../services/word_progress_service.dart';
 
-/// WordImporter — builds ayah_words and word_translations from the
-/// morphology file's word positions, NOT from quran.getVerse().split().
+/// WordImporter — builds vocab_words, ayah_words, word_translations.
 ///
-/// The morphology file is the single source of truth for word positions.
-/// The glossary JSONs use the same surah:ayah:wordPos keys.
-/// quran.getVerse().split(' ') gives a DIFFERENT split for some ayahs
-/// (e.g. 2:21 splits into 12 tokens but morphology has 11 positions),
-/// which causes Arabic ↔ Urdu misalignment in the reader.
+/// Uses morphology file positions as the source of truth for word
+/// boundaries — NOT quran.getVerse().split(' ') which gives different
+/// splits causing Arabic/Urdu misalignment.
+///
+/// Two-phase design:
+///   Phase 1: loadAssets() — reads all JSON + morphology file into memory.
+///             Called BEFORE the DB transaction so no DB state is changed
+///             if asset loading fails.
+///   Phase 2: runWithTxn() — writes everything to DB inside the caller's
+///             transaction. If it throws, the transaction rolls back.
 class WordImporter {
-  final Database db;
+  final DatabaseExecutor db;
+
   Map<String, String> _urduGlossary = {};
   Map<String, String> _englishGlossary = {};
   Map<String, String> _englishRaw = {};
   Map<String, String> _hindiGlossary = {};
 
-  // Built from morphology.txt:
+  // Morphology-derived word data
   // "surah:ayah:wordPos" → combined Arabic text of all segments
   final Map<String, String> _morphWordText = {};
 
-  // "surah:ayah" → max word position (how many words in that ayah)
-  final Map<String, int> _ayahWordCount = {};
+  // Exposed so MorphologyImporter can reuse without re-reading the file
+  List<String> _morphologyLines = [];
+  List<String> get morphologyLines => _morphologyLines;
 
   WordImporter(this.db);
 
-  Future<void> run(void Function(int done, int total) onProgress) async {
+  // ── Phase 1: Load all assets into memory ──────────────────────────────────
+
+  Future<void> loadAssets() async {
     await _loadGlossaries();
     await _parseMorphologyPositions();
-    await _buildAndInsertVocab(onProgress);
   }
-
-  // ── Glossary loading ──────────────────────────────────────────────────────
 
   Future<void> _loadGlossaries() async {
     _urduGlossary = await _loadJson('assets/data/urud-wbw.json');
@@ -54,70 +59,46 @@ class WordImporter {
     }
   }
 
-  // ── Parse morphology.txt to extract word-level positions ─────────────────
-  //
-  // The morphology file has one row per SEGMENT:
-  //   1:1:1:1   بِ   P   P|PREF|LEM:ب
-  //   1:1:1:2   سْمِ  N   ROOT:سمو|...
-  //
-  // We merge all segments per word position into one combined Arabic string.
-  // e.g. 2:21:1 has segments: يَٰٓ + أَيُّ + هَا → "يَٰٓأَيُّهَا"
-  //
-  // This is how the reader should display each "word tile" — one tile per
-  // morphology word position, not one tile per quran-package token.
-
   Future<void> _parseMorphologyPositions() async {
     final raw =
         await rootBundle.loadString('assets/data/quran_morphology.txt');
-    final lines = raw.split('\n');
+    _morphologyLines = raw.split('\n');
 
-    // Accumulate segments per word position
-    // key: "surah:ayah:wordPos"  value: list of segment Arabic texts in order
     final segmentsByWord = <String, List<String>>{};
 
-    for (final line in lines) {
+    for (final line in _morphologyLines) {
       final t = line.trim();
       if (t.isEmpty || t.startsWith('#')) continue;
       final cols = t.split('\t');
       if (cols.length < 2) continue;
 
-      final loc =
-          cols[0].replaceAll('(', '').replaceAll(')', '').trim();
+      final loc = cols[0].replaceAll('(', '').replaceAll(')', '').trim();
       final arabicText = cols[1].trim();
       final parts = loc.split(':');
       if (parts.length < 4) continue;
 
-      final surahId = parts[0];
-      final ayahNum = parts[1];
-      final wordPos = parts[2];
-      // segNum = parts[3] — not needed here
-
-      final wordKey = '$surahId:$ayahNum:$wordPos';
+      final wordKey = '${parts[0]}:${parts[1]}:${parts[2]}';
       segmentsByWord.putIfAbsent(wordKey, () => []).add(arabicText);
-
-      // Track max word position per ayah
-      final ayahKey = '$surahId:$ayahNum';
-      final pos = int.tryParse(wordPos) ?? 0;
-      if ((_ayahWordCount[ayahKey] ?? 0) < pos) {
-        _ayahWordCount[ayahKey] = pos;
-      }
     }
 
-    // Merge segments into combined word text
     for (final entry in segmentsByWord.entries) {
       _morphWordText[entry.key] = entry.value.join('');
     }
   }
 
-  // ── Build vocab_words + ayah_words + word_translations ───────────────────
+  // ── Phase 2: Write to DB inside caller's transaction ─────────────────────
 
-  Future<void> _buildAndInsertVocab(
-      void Function(int done, int total) onProgress) async {
+  Future<void> run(void Function(int done, int total) onProgress) async {
+    await runWithTxn(db, onProgress);
+  }
 
-    // Pass 1 — collect unique vocab words using morphology positions
+  Future<void> runWithTxn(
+    DatabaseExecutor txn,
+    void Function(int done, int total) onProgress,
+  ) async {
+    // Pass 1 — collect unique vocab words from morphology positions
     final vocabMap = <String, _VocabData>{};
 
-    // Iterate over all morphology word positions (not quran.getVerse())
     for (final entry in _morphWordText.entries) {
       final parts = entry.key.split(':');
       if (parts.length < 3) continue;
@@ -125,7 +106,7 @@ class WordImporter {
       final a = int.tryParse(parts[1]) ?? 0;
       final pos = int.tryParse(parts[2]) ?? 0;
 
-      final arabic = entry.value; // combined segments
+      final arabic = entry.value;
       final clean = WordProgressService.normalizeArabic(arabic);
       if (clean.isEmpty) continue;
 
@@ -156,9 +137,9 @@ class WordImporter {
 
     onProgress(114, 228);
 
-    // Pass 2 — insert vocab_words in bulk
+    // Pass 2 — insert vocab_words
     const batchSize = 500;
-    var batch = db.batch();
+    var batch = txn.batch();
     int count = 0;
 
     for (final entry in vocabMap.entries) {
@@ -180,23 +161,23 @@ class WordImporter {
       count++;
       if (count % batchSize == 0) {
         await batch.commit(noResult: true);
-        batch = db.batch();
+        batch = txn.batch();
       }
     }
     await batch.commit(noResult: true);
 
-    // Build in-memory cache: arabicClean → vocab_word_id
+    // Build vocab cache from what we just inserted
     final vocabRows =
-        await db.query('vocab_words', columns: ['id', 'arabic_clean']);
+        await txn.query('vocab_words', columns: ['id', 'arabic_clean']);
     final vocabCache = <String, int>{
       for (final r in vocabRows)
         r['arabic_clean'] as String: r['id'] as int
     };
 
-    // Build ayah id lookup: surahId → {ayahNumber → ayahId}
-    final surahAyahMap = <int, Map<int, int>>{};
-    final ayahRows = await db.rawQuery(
+    // Build ayah id lookup
+    final ayahRows = await txn.rawQuery(
         'SELECT id, surah_id, ayah_number FROM ayahs ORDER BY surah_id, ayah_number');
+    final surahAyahMap = <int, Map<int, int>>{};
     for (final r in ayahRows) {
       final sid = r['surah_id'] as int;
       final anum = r['ayah_number'] as int;
@@ -204,12 +185,7 @@ class WordImporter {
       surahAyahMap.putIfAbsent(sid, () => {})[anum] = aid;
     }
 
-    // Pass 3 — insert ayah_words + word_translations using morphology positions
-    // Group _morphWordText by surah for progress reporting
-    int surahDone = 0;
-    const totalSurahs = 114;
-
-    // Group keys by surah
+    // Group morphology keys by surah
     final bySurah = <int, List<String>>{};
     for (final key in _morphWordText.keys) {
       final parts = key.split(':');
@@ -219,12 +195,14 @@ class WordImporter {
       bySurah.putIfAbsent(s, () => []).add(key);
     }
 
-    for (int s = 1; s <= totalSurahs; s++) {
+    // Pass 3 — insert ayah_words + word_translations
+    int surahDone = 0;
+    for (int s = 1; s <= 114; s++) {
       final keys = bySurah[s] ?? [];
       final ayahMap = surahAyahMap[s] ?? {};
 
-      var wBatch = db.batch();
-      var tBatch = db.batch();
+      var wBatch = txn.batch();
+      var tBatch = txn.batch();
       int wCount = 0;
 
       for (final wordKey in keys) {
@@ -236,8 +214,6 @@ class WordImporter {
 
         final arabic = _morphWordText[wordKey]!;
         final clean = WordProgressService.normalizeArabic(arabic);
-
-        // A word is waqf if its clean form contains only Quranic pause marks
         final stripped = clean
             .replaceAll(
                 RegExp(
@@ -284,8 +260,8 @@ class WordImporter {
         if (wCount % batchSize == 0) {
           await wBatch.commit(noResult: true);
           await tBatch.commit(noResult: true);
-          wBatch = db.batch();
-          tBatch = db.batch();
+          wBatch = txn.batch();
+          tBatch = txn.batch();
         }
       }
 
@@ -296,8 +272,8 @@ class WordImporter {
       onProgress(114 + surahDone, 228);
     }
 
-    // Pass 4 — update frequencies from ayah_words count
-    await db.execute('''
+    // Pass 4 — update frequencies
+    await txn.rawUpdate('''
       UPDATE vocab_words
       SET frequency = (
         SELECT COUNT(*) FROM ayah_words

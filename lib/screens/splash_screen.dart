@@ -14,6 +14,7 @@ class _SplashScreenState extends State<SplashScreen> {
   String _label = 'Starting...';
   double _progress = 0;
   bool _done = false;
+  bool _hasError = false;
 
   @override
   void initState() {
@@ -26,24 +27,37 @@ class _SplashScreenState extends State<SplashScreen> {
       await MigrationManager.migrateIfNeeded();
 
       final needs = await DatabaseImporter.needsImport();
-      if (needs) {
-        await for (final p in DatabaseImporter.runImport()) {
-          if (mounted) {
-            setState(() {
-              _label = p.label;
-              _progress = p.fraction;
-            });
-          }
+      if (!needs) {
+        if (mounted) setState(() => _done = true);
+        return;
+      }
+
+      await for (final p in DatabaseImporter.runImport()) {
+        if (!mounted) return;
+        if (p.step == ImportStep.error) {
+          setState(() {
+            _label = p.label;
+            _progress = 0;
+            _hasError = true;
+          });
+          // Wait so user can read the error, then continue with old data
+          await Future.delayed(const Duration(seconds: 4));
+          break;
         }
+        setState(() {
+          _label = p.label;
+          _progress = p.fraction;
+        });
+        if (p.step == ImportStep.done) break;
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _label = 'Setup error: $e';
+          _label = 'Startup error: $e';
           _progress = 0;
+          _hasError = true;
         });
-        // Wait 3 seconds so user can see the error, then continue anyway
-        await Future.delayed(const Duration(seconds: 3));
+        await Future.delayed(const Duration(seconds: 4));
       }
     }
 
@@ -78,15 +92,19 @@ class _SplashScreenState extends State<SplashScreen> {
                 child: LinearProgressIndicator(
                   value: _progress > 0 ? _progress : null,
                   backgroundColor: Colors.white24,
-                  valueColor:
-                      const AlwaysStoppedAnimation(Color(0xFFD4AF37)),
+                  valueColor: AlwaysStoppedAnimation(
+                      _hasError ? Colors.red : const Color(0xFFD4AF37)),
                   minHeight: 8,
                 ),
               ),
               const SizedBox(height: 16),
-              Text(_label,
-                  style:
-                      const TextStyle(color: Colors.white70, fontSize: 13)),
+              Text(
+                _label,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: _hasError ? Colors.red.shade300 : Colors.white70,
+                    fontSize: 13),
+              ),
             ],
           ),
         ),

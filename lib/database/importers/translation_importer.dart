@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:sqflite/sqflite.dart';
 
 class TranslationImporter {
-  final Database db;
+  final DatabaseExecutor db;
   TranslationImporter(this.db);
 
   Future<void> run() async {
