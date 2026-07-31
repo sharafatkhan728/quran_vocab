@@ -183,6 +183,7 @@ class DatabaseImporter {
   }
 }
 
+// ignore: unused_element
 class _Progress {
   final int done;
   final int total;
