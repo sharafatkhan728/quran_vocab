@@ -57,7 +57,8 @@ class SyncService {
 
       // ── 2. SRS cards ──────────────────────────────────────────────────────
       // Encode as "stage|nextSession|easeFactor|failCount|totalReviews|lastResult"
-      final srsRows = await db.query('srs_cards', where: 'is_deleted = 0');
+      final srsRows = await db.query('srs_cards',
+          where: 'is_deleted = 0 OR is_deleted IS NULL');
       final srsCards = <String, String>{};
       for (final r in srsRows) {
         final id = (r['vocab_word_id'] as int).toString();
@@ -126,8 +127,8 @@ class SyncService {
       );
 
       _emit(SyncStatus.done);
-    } catch (e) {
-      debugPrint('SyncService.syncUp error: $e');
+    } catch (e, stack) {
+      debugPrint('SyncService.syncUp error: $e\n$stack');
       _emit(SyncStatus.error);
     } finally {
       _syncing = false;
@@ -310,8 +311,9 @@ class SyncService {
 
       _emit(SyncStatus.done);
       return RestoreResult.restoredFromCloud;
-    } catch (e) {
-      debugPrint('SyncService.syncDown error: $e');
+
+    } catch (e, stack) {
+      debugPrint('SyncService.syncUp error: $e\n$stack');
       _emit(SyncStatus.error);
       return RestoreResult.error;
     }

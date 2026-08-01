@@ -3,7 +3,7 @@ import 'package:path/path.dart';
 
 class DatabaseManager {
   static Database? _db;
-  static const int _schemaVersion = 1;
+  static const int _schemaVersion = 2;
 
   static Future<Database> get db async {
     _db ??= await _open();
@@ -35,7 +35,17 @@ class DatabaseManager {
     }
   }
 
-  static Future<void> _onUpgrade(Database db, int old, int newV) async {}
+  static Future<void> _onUpgrade(Database db, int old, int newV) async {
+    if (old < 2) {
+      // Check if column already exists before adding
+      final cols = await db.rawQuery('PRAGMA table_info(srs_cards)');
+      final exists = cols.any((c) => c['name'] == 'is_deleted');
+      if (!exists) {
+        await db.execute(
+            'ALTER TABLE srs_cards ADD COLUMN is_deleted INTEGER DEFAULT 0');
+      }
+    }
+  }
 
   static const String _sql = '''
     CREATE TABLE IF NOT EXISTS roots (
