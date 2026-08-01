@@ -53,10 +53,8 @@ class UserProvider extends ChangeNotifier {
 
   Future<void> _loadProfile(String uid) async {
     try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .get();
+      final doc =
+          await FirebaseFirestore.instance.collection('users').doc(uid).get();
       if (doc.exists && _user?.uid == uid) {
         _profile = doc.data() ?? {};
         notifyListeners();

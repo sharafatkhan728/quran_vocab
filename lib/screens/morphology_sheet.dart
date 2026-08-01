@@ -108,8 +108,8 @@ class _MorphologySheetState extends State<MorphologySheet>
       final segments = segRows.map(WordSegment.fromRow).toList();
       // buildSarfChainFromSegments lives inside MorphologyService so it can
       // freely call all private helpers without any API exposure.
-      chain = MorphologyService.buildSarfChainFromSegments(
-          segments, word.arabic);
+      chain =
+          MorphologyService.buildSarfChainFromSegments(segments, word.arabic);
     }
 
     if (chain != null && chain.root.isNotEmpty) {
@@ -235,8 +235,7 @@ class _MorphologySheetState extends State<MorphologySheet>
                 color: _green,
                 borderRadius: BorderRadius.circular(10),
                 boxShadow: [
-                  BoxShadow(
-                      color: _green.withValues(alpha: 0.3), blurRadius: 6)
+                  BoxShadow(color: _green.withValues(alpha: 0.3), blurRadius: 6)
                 ],
               ),
               indicatorSize: TabBarIndicatorSize.tab,
@@ -844,9 +843,8 @@ class _MorphologySheetState extends State<MorphologySheet>
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.04)
-                  : Colors.white,
+              color:
+                  isDark ? Colors.white.withValues(alpha: 0.04) : Colors.white,
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: _gold.withValues(alpha: 0.25)),
             ),
@@ -858,15 +856,13 @@ class _MorphologySheetState extends State<MorphologySheet>
                       _showUrdu ? 'جذر: ' : 'Root: ',
                       style: TextStyle(
                           fontSize: 14,
-                          color: isDark
-                              ? Colors.white70
-                              : Colors.grey.shade600),
+                          color:
+                              isDark ? Colors.white70 : Colors.grey.shade600),
                     ),
                     Text(
                       root,
                       textDirection: TextDirection.rtl,
-                      style:
-                          GoogleFonts.amiriQuran(fontSize: 24, color: _gold),
+                      style: GoogleFonts.amiriQuran(fontSize: 24, color: _gold),
                     ),
                     const Spacer(),
                     Container(
@@ -956,8 +952,7 @@ class _MorphologySheetState extends State<MorphologySheet>
                           ),
                           Text(
                             '${wordKeys.length} times',
-                            style:
-                                const TextStyle(fontSize: 12, color: _gold),
+                            style: const TextStyle(fontSize: 12, color: _gold),
                           ),
                           const SizedBox(width: 10),
                           Text(
@@ -969,9 +964,7 @@ class _MorphologySheetState extends State<MorphologySheet>
                           ),
                           const SizedBox(width: 8),
                           Icon(
-                            isExpanded
-                                ? Icons.expand_less
-                                : Icons.expand_more,
+                            isExpanded ? Icons.expand_less : Icons.expand_more,
                             color: Colors.grey,
                             size: 20,
                           ),
@@ -981,8 +974,7 @@ class _MorphologySheetState extends State<MorphologySheet>
                   ),
                   if (isExpanded) ...[
                     Divider(
-                        height: 1,
-                        color: Colors.grey.withValues(alpha: 0.15)),
+                        height: 1, color: Colors.grey.withValues(alpha: 0.15)),
                     if (_loadingAyahs)
                       const Padding(
                         padding: EdgeInsets.all(16),
@@ -1036,15 +1028,13 @@ class _MorphologySheetState extends State<MorphologySheet>
                 ),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: _green,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text('$surahId:$ayahId',
-                    style:
-                        const TextStyle(color: Colors.white, fontSize: 10)),
+                    style: const TextStyle(color: Colors.white, fontSize: 10)),
               ),
             ],
           ),
@@ -1054,9 +1044,8 @@ class _MorphologySheetState extends State<MorphologySheet>
             textDirection: TextDirection.rtl,
             spacing: 2,
             runSpacing: 2,
-            children: wordsJson
-                .where((w) => w['char_type_name'] != 'end')
-                .map((w) {
+            children:
+                wordsJson.where((w) => w['char_type_name'] != 'end').map((w) {
               final arabic = (w['text_uthmani'] ?? '') as String;
               final isMatch =
                   WordProgressService.normalizeArabic(arabic) == normalized;

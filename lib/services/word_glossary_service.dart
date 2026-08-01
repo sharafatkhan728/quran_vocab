@@ -32,21 +32,19 @@ class WordGlossaryService {
 
   /// Returns Map<"ayahNumber:position", meaningText> for a surah.
   /// Used by SurahReaderScreen to build the glossary lookup map.
-  static Future<Map<String, String>> getSurahLookupAsync(
-      int surahId, {String? lang}) async {
+  static Future<Map<String, String>> getSurahLookupAsync(int surahId,
+      {String? lang}) async {
     final language = lang ?? _selectedLang;
     final ayahs = await ContentRepository.getAyahsForSurah(surahId);
     final result = <String, String>{};
     for (final ayah in ayahs) {
-      final translations = await ContentRepository
-          .getWordTranslationsForAyah(ayah.id, language);
-      final words =
-          await ContentRepository.getWordsForAyah(ayah.id);
+      final translations =
+          await ContentRepository.getWordTranslationsForAyah(ayah.id, language);
+      final words = await ContentRepository.getWordsForAyah(ayah.id);
       for (final word in words) {
         final trans = translations[word.id];
         if (trans != null && trans[language] != null) {
-          result['${ayah.ayahNumber}:${word.position}'] =
-              trans[language]!.text;
+          result['${ayah.ayahNumber}:${word.position}'] = trans[language]!.text;
         }
       }
     }
@@ -54,15 +52,12 @@ class WordGlossaryService {
   }
 
   /// Sync version — kept for compile compatibility, returns empty.
-  static Map<String, String> getSurahLookup(int surahId,
-          {String? lang}) =>
-      {};
+  static Map<String, String> getSurahLookup(int surahId, {String? lang}) => {};
 
   /// All words for current language — used by vocabulary screen fallback.
   static Map<String, String> getAllWords({String? lang}) => {};
 
-  static String getByPosition(int surah, int ayah, int pos,
-          {String? lang}) =>
+  static String getByPosition(int surah, int ayah, int pos, {String? lang}) =>
       '';
 
   static String getRawByPosition(int surah, int ayah, int pos) => '';

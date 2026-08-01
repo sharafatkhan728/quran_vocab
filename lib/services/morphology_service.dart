@@ -274,9 +274,7 @@ class MorphologyService {
       result.add(SegmentText(text: remaining, seg: stem));
     }
     result.addAll(suffixTexts);
-    return result.isEmpty
-        ? [SegmentText(text: fullWord, seg: stem)]
-        : result;
+    return result.isEmpty ? [SegmentText(text: fullWord, seg: stem)] : result;
   }
 
   // ── Sarf chain from in-memory HashMap (original) ──────────────────────────
@@ -595,8 +593,7 @@ class MorphologyService {
 
   static List<QuranWord> buildAyahWords(
       int surah, int ayah, Set<String> knownWords,
-      {Map<String, String>? urduLookup,
-      Map<String, String>? glossaryLookup}) {
+      {Map<String, String>? urduLookup, Map<String, String>? glossaryLookup}) {
     String ayahText = '';
     try {
       ayahText = quran.getVerse(surah, ayah);

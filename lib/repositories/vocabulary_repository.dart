@@ -139,10 +139,13 @@ class VocabularyRepository {
 
   static Future<void> markKnown(int vocabWordId) async {
     final db = await DatabaseManager.db;
-    await db.insert('known_words', {
-      'vocab_word_id': vocabWordId,
-      'marked_at': DateTime.now().millisecondsSinceEpoch,
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    await db.insert(
+        'known_words',
+        {
+          'vocab_word_id': vocabWordId,
+          'marked_at': DateTime.now().millisecondsSinceEpoch,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   static Future<void> markUnknown(int vocabWordId) async {

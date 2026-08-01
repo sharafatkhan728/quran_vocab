@@ -53,7 +53,10 @@ class _WordOccurrencesScreenState extends State<WordOccurrencesScreen> {
     await SharedPreferences.getInstance();
     final normalized = WordProgressService.normalizeArabic(widget.word.arabic);
 
-    setState(() { _isLoading = true; _totalSurahsToSearch = 114; });
+    setState(() {
+      _isLoading = true;
+      _totalSurahsToSearch = 114;
+    });
 
     for (int surahId = 1; surahId <= 114; surahId++) {
       final verseCount = quran.getVerseCount(surahId);
@@ -65,8 +68,8 @@ class _WordOccurrencesScreenState extends State<WordOccurrencesScreen> {
           final parts = verse.split(' ');
           if (parts.length > 4) verse = parts.skip(4).join(' ');
         }
-        final words = verse.split(' ')
-            .where((w) => w.trim().isNotEmpty).toList();
+        final words =
+            verse.split(' ').where((w) => w.trim().isNotEmpty).toList();
         bool found = false;
         final List<WordToken> tokens = [];
 

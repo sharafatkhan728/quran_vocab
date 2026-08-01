@@ -15,8 +15,7 @@ class MorphologyImporter {
     // Map: "surahId:ayahNumber:position" → ayah_word.id
     final wordIdMap = await _buildWordIdMap();
 
-    final raw =
-        await rootBundle.loadString('assets/data/quran_morphology.txt');
+    final raw = await rootBundle.loadString('assets/data/quran_morphology.txt');
     final lines = raw.split('\n');
     final total = lines.length;
     const batchSize = 1000;
@@ -29,8 +28,7 @@ class MorphologyImporter {
       final cols = t.split('\t');
       if (cols.length < 4) continue;
 
-      final loc =
-          cols[0].replaceAll('(', '').replaceAll(')', '').trim();
+      final loc = cols[0].replaceAll('(', '').replaceAll(')', '').trim();
       final arabicText = cols[1].trim();
       final posCode = cols[2].trim();
       final tag = cols[3].trim();
@@ -147,8 +145,8 @@ class MorphologyImporter {
   }
 
   // Called from DatabaseImporter to reuse already-loaded lines
-  Future<void> runWithLines(List<String> lines,
-      void Function(int done, int total) onProgress) async {
+  Future<void> runWithLines(
+      List<String> lines, void Function(int done, int total) onProgress) async {
     await _seedPartsOfSpeech();
     final wordIdMap = await _buildWordIdMap();
     final total = lines.length;
@@ -176,7 +174,10 @@ class MorphologyImporter {
 
       final wordMapKey = '$surahId:$ayahNum:$wordPos';
       final wordId = wordIdMap[wordMapKey];
-      if (wordId == null) { count++; continue; }
+      if (wordId == null) {
+        count++;
+        continue;
+      }
 
       String segType = 'stem';
       if (tag.contains('PREF')) segType = 'prefix';
@@ -189,27 +190,48 @@ class MorphologyImporter {
 
       for (final token in tag.split('|')) {
         final tok = token.trim();
-        if (tok.startsWith('ROOT:')) root = tok.substring(5);
-        else if (tok.startsWith('LEM:')) lemma = tok.substring(4);
-        else if (tok.startsWith('POS:')) effectivePosCode = tok.substring(4);
-        else if (tok == 'PERF') tense = 'PERF';
-        else if (tok == 'IMPF') tense = 'IMPF';
-        else if (tok == 'IMPV') tense = 'IMPV';
-        else if (tok == '1') person = '1';
-        else if (tok == '2') person = '2';
-        else if (tok == '3') person = '3';
-        else if (tok == 'M') gender = 'M';
-        else if (tok == 'F') gender = 'F';
-        else if (tok == 'SG') number = 'SG';
-        else if (tok == 'DU') number = 'DU';
-        else if (tok == 'PL') number = 'PL';
-        else if (tok == 'NOM') gcase = 'NOM';
-        else if (tok == 'ACC') gcase = 'ACC';
-        else if (tok == 'GEN') gcase = 'GEN';
-        else if (tok == 'ACT') voice = 'ACT';
-        else if (tok == 'PASS') voice = 'PASS';
-        else if (tok == 'DEF') state = 'DEF';
-        else if (tok == 'INDEF') state = 'INDEF';
+        if (tok.startsWith('ROOT:'))
+          root = tok.substring(5);
+        else if (tok.startsWith('LEM:'))
+          lemma = tok.substring(4);
+        else if (tok.startsWith('POS:'))
+          effectivePosCode = tok.substring(4);
+        else if (tok == 'PERF')
+          tense = 'PERF';
+        else if (tok == 'IMPF')
+          tense = 'IMPF';
+        else if (tok == 'IMPV')
+          tense = 'IMPV';
+        else if (tok == '1')
+          person = '1';
+        else if (tok == '2')
+          person = '2';
+        else if (tok == '3')
+          person = '3';
+        else if (tok == 'M')
+          gender = 'M';
+        else if (tok == 'F')
+          gender = 'F';
+        else if (tok == 'SG')
+          number = 'SG';
+        else if (tok == 'DU')
+          number = 'DU';
+        else if (tok == 'PL')
+          number = 'PL';
+        else if (tok == 'NOM')
+          gcase = 'NOM';
+        else if (tok == 'ACC')
+          gcase = 'ACC';
+        else if (tok == 'GEN')
+          gcase = 'GEN';
+        else if (tok == 'ACT')
+          voice = 'ACT';
+        else if (tok == 'PASS')
+          voice = 'PASS';
+        else if (tok == 'DEF')
+          state = 'DEF';
+        else if (tok == 'INDEF')
+          state = 'INDEF';
         else if (RegExp(r'^[IVX]+$').hasMatch(tok)) verbForm = tok;
       }
 
@@ -250,9 +272,6 @@ class MorphologyImporter {
     onProgress(total, total);
   }
 
-
-
-
   /// Load entire ayah_words table into memory map for O(1) lookup
   Future<Map<String, int>> _buildWordIdMap() async {
     final rows = await db.rawQuery('''
@@ -262,8 +281,7 @@ class MorphologyImporter {
     ''');
     final map = <String, int>{};
     for (final r in rows) {
-      final key =
-          '${r['surah_id']}:${r['ayah_number']}:${r['position']}';
+      final key = '${r['surah_id']}:${r['ayah_number']}:${r['position']}';
       map[key] = r['id'] as int;
     }
     return map;
@@ -272,10 +290,7 @@ class MorphologyImporter {
   Future<int> _getOrCreateRoot(String arabic) async {
     if (_rootCache.containsKey(arabic)) return _rootCache[arabic]!;
     final existing = await db.query('roots',
-        columns: ['id'],
-        where: 'arabic = ?',
-        whereArgs: [arabic],
-        limit: 1);
+        columns: ['id'], where: 'arabic = ?', whereArgs: [arabic], limit: 1);
     if (existing.isNotEmpty) {
       final id = existing.first['id'] as int;
       _rootCache[arabic] = id;
@@ -290,10 +305,7 @@ class MorphologyImporter {
     if (code.isEmpty) return null;
     if (_posCache.containsKey(code)) return _posCache[code];
     final existing = await db.query('parts_of_speech',
-        columns: ['id'],
-        where: 'code = ?',
-        whereArgs: [code],
-        limit: 1);
+        columns: ['id'], where: 'code = ?', whereArgs: [code], limit: 1);
     if (existing.isNotEmpty) {
       final id = existing.first['id'] as int;
       _posCache[code] = id;

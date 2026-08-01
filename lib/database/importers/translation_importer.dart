@@ -24,8 +24,8 @@ class TranslationImporter {
       final data = json.decode(raw) as Map<String, dynamic>;
 
       // Load all ayah ids into memory: "surahId:ayahNum" → id
-      final ayahRows = await db
-          .rawQuery('SELECT id, surah_id, ayah_number FROM ayahs');
+      final ayahRows =
+          await db.rawQuery('SELECT id, surah_id, ayah_number FROM ayahs');
       final ayahIdMap = <String, int>{
         for (final r in ayahRows)
           '${r['surah_id']}:${r['ayah_number']}': r['id'] as int

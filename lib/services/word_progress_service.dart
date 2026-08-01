@@ -120,8 +120,7 @@ class WordProgressService {
       GROUP BY a.surah_id
     ''');
     final totals = <int, int>{
-      for (final r in totalRows)
-        r['surah_id'] as int: (r['cnt'] as int? ?? 0)
+      for (final r in totalRows) r['surah_id'] as int: (r['cnt'] as int? ?? 0)
     };
 
     // Query 2: known unique vocab words per surah
@@ -134,8 +133,7 @@ class WordProgressService {
       GROUP BY a.surah_id
     ''');
     final knowns = <int, int>{
-      for (final r in knownRows)
-        r['surah_id'] as int: (r['cnt'] as int? ?? 0)
+      for (final r in knownRows) r['surah_id'] as int: (r['cnt'] as int? ?? 0)
     };
 
     // Build result map for all 114 surahs

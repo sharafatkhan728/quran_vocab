@@ -20,16 +20,26 @@ class WordTile extends StatelessWidget {
 
   static Color _posColor(String pos, bool isDark) {
     switch (pos) {
-      case 'V': return Colors.red.shade400;
-      case 'N': return Colors.blue.shade400;
-      case 'PN': return Colors.blue.shade600;
-      case 'P': return Colors.green.shade500;
-      case 'CONJ': return Colors.green.shade400;
-      case 'PRON': return Colors.orange.shade400;
-      case 'DEM': return Colors.orange.shade300;
-      case 'REL': return Colors.purple.shade400;
-      case 'ADJ': return Colors.teal.shade400;
-      case 'NEG': return Colors.red.shade300;
+      case 'V':
+        return Colors.red.shade400;
+      case 'N':
+        return Colors.blue.shade400;
+      case 'PN':
+        return Colors.blue.shade600;
+      case 'P':
+        return Colors.green.shade500;
+      case 'CONJ':
+        return Colors.green.shade400;
+      case 'PRON':
+        return Colors.orange.shade400;
+      case 'DEM':
+        return Colors.orange.shade300;
+      case 'REL':
+        return Colors.purple.shade400;
+      case 'ADJ':
+        return Colors.teal.shade400;
+      case 'NEG':
+        return Colors.red.shade300;
       default:
         return isDark ? Colors.white70 : Colors.grey.shade700;
     }
@@ -67,8 +77,7 @@ class WordTile extends StatelessWidget {
       );
     }
 
-    final segments =
-        word.segments.where((s) => s.pos.isNotEmpty).toList();
+    final segments = word.segments.where((s) => s.pos.isNotEmpty).toList();
 
     return GestureDetector(
       onTap: onTap,
@@ -81,8 +90,7 @@ class WordTile extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.start,
           children: [
             segments.length > 1
-                ? _buildSegmentedWord(
-                    segments, display, isDark, arabicFontSize)
+                ? _buildSegmentedWord(segments, display, isDark, arabicFontSize)
                 : _buildSingleWord(word, display, isDark, arabicFontSize),
             const SizedBox(height: 2),
             if (word.urduMeaning.isNotEmpty)
@@ -120,9 +128,7 @@ class WordTile extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(
                   fontSize: urduFontSize,
-                  color: isDark
-                      ? Colors.white54
-                      : Colors.grey.shade600));
+                  color: isDark ? Colors.white54 : Colors.grey.shade600));
     } else {
       textWidget = Text(
         meaningText,
@@ -160,8 +166,8 @@ class WordTile extends StatelessWidget {
     );
   }
 
-  Widget _buildSingleWord(QuranWord word, DisplayProvider display,
-      bool isDark, double arabicFontSize) {
+  Widget _buildSingleWord(QuranWord word, DisplayProvider display, bool isDark,
+      double arabicFontSize) {
     final color = _wordColor(word, isDark);
     return Text(
       word.arabic,
@@ -170,10 +176,9 @@ class WordTile extends StatelessWidget {
     );
   }
 
-  Widget _buildSegmentedWord(List<WordSegment> segs,
-      DisplayProvider display, bool isDark, double arabicFontSize) {
-    final segTexts =
-        MorphologyService.extractSegmentTexts(word.arabic, segs);
+  Widget _buildSegmentedWord(List<WordSegment> segs, DisplayProvider display,
+      bool isDark, double arabicFontSize) {
+    final segTexts = MorphologyService.extractSegmentTexts(word.arabic, segs);
     return RichText(
       textDirection: TextDirection.rtl,
       text: TextSpan(
@@ -183,8 +188,7 @@ class WordTile extends StatelessWidget {
           Color color;
           if (segColorHex.isNotEmpty && segColorHex != '#888888') {
             try {
-              color = Color(
-                  int.parse(segColorHex.replaceFirst('#', '0xFF')));
+              color = Color(int.parse(segColorHex.replaceFirst('#', '0xFF')));
             } catch (_) {
               color = segPos.isNotEmpty
                   ? _posColor(segPos, isDark)
@@ -210,8 +214,7 @@ class WordTile extends StatelessWidget {
       return Text(rawHtml,
           style: TextStyle(
               fontSize: fontSize,
-              color:
-                  isDark ? Colors.white54 : Colors.grey.shade600));
+              color: isDark ? Colors.white54 : Colors.grey.shade600));
     }
     final spans = <InlineSpan>[];
     final regex = RegExp(r"<span class='(\w+)'>(.*?)</span>");
@@ -222,9 +225,7 @@ class WordTile extends StatelessWidget {
             text: rawHtml.substring(last, match.start),
             style: TextStyle(
                 fontSize: fontSize,
-                color: isDark
-                    ? Colors.white54
-                    : Colors.grey.shade600)));
+                color: isDark ? Colors.white54 : Colors.grey.shade600)));
       }
       final cls = match.group(1) ?? '';
       final text = match.group(2) ?? '';
@@ -234,9 +235,7 @@ class WordTile extends StatelessWidget {
           style: TextStyle(
               fontSize: fontSize,
               color: color,
-              fontWeight: cls == 'pn'
-                  ? FontWeight.w600
-                  : FontWeight.normal)));
+              fontWeight: cls == 'pn' ? FontWeight.w600 : FontWeight.normal)));
       last = match.end;
     }
     if (last < rawHtml.length) {
@@ -244,9 +243,7 @@ class WordTile extends StatelessWidget {
           text: rawHtml.substring(last),
           style: TextStyle(
               fontSize: fontSize,
-              color: isDark
-                  ? Colors.white54
-                  : Colors.grey.shade600)));
+              color: isDark ? Colors.white54 : Colors.grey.shade600)));
     }
     return RichText(
       textAlign: TextAlign.center,
@@ -256,25 +253,26 @@ class WordTile extends StatelessWidget {
 
   static Color _englishSpanColor(String cls, bool isDark) {
     switch (cls) {
-      case 'v': return Colors.red.shade400;
-      case 'n': return Colors.blue.shade400;
-      case 'pn': return Colors.blue.shade600;
-      case 'p': return Colors.green.shade500;
-      case 'paren': return Colors.grey.shade400;
+      case 'v':
+        return Colors.red.shade400;
+      case 'n':
+        return Colors.blue.shade400;
+      case 'pn':
+        return Colors.blue.shade600;
+      case 'p':
+        return Colors.green.shade500;
+      case 'paren':
+        return Colors.grey.shade400;
       default:
         return isDark ? Colors.white70 : Colors.grey.shade700;
     }
   }
 
-  TextStyle _arabicStyle(
-      DisplayProvider d, Color color, double size) {
+  TextStyle _arabicStyle(DisplayProvider d, Color color, double size) {
     switch (d.arabicFont) {
       case 'indopak':
         return TextStyle(
-            fontFamily: 'IndoPak',
-            fontSize: size,
-            color: color,
-            height: 1.8);
+            fontFamily: 'IndoPak', fontSize: size, color: color, height: 1.8);
       case 'noorehuda':
         return TextStyle(
             fontFamily: 'NoorehudaFont',

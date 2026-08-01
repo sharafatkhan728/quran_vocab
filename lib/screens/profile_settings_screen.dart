@@ -109,7 +109,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                               color: Colors.white)),
                       Text(user.email,
                           style: TextStyle(
-                              fontSize: 13, // 
+                              fontSize: 13, //
                               color: Colors.white.withValues(alpha: 0.7))),
                     ],
                   ),
@@ -169,7 +169,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     _buildTile(isDark,
                         icon: Icons.shopping_bag,
                         iconColor: Colors.purple,
-                        title: 'Purchase Premium (Coming Soon)',                        
+                        title: 'Purchase Premium (Coming Soon)',
                         onTap: () {}),
                   ]),
                   const SizedBox(height: 16),
@@ -338,14 +338,14 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
 
             // Arabic font
             const Text('Arabic Font',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)), 
-            const SizedBox(height: 8), // ye kya hai? 
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            const SizedBox(height: 8), // ye kya hai?
             Wrap(
               spacing: 8,
               children: [
                 _fontChip('Noorehuda', 'noorehuda', display),
                 _fontChip('Uthmani', 'uthmani', display),
-                _fontChip('Indo-Pak', 'indopak', display),                
+                _fontChip('Indo-Pak', 'indopak', display),
               ],
             ),
             const SizedBox(height: 14),
@@ -369,7 +369,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
               onChanged: display.setUrduSize,
               isDark: isDark,
             ),
-
 
             const SizedBox(height: 12),
 

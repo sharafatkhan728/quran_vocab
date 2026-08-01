@@ -148,13 +148,11 @@ class _SurahListScreenState extends State<SurahListScreen> {
                               onTap: () async {
                                 final surah = Surah(
                                   id: b['surahId'],
-                                  englishName:
-                                      quran.getSurahName(b['surahId']),
+                                  englishName: quran.getSurahName(b['surahId']),
                                   arabicName:
                                       quran.getSurahNameArabic(b['surahId']),
                                   urduName: quran.getSurahName(b['surahId']),
-                                  verseCount:
-                                      quran.getVerseCount(b['surahId']),
+                                  verseCount: quran.getVerseCount(b['surahId']),
                                 );
                                 await Navigator.push(
                                     context,
@@ -220,8 +218,7 @@ class _SurahListScreenState extends State<SurahListScreen> {
                             ),
                           ),
                         );
-                        await Future.delayed(
-                            const Duration(milliseconds: 300));
+                        await Future.delayed(const Duration(milliseconds: 300));
                         _loadProgress();
                       },
                     );
@@ -373,8 +370,8 @@ class _SurahCardState extends State<_SurahCard>
                 splashColor: _gold.withValues(alpha: 0.1),
                 highlightColor: _gold.withValues(alpha: 0.05),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   child: Row(
                     children: [
                       // Progress circle
@@ -415,8 +412,7 @@ class _SurahCardState extends State<_SurahCard>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
-                              mainAxisAlignment:
-                                  MainAxisAlignment.spaceBetween,
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Expanded(
@@ -446,8 +442,7 @@ class _SurahCardState extends State<_SurahCard>
                                                     ? Colors.white
                                                     : const Color(0xFF1A1A1A),
                                               ),
-                                              overflow:
-                                                  TextOverflow.ellipsis,
+                                              overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
                                         ],
@@ -456,8 +451,7 @@ class _SurahCardState extends State<_SurahCard>
                                       Row(
                                         children: [
                                           Container(
-                                            padding: const EdgeInsets
-                                                .symmetric(
+                                            padding: const EdgeInsets.symmetric(
                                                 horizontal: 6, vertical: 2),
                                             decoration: BoxDecoration(
                                               color: isMakki
@@ -469,10 +463,10 @@ class _SurahCardState extends State<_SurahCard>
                                                   BorderRadius.circular(6),
                                               border: Border.all(
                                                 color: isMakki
-                                                    ? Colors.orange.withValues(
-                                                        alpha: 0.4)
-                                                    : Colors.blue.withValues(
-                                                        alpha: 0.4),
+                                                    ? Colors.orange
+                                                        .withValues(alpha: 0.4)
+                                                    : Colors.blue
+                                                        .withValues(alpha: 0.4),
                                               ),
                                             ),
                                             child: Text(
@@ -621,8 +615,7 @@ class _FlashcardEntryButtonState extends State<_FlashcardEntryButton>
                       fontWeight: FontWeight.bold)),
               const SizedBox(width: 8),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
                   color: const Color(0xFFD4AF37).withValues(alpha: 0.25),
                   borderRadius: BorderRadius.circular(8),

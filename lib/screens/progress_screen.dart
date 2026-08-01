@@ -288,8 +288,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                       decoration: BoxDecoration(
                         color: _gold.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(8),
-                        border:
-                            Border.all(color: _gold.withValues(alpha: 0.4)),
+                        border: Border.all(color: _gold.withValues(alpha: 0.4)),
                       ),
                       child: Text(
                         '$_knownCount words',
@@ -307,8 +306,7 @@ class _ProgressScreenState extends State<ProgressScreen>
             Text(
               _shortMotivation(_percent),
               textAlign: TextAlign.center,
-              style:
-                  const TextStyle(color: _gold, fontStyle: FontStyle.italic),
+              style: const TextStyle(color: _gold, fontStyle: FontStyle.italic),
             ),
           ],
         ),
@@ -399,8 +397,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                   textAlign: TextAlign.center,
                   style: TextStyle(
                       fontSize: 10,
-                      color:
-                          isDark ? Colors.white60 : Colors.grey.shade600)),
+                      color: isDark ? Colors.white60 : Colors.grey.shade600)),
             ],
           ),
         );
@@ -516,8 +513,8 @@ class _ProgressScreenState extends State<ProgressScreen>
                       _knownCount >=
                           milestones[milestones.indexOf(m) - 1].words;
                   return Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(20),
                       color: reached
@@ -554,9 +551,8 @@ class _ProgressScreenState extends State<ProgressScreen>
                                   : isNext
                                       ? _emerald
                                       : Colors.grey,
-                              fontWeight: reached
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
+                              fontWeight:
+                                  reached ? FontWeight.bold : FontWeight.normal,
                             )),
                       ],
                     ),
@@ -717,8 +713,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                   Text(
                     quran.getSurahName(id).split('-').last.trim(),
                     textAlign: TextAlign.center,
-                    style:
-                        const TextStyle(color: Colors.white70, fontSize: 8),
+                    style: const TextStyle(color: Colors.white70, fontSize: 8),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -739,12 +734,12 @@ class _ProgressScreenState extends State<ProgressScreen>
       _Badge('50 Words', Icons.workspace_premium, _knownCount >= 50, _emerald),
       _Badge('100 Words', Icons.emoji_events, _knownCount >= 100, _gold),
       _Badge('300 Words\n80% Quran', Icons.mosque, _knownCount >= 300, _green),
-      _Badge('7-Day Streak', Icons.local_fire_department,
-          _currentStreak >= 7, Colors.orange),
-      _Badge('30-Day Streak', Icons.whatshot,
-          _currentStreak >= 30, Colors.deepOrange),
-      _Badge('First Surah', Icons.menu_book,
-          _completedSurahs.isNotEmpty, Colors.purple),
+      _Badge('7-Day Streak', Icons.local_fire_department, _currentStreak >= 7,
+          Colors.orange),
+      _Badge('30-Day Streak', Icons.whatshot, _currentStreak >= 30,
+          Colors.deepOrange),
+      _Badge('First Surah', Icons.menu_book, _completedSurahs.isNotEmpty,
+          Colors.purple),
     ];
     return _card(
       isDark,
@@ -765,16 +760,14 @@ class _ProgressScreenState extends State<ProgressScreen>
                     ? b.color.withValues(alpha: 0.2)
                     : Colors.grey.withValues(alpha: 0.1),
                 border: Border.all(
-                  color: b.unlocked
-                      ? b.color
-                      : Colors.grey.withValues(alpha: 0.3),
+                  color:
+                      b.unlocked ? b.color : Colors.grey.withValues(alpha: 0.3),
                   width: b.unlocked ? 2 : 1,
                 ),
               ),
               child: Icon(b.icon,
-                  color: b.unlocked
-                      ? b.color
-                      : Colors.grey.withValues(alpha: 0.3),
+                  color:
+                      b.unlocked ? b.color : Colors.grey.withValues(alpha: 0.3),
                   size: 28),
             ),
           );
@@ -807,8 +800,7 @@ class _ProgressScreenState extends State<ProgressScreen>
         children: [
           Text(msg['arabic']!,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                  fontSize: 20, color: _gold, height: 1.8)),
+              style: const TextStyle(fontSize: 20, color: _gold, height: 1.8)),
           const SizedBox(height: 8),
           Text(msg['urdu']!,
               textAlign: TextAlign.center,
@@ -1000,22 +992,28 @@ class _StaircasePainter extends CustomPainter {
         ..color = reached ? gold : Colors.grey.withOpacity(0.3)
         ..strokeWidth = 1.5;
       canvas.drawRRect(
-          RRect.fromRectAndRadius(rect, const Radius.circular(4)),
-          borderPaint);
+          RRect.fromRectAndRadius(rect, const Radius.circular(4)), borderPaint);
     }
 
     // Person marker
     final personX = math.min(known, milestones.last.words);
     final idx = milestones.indexWhere((m) => personX < m.words);
-    final markerIdx =
-        idx == -1 ? milestones.length - 1 : math.max(0, idx - 1);
+    final markerIdx = idx == -1 ? milestones.length - 1 : math.max(0, idx - 1);
     final mx = markerIdx * stepW + stepW / 2;
     final stepH = (maxH / milestones.length) * (markerIdx + 1);
     final my = size.height - stepH - 16;
-    canvas.drawCircle(Offset(mx, my), 10 * progress,
-        Paint()..color = emerald..style = PaintingStyle.fill);
-    canvas.drawCircle(Offset(mx, my), 5 * progress,
-        Paint()..color = Colors.white..style = PaintingStyle.fill);
+    canvas.drawCircle(
+        Offset(mx, my),
+        10 * progress,
+        Paint()
+          ..color = emerald
+          ..style = PaintingStyle.fill);
+    canvas.drawCircle(
+        Offset(mx, my),
+        5 * progress,
+        Paint()
+          ..color = Colors.white
+          ..style = PaintingStyle.fill);
   }
 
   @override

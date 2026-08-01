@@ -24,13 +24,13 @@ class DisplayProvider extends ChangeNotifier {
     _arabicFont = prefs.getString('arabic_font') ?? 'uthmani';
 
     _grammarColorEnabled = //<<<<<<<<<<<<<<<<<<
-    prefs.getBool('grammar_color_enabled') ?? true; //<<<<<<<<<<
-    _enableWordColors =//<<<<<<<<<<<
-    prefs.getBool('enable_word_colors') ?? true;//<<<<<<<
+        prefs.getBool('grammar_color_enabled') ?? true; //<<<<<<<<<<
+    _enableWordColors = //<<<<<<<<<<<
+        prefs.getBool('enable_word_colors') ?? true; //<<<<<<<
     notifyListeners();
   }
 
- //<<<<<<<<
+  //<<<<<<<<
   bool _enableWordColors = true;
   bool get enableWordColors => _enableWordColors;
   Future<void> setEnableWordColors(bool value) async {
@@ -39,7 +39,6 @@ class DisplayProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('enable_word_colors', value);
   }
-
 
   Future<void> setArabicSize(double v) async {
     _arabicFontSize = v;

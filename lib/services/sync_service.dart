@@ -73,8 +73,8 @@ class SyncService {
       final cutoffKey =
           '${cutoff.year}-${cutoff.month.toString().padLeft(2, '0')}-'
           '${cutoff.day.toString().padLeft(2, '0')}';
-      final dailyRows = await db.query('daily_stats',
-          where: 'date_key >= ?', whereArgs: [cutoffKey]);
+      final dailyRows = await db
+          .query('daily_stats', where: 'date_key >= ?', whereArgs: [cutoffKey]);
       final dailyStats = <String, int>{
         for (final r in dailyRows)
           r['date_key'] as String: (r['words_learned'] as int? ?? 0),
@@ -181,8 +181,7 @@ class SyncService {
       final vocabRows =
           await db.query('vocab_words', columns: ['id', 'arabic_clean']);
       final vocabMap = <String, int>{
-        for (final r in vocabRows)
-          r['arabic_clean'] as String: r['id'] as int,
+        for (final r in vocabRows) r['arabic_clean'] as String: r['id'] as int,
       };
 
       final now = DateTime.now().millisecondsSinceEpoch;
@@ -217,12 +216,10 @@ class SyncService {
                   int.tryParse(parts.elementAtOrNull(1) ?? '') ?? 0,
               'ease_factor':
                   double.tryParse(parts.elementAtOrNull(2) ?? '') ?? 2.5,
-              'fail_count':
-                  int.tryParse(parts.elementAtOrNull(3) ?? '') ?? 0,
+              'fail_count': int.tryParse(parts.elementAtOrNull(3) ?? '') ?? 0,
               'total_reviews':
                   int.tryParse(parts.elementAtOrNull(4) ?? '') ?? 0,
-              'last_result':
-                  int.tryParse(parts.elementAtOrNull(5) ?? '') ?? -1,
+              'last_result': int.tryParse(parts.elementAtOrNull(5) ?? '') ?? -1,
               'is_deleted': 0,
               'created_at': now,
               'updated_at': now,
@@ -295,8 +292,7 @@ class SyncService {
       for (final entry in {
         'srs_total_points':
             '${(meta['srs_total_points'] as num?)?.toInt() ?? 0}',
-        'longest_streak':
-            '${(meta['longest_streak'] as num?)?.toInt() ?? 0}',
+        'longest_streak': '${(meta['longest_streak'] as num?)?.toInt() ?? 0}',
         'srs_total_sessions':
             '${(meta['srs_total_sessions'] as num?)?.toInt() ?? 0}',
         '_last_sync_ts': '${DateTime.now().millisecondsSinceEpoch}',
@@ -311,7 +307,6 @@ class SyncService {
 
       _emit(SyncStatus.done);
       return RestoreResult.restoredFromCloud;
-
     } catch (e, stack) {
       debugPrint('SyncService.syncUp error: $e\n$stack');
       _emit(SyncStatus.error);

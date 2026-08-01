@@ -60,8 +60,7 @@ class WordImporter {
   }
 
   Future<void> _parseMorphologyPositions() async {
-    final raw =
-        await rootBundle.loadString('assets/data/quran_morphology.txt');
+    final raw = await rootBundle.loadString('assets/data/quran_morphology.txt');
     _morphologyLines = raw.split('\n');
 
     final segmentsByWord = <String, List<String>>{};
@@ -170,8 +169,7 @@ class WordImporter {
     final vocabRows =
         await txn.query('vocab_words', columns: ['id', 'arabic_clean']);
     final vocabCache = <String, int>{
-      for (final r in vocabRows)
-        r['arabic_clean'] as String: r['id'] as int
+      for (final r in vocabRows) r['arabic_clean'] as String: r['id'] as int
     };
 
     // Build ayah id lookup

@@ -1,6 +1,5 @@
 import '../database/database_manager.dart';
 
-
 /// Search result types
 enum SearchResultType { word, surah, ayah }
 
@@ -109,13 +108,15 @@ class SearchRepository {
       LIMIT ?
     ''', ['%$q%', '%$q%', '%$q%', limit]);
 
-    return rows.map((r) => SearchResult(
-          type: SearchResultType.surah,
-          arabic: r['name_arabic'] as String? ?? '',
-          meaning: r['name_english'] as String? ?? '',
-          subtitle: '${r['verse_count']} ayahs',
-          surahId: r['id'] as int? ?? 0,
-        )).toList();
+    return rows
+        .map((r) => SearchResult(
+              type: SearchResultType.surah,
+              arabic: r['name_arabic'] as String? ?? '',
+              meaning: r['name_english'] as String? ?? '',
+              subtitle: '${r['verse_count']} ayahs',
+              surahId: r['id'] as int? ?? 0,
+            ))
+        .toList();
   }
 
   /// Search roots table.
@@ -138,21 +139,26 @@ class SearchRepository {
       LIMIT ?
     ''', ['%$q%', '%$q%', '%$q%', limit]);
 
-    return rows.map((r) => SearchResult(
-          type: SearchResultType.word,
-          arabic: r['arabic'] as String? ?? '',
-          meaning: r['meaning_ur'] as String? ?? r['meaning_en'] as String? ?? '',
-          subtitle: '${r['word_count']} derived words',
-          frequency: (r['word_count'] as int?) ?? 0,
-        )).toList();
+    return rows
+        .map((r) => SearchResult(
+              type: SearchResultType.word,
+              arabic: r['arabic'] as String? ?? '',
+              meaning: r['meaning_ur'] as String? ??
+                  r['meaning_en'] as String? ??
+                  '',
+              subtitle: '${r['word_count']} derived words',
+              frequency: (r['word_count'] as int?) ?? 0,
+            ))
+        .toList();
   }
 
   /// Combined search — words + surahs together, deduplicated.
-  static Future<({
-    List<SearchResult> surahs,
-    List<SearchResult> words,
-    List<SearchResult> roots,
-  })> searchAll(String query, {String lang = 'ur'}) async {
+  static Future<
+      ({
+        List<SearchResult> surahs,
+        List<SearchResult> words,
+        List<SearchResult> roots,
+      })> searchAll(String query, {String lang = 'ur'}) async {
     if (query.trim().isEmpty) {
       return (
         surahs: <SearchResult>[],

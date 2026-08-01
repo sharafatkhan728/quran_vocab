@@ -15,15 +15,13 @@ class TranslationService {
 
   static Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
-    _selectedScholar =
-        prefs.getString('selected_scholar') ?? 'ur.bayanulquran';
+    _selectedScholar = prefs.getString('selected_scholar') ?? 'ur.bayanulquran';
   }
 
   static String get selectedScholar => _selectedScholar;
   static String get selectedScholarName =>
       scholars[_selectedScholar]?.name ?? '';
-  static bool get isRtl =>
-      scholars[_selectedScholar]?.isRtl ?? true;
+  static bool get isRtl => scholars[_selectedScholar]?.isRtl ?? true;
 
   static Future<void> setScholar(String key) async {
     _selectedScholar = key;

@@ -6,7 +6,6 @@ import '../providers/display_provider.dart';
 import 'package:provider/provider.dart';
 import 'vocabulary_search_screen.dart';
 
-
 class VocabularyScreen extends StatefulWidget {
   const VocabularyScreen({super.key});
 
@@ -32,7 +31,7 @@ class _VocabularyScreenState extends State<VocabularyScreen>
     _initLoad();
   }
 
-Future<void> _initLoad() async {
+  Future<void> _initLoad() async {
     await _loadWords();
   }
 
@@ -179,8 +178,10 @@ Future<void> _initLoad() async {
         actions: [
           IconButton(
             icon: const Icon(Icons.search),
-            onPressed: () => Navigator.push(context,
-              MaterialPageRoute(builder: (_) => const VocabularySearchScreen())),
+            onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const VocabularySearchScreen())),
           ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.sort, color: Colors.white),
@@ -272,44 +273,42 @@ Future<void> _initLoad() async {
           ),
           Expanded(
             child: _isLoading
-
-                    ? const Center(
-                        child:
-                            CircularProgressIndicator(color: Color(0xFF1B4332)))
-                    : TabBarView(
-                        controller: _tabController,
-                        children: [
-                          _WordList(
-                            words: _filtered(_allWords),
-                            swipeEnabled: false,
-                            onTap: (w) => _openOccurrences(w),
-                            onMarkKnown: _markKnown,
-                            onMarkUnknown: _markUnknown,
-                          ),
-                          _WordList(
-                            words: _filtered(_knownWords),
-                            swipeDirection: SwipeDirection.toRight,
-                            swipeLabel: 'Forgot',
-                            swipeColor: Colors.red,
-                            swipeIcon: Icons.close,
-                            onSwipe: _markUnknown,
-                            onTap: (w) => _openOccurrences(w),
-                            onMarkKnown: _markKnown,
-                            onMarkUnknown: _markUnknown,
-                          ),
-                          _WordList(
-                            words: _filtered(_unknownWords),
-                            swipeDirection: SwipeDirection.toLeft,
-                            swipeLabel: 'Remembered',
-                            swipeColor: Colors.green,
-                            swipeIcon: Icons.check,
-                            onSwipe: _markKnown,
-                            onTap: (w) => _openOccurrences(w),
-                            onMarkKnown: _markKnown,
-                            onMarkUnknown: _markUnknown,
-                          ),
-                        ],
+                ? const Center(
+                    child: CircularProgressIndicator(color: Color(0xFF1B4332)))
+                : TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _WordList(
+                        words: _filtered(_allWords),
+                        swipeEnabled: false,
+                        onTap: (w) => _openOccurrences(w),
+                        onMarkKnown: _markKnown,
+                        onMarkUnknown: _markUnknown,
                       ),
+                      _WordList(
+                        words: _filtered(_knownWords),
+                        swipeDirection: SwipeDirection.toRight,
+                        swipeLabel: 'Forgot',
+                        swipeColor: Colors.red,
+                        swipeIcon: Icons.close,
+                        onSwipe: _markUnknown,
+                        onTap: (w) => _openOccurrences(w),
+                        onMarkKnown: _markKnown,
+                        onMarkUnknown: _markUnknown,
+                      ),
+                      _WordList(
+                        words: _filtered(_unknownWords),
+                        swipeDirection: SwipeDirection.toLeft,
+                        swipeLabel: 'Remembered',
+                        swipeColor: Colors.green,
+                        swipeIcon: Icons.check,
+                        onSwipe: _markKnown,
+                        onTap: (w) => _openOccurrences(w),
+                        onMarkKnown: _markKnown,
+                        onMarkUnknown: _markUnknown,
+                      ),
+                    ],
+                  ),
           ),
         ],
       ),

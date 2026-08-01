@@ -692,9 +692,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                             ),
                             child: Center(
                               child: Text(
-                                _swipeHint == 'known'
-                                    ? '✓ Known'
-                                    : '✗ Unknown',
+                                _swipeHint == 'known' ? '✓ Known' : '✗ Unknown',
                                 style: TextStyle(
                                   fontSize: 32,
                                   fontWeight: FontWeight.bold,
@@ -779,8 +777,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                       shape: BoxShape.circle,
                       color: Colors.red.withValues(alpha: 0.1),
                     ),
-                    child:
-                        const Icon(Icons.close, size: 16, color: Colors.red),
+                    child: const Icon(Icons.close, size: 16, color: Colors.red),
                   ),
                 ),
               ],
@@ -804,8 +801,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: Colors.blue.withValues(alpha: 0.1),
-                      border: Border.all(
-                          color: Colors.blue.withValues(alpha: 0.4)),
+                      border:
+                          Border.all(color: Colors.blue.withValues(alpha: 0.4)),
                     ),
                     child: const Icon(Icons.volume_up_rounded,
                         color: Colors.blue, size: 18),
@@ -846,8 +843,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
               )
             else
               Text('Loading ayah...',
-                  style:
-                      TextStyle(fontSize: 12, color: Colors.grey.shade400)),
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade400)),
             const SizedBox(height: 14),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 8),
@@ -894,13 +890,12 @@ class _FlashcardScreenState extends State<FlashcardScreen>
               children: [
                 if (_current.root.isNotEmpty)
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
                       color: _gold.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(10),
-                      border:
-                          Border.all(color: _gold.withValues(alpha: 0.35)),
+                      border: Border.all(color: _gold.withValues(alpha: 0.35)),
                     ),
                     child: Column(children: [
                       Text('Root',
@@ -924,8 +919,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                 const SizedBox(width: 10),
                 GestureDetector(
                   onTap: _playAudio,
-                  child: const Icon(Icons.volume_up,
-                      color: Colors.blue, size: 20),
+                  child:
+                      const Icon(Icons.volume_up, color: Colors.blue, size: 20),
                 ),
               ],
             ),
@@ -973,8 +968,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                     _current.sampleAyahArabic,
                     textDirection: TextDirection.rtl,
                     textAlign: TextAlign.center,
-                    style: _arabicStyle(display, isDark, 23)
-                        .copyWith(height: 1.9),
+                    style:
+                        _arabicStyle(display, isDark, 23).copyWith(height: 1.9),
                   ),
                   if (_current.sampleAyahTranslation.isNotEmpty) ...[
                     const SizedBox(height: 8),
@@ -985,8 +980,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                       style: TextStyle(
                         fontFamily: 'JameelNoori',
                         fontSize: 13,
-                        color:
-                            isDark ? Colors.white60 : Colors.grey.shade600,
+                        color: isDark ? Colors.white60 : Colors.grey.shade600,
                         height: 1.5,
                       ),
                     ),
@@ -998,8 +992,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
             GestureDetector(
               onTap: _openMorphology,
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
                     colors: [_green, _teal],
@@ -1012,8 +1006,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.school_outlined,
-                        color: Colors.white, size: 16),
+                    Icon(Icons.school_outlined, color: Colors.white, size: 16),
                     SizedBox(width: 6),
                     Text('Learn More About This Word',
                         style: TextStyle(
@@ -1057,8 +1050,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(16),
                 color: Colors.red.withValues(alpha: 0.1),
-                border:
-                    Border.all(color: Colors.red.withValues(alpha: 0.5)),
+                border: Border.all(color: Colors.red.withValues(alpha: 0.5)),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -1095,8 +1087,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(16),
                 color: Colors.green.withValues(alpha: 0.1),
-                border: Border.all(
-                    color: Colors.green.withValues(alpha: 0.5)),
+                border: Border.all(color: Colors.green.withValues(alpha: 0.5)),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -1149,11 +1140,11 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                   border: Border.all(color: _gold.withValues(alpha: 0.3)),
                 ),
                 child: Column(children: [
-                  _summaryRow('Cards reviewed', '${_cards.length}',
-                      Icons.style, isDark),
+                  _summaryRow('Cards reviewed', '${_cards.length}', Icons.style,
+                      isDark),
                   const Divider(height: 16),
-                  _summaryRow('Points earned', '+$_sessionPoints',
-                      Icons.stars, isDark),
+                  _summaryRow(
+                      'Points earned', '+$_sessionPoints', Icons.stars, isDark),
                   const Divider(height: 16),
                   _summaryRow('Total points', '$_totalPoints',
                       Icons.emoji_events, isDark),
@@ -1165,8 +1156,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                 decoration: BoxDecoration(
                   color: _gold.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(14),
-                  border:
-                      Border.all(color: _gold.withValues(alpha: 0.2)),
+                  border: Border.all(color: _gold.withValues(alpha: 0.2)),
                 ),
                 child: Text(
                   'Consistency is better than speed.\n'
@@ -1174,8 +1164,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                   textAlign: TextAlign.center,
                   style: TextStyle(
                       fontSize: 13,
-                      color:
-                          isDark ? Colors.white70 : Colors.grey.shade700,
+                      color: isDark ? Colors.white70 : Colors.grey.shade700,
                       height: 1.5),
                 ),
               ),
@@ -1185,14 +1174,14 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _green,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 40, vertical: 14),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14)),
                 ),
                 child: const Text('Back to Quran',
-                    style: TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.bold)),
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ),
             ],
           ),
@@ -1229,8 +1218,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
       decoration: BoxDecoration(
         color: const Color(0xFF1B4332).withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-            color: const Color(0xFF1B4332).withValues(alpha: 0.2)),
+        border:
+            Border.all(color: const Color(0xFF1B4332).withValues(alpha: 0.2)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -1239,8 +1228,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
             _bannerChip('📚 ${r.overdueCount} review', Colors.blue),
           if (r.failedCount > 0)
             _bannerChip('❌ ${r.failedCount} failed', Colors.red),
-          if (r.newCount > 0)
-            _bannerChip('🆕 ${r.newCount} new', Colors.green),
+          if (r.newCount > 0) _bannerChip('🆕 ${r.newCount} new', Colors.green),
         ],
       ),
     );
@@ -1256,9 +1244,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
       ),
       child: Text(label,
           style: TextStyle(
-              fontSize: 11,
-              color: color,
-              fontWeight: FontWeight.w600)),
+              fontSize: 11, color: color, fontWeight: FontWeight.w600)),
     );
   }
 
@@ -1296,8 +1282,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                 decoration: BoxDecoration(
                   color: _gold.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(14),
-                  border:
-                      Border.all(color: _gold.withValues(alpha: 0.25)),
+                  border: Border.all(color: _gold.withValues(alpha: 0.25)),
                 ),
                 child: Text(
                   _sessionResult == null
@@ -1310,8 +1295,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                   textAlign: TextAlign.center,
                   style: TextStyle(
                       fontSize: 13,
-                      color:
-                          isDark ? Colors.white70 : Colors.grey.shade700,
+                      color: isDark ? Colors.white70 : Colors.grey.shade700,
                       height: 1.6),
                 ),
               ),
@@ -1324,16 +1308,15 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                     color: const Color(0xFF1B4332).withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                        color:
-                            const Color(0xFF1B4332).withValues(alpha: 0.2)),
+                        color: const Color(0xFF1B4332).withValues(alpha: 0.2)),
                   ),
                   child: Column(children: [
                     _statsRow('📚 Overdue reviews',
                         '${_sessionResult!.overdueCount}'),
-                    _statsRow('❌ Failed cards',
-                        '${_sessionResult!.failedCount}'),
-                    _statsRow('🆕 New cards today',
-                        '${_sessionResult!.newCount}'),
+                    _statsRow(
+                        '❌ Failed cards', '${_sessionResult!.failedCount}'),
+                    _statsRow(
+                        '🆕 New cards today', '${_sessionResult!.newCount}'),
                   ]),
                 ),
               ],
@@ -1342,8 +1325,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                 OutlinedButton.icon(
                   onPressed: () => _showLoadMoreWarning(),
                   icon: const Icon(Icons.add_card),
-                  label:
-                      const Text('Load More Cards (Not Recommended)'),
+                  label: const Text('Load More Cards (Not Recommended)'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.orange,
                     side: const BorderSide(color: Colors.orange),
@@ -1372,8 +1354,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     );
   }
 
-  Widget _summaryRow(
-      String label, String value, IconData icon, bool isDark) {
+  Widget _summaryRow(String label, String value, IconData icon, bool isDark) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -1387,9 +1368,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
         ]),
         Text(value,
             style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: _gold)),
+                fontSize: 16, fontWeight: FontWeight.bold, color: _gold)),
       ],
     );
   }
@@ -1399,10 +1378,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     switch (d.arabicFont) {
       case 'indopak':
         return TextStyle(
-            fontFamily: 'IndoPak',
-            fontSize: size,
-            color: color,
-            height: 1.4);
+            fontFamily: 'IndoPak', fontSize: size, color: color, height: 1.4);
       case 'noorehuda':
         return TextStyle(
             fontFamily: 'NoorehudaFont',

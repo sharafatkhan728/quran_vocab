@@ -68,8 +68,8 @@ class DatabaseImporter {
   static Future<bool> needsImport() async {
     try {
       final db = await DatabaseManager.db;
-      final rows = await db.query('db_meta',
-          where: 'key = ?', whereArgs: ['content_version']);
+      final rows = await db
+          .query('db_meta', where: 'key = ?', whereArgs: ['content_version']);
       if (rows.isEmpty) {
         debugPrint('needsImport: no version stored → true');
         return true;
@@ -91,16 +91,15 @@ class DatabaseImporter {
 
     // ── Phase 1: Load all asset data into memory BEFORE touching the DB ────
     // If asset loading fails, the live DB is completely untouched.
-    yield ImportProgress(ImportStep.preparing, 0, 1,
-        'Loading assets...');
+    yield ImportProgress(ImportStep.preparing, 0, 1, 'Loading assets...');
 
     late WordImporter wordImporter;
     try {
       wordImporter = WordImporter(db);
       await wordImporter.loadAssets();
     } catch (e) {
-      yield ImportProgress(ImportStep.error, 0, 1,
-          'Asset load failed: $e', error: e.toString());
+      yield ImportProgress(ImportStep.error, 0, 1, 'Asset load failed: $e',
+          error: e.toString());
       return;
     }
     yield ImportProgress(ImportStep.preparing, 1, 1, 'Assets loaded ✓');
@@ -153,12 +152,10 @@ class DatabaseImporter {
             },
             conflictAlgorithm: ConflictAlgorithm.replace);
         await txn.insert(
-            'db_meta',
-            {'key': 'schema_version', 'value': '$_schemaVersion'},
+            'db_meta', {'key': 'schema_version', 'value': '$_schemaVersion'},
             conflictAlgorithm: ConflictAlgorithm.replace);
         await txn.insert(
-            'db_meta',
-            {'key': 'import_completed_at', 'value': now},
+            'db_meta', {'key': 'import_completed_at', 'value': now},
             conflictAlgorithm: ConflictAlgorithm.replace);
       });
 

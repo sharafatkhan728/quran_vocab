@@ -15,8 +15,7 @@ class SrsService {
   static Future<void> _ensureVocabCache() async {
     if (_cleanToId != null) return;
     final db = await DatabaseManager.db;
-    final rows =
-        await db.query('vocab_words', columns: ['id', 'arabic_clean']);
+    final rows = await db.query('vocab_words', columns: ['id', 'arabic_clean']);
     _cleanToId = {
       for (final r in rows) r['arabic_clean'] as String: r['id'] as int
     };

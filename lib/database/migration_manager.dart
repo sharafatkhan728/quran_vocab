@@ -8,8 +8,8 @@ class MigrationManager {
 
     // Check if content import is complete — if not, skip user migration
     // because vocab_words table may be empty and lookups would fail
-    final contentRows = await db.query('db_meta',
-        where: 'key = ?', whereArgs: ['content_version']);
+    final contentRows = await db
+        .query('db_meta', where: 'key = ?', whereArgs: ['content_version']);
     if (contentRows.isEmpty) {
       // Content not imported yet — migration will run after import completes
       return;
@@ -23,11 +23,10 @@ class MigrationManager {
     final now = DateTime.now().millisecondsSinceEpoch;
 
     // Build vocab lookup once: arabic_clean → vocab_word_id
-    final vocabRows = await db.query('vocab_words',
-        columns: ['id', 'arabic_clean']);
+    final vocabRows =
+        await db.query('vocab_words', columns: ['id', 'arabic_clean']);
     final vocabMap = <String, int>{
-      for (final r in vocabRows)
-        r['arabic_clean'] as String: r['id'] as int
+      for (final r in vocabRows) r['arabic_clean'] as String: r['id'] as int
     };
 
     // ── Known words ─────────────────────────────────────────────────────────
@@ -36,10 +35,13 @@ class MigrationManager {
       final clean = key.replaceFirst('known_word_', '');
       final vocabId = vocabMap[clean];
       if (vocabId == null) continue;
-      await db.insert('known_words', {
-        'vocab_word_id': vocabId,
-        'marked_at': now,
-      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      await db.insert(
+          'known_words',
+          {
+            'vocab_word_id': vocabId,
+            'marked_at': now,
+          },
+          conflictAlgorithm: ConflictAlgorithm.ignore);
     }
 
     // ── SRS cards ────────────────────────────────────────────────────────────
@@ -51,29 +53,37 @@ class MigrationManager {
       if (vocabId == null) continue;
       final raw = prefs.getString(key) ?? '';
       final parts = raw.split('|');
-      await db.insert('srs_cards', {
-        'vocab_word_id': vocabId,
-        'stage': int.tryParse(parts.elementAtOrNull(0) ?? '') ?? 0,
-        'next_review_session': int.tryParse(parts.elementAtOrNull(1) ?? '') ?? 0,
-        'ease_factor': double.tryParse(parts.elementAtOrNull(2) ?? '') ?? 2.5,
-        'fail_count': int.tryParse(parts.elementAtOrNull(3) ?? '') ?? 0,
-        'total_reviews': int.tryParse(parts.elementAtOrNull(4) ?? '') ?? 0,
-        'last_result': int.tryParse(parts.elementAtOrNull(5) ?? '') ?? -1,
-        'is_deleted': 0,
-        'created_at': now,
-        'updated_at': now,
-      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      await db.insert(
+          'srs_cards',
+          {
+            'vocab_word_id': vocabId,
+            'stage': int.tryParse(parts.elementAtOrNull(0) ?? '') ?? 0,
+            'next_review_session':
+                int.tryParse(parts.elementAtOrNull(1) ?? '') ?? 0,
+            'ease_factor':
+                double.tryParse(parts.elementAtOrNull(2) ?? '') ?? 2.5,
+            'fail_count': int.tryParse(parts.elementAtOrNull(3) ?? '') ?? 0,
+            'total_reviews': int.tryParse(parts.elementAtOrNull(4) ?? '') ?? 0,
+            'last_result': int.tryParse(parts.elementAtOrNull(5) ?? '') ?? -1,
+            'is_deleted': 0,
+            'created_at': now,
+            'updated_at': now,
+          },
+          conflictAlgorithm: ConflictAlgorithm.ignore);
     }
 
     // ── Reading progress ─────────────────────────────────────────────────────
     for (int i = 1; i <= 114; i++) {
       final ayah = prefs.getInt('last_read_$i') ?? 0;
       if (ayah > 0) {
-        await db.insert('reading_progress', {
-          'surah_id': i,
-          'last_ayah': ayah,
-          'last_read_at': now,
-        }, conflictAlgorithm: ConflictAlgorithm.ignore);
+        await db.insert(
+            'reading_progress',
+            {
+              'surah_id': i,
+              'last_ayah': ayah,
+              'last_read_at': now,
+            },
+            conflictAlgorithm: ConflictAlgorithm.ignore);
       }
     }
 
@@ -85,11 +95,14 @@ class MigrationManager {
       final surahId = int.tryParse(parts[0]);
       final ayahNum = int.tryParse(parts[1]);
       if (surahId == null || ayahNum == null) continue;
-      await db.insert('bookmarks', {
-        'surah_id': surahId,
-        'ayah_number': ayahNum,
-        'created_at': now,
-      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      await db.insert(
+          'bookmarks',
+          {
+            'surah_id': surahId,
+            'ayah_number': ayahNum,
+            'created_at': now,
+          },
+          conflictAlgorithm: ConflictAlgorithm.ignore);
     }
 
     // ── Daily stats ──────────────────────────────────────────────────────────
@@ -98,12 +111,15 @@ class MigrationManager {
       final dateKey = key.replaceFirst('daily_', '');
       final count = prefs.getInt(key) ?? 0;
       if (count > 0) {
-        await db.insert('daily_stats', {
-          'date_key': dateKey,
-          'words_learned': count,
-          'sessions': 0,
-          'points': 0,
-        }, conflictAlgorithm: ConflictAlgorithm.ignore);
+        await db.insert(
+            'daily_stats',
+            {
+              'date_key': dateKey,
+              'words_learned': count,
+              'sessions': 0,
+              'points': 0,
+            },
+            conflictAlgorithm: ConflictAlgorithm.ignore);
       }
     }
 
@@ -121,8 +137,8 @@ class MigrationManager {
     }
 
     // Mark complete
-    await db.insert('user_meta',
-        {'key': 'migration_v1_completed', 'value': 'true'},
+    await db.insert(
+        'user_meta', {'key': 'migration_v1_completed', 'value': 'true'},
         conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
