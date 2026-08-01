@@ -80,10 +80,19 @@ class WordProgressService {
 
   static Future<double> getProgressPercent() async {
     final known = await getAllKnownWords();
-    return (known.length / 14870) * 100;
+    final total = await getTotalVocabCount();
+    if (total == 0) return 0;
+    return (known.length / total) * 100;
   }
 
-  static int get totalUniqueWords => 14870;
+  static Future<int> getTotalVocabCount() async {
+    final db = await DatabaseManager.db;
+    final rows = await db.rawQuery(
+        'SELECT COUNT(*) as cnt FROM vocab_words WHERE frequency > 0');
+    return (rows.first['cnt'] as int?) ?? 0;
+  }
+
+  static int get totalUniqueWords => 15072;
 
   /// Returns frequency map from SQLite vocab_words table.
   static Future<Map<String, WordData>> getWordFrequencies() async {

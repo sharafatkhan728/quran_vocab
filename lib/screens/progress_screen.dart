@@ -18,6 +18,7 @@ class _ProgressScreenState extends State<ProgressScreen>
   double _percent = 0;
   int _knownCount = 0;
   int _discoveredCount = 0;
+  int _totalVocab = 15072;
   bool _loading = true;
 
   // Surah completion
@@ -77,6 +78,7 @@ class _ProgressScreenState extends State<ProgressScreen>
     final known = await WordProgressService.getAllKnownWords();
     final freq = await WordProgressService.getWordFrequencies();
     final p = await WordProgressService.getProgressPercent();
+    final totalVocab = await WordProgressService.getTotalVocabCount();
     final surahProg = await WordProgressService.getAllSurahProgress();
 
     // Find completed surahs (100%)
@@ -150,6 +152,7 @@ class _ProgressScreenState extends State<ProgressScreen>
       setState(() {
         _percent = p;
         _knownCount = known.length;
+        _totalVocab = totalVocab > 0 ? totalVocab : 15072;
         _discoveredCount = freq.length;
         _completedSurahs = completed;
         _surahProgress = surahProg;
@@ -255,7 +258,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                   width: 144,
                   height: 144,
                   child: CircularProgressIndicator(
-                    value: (_knownCount / 14870) * _ringAnim.value,
+                    value: (_knownCount / _totalVocab) * _ringAnim.value,
                     strokeWidth: 6,
                     backgroundColor: Colors.transparent,
                     strokeCap: StrokeCap.round,
@@ -349,7 +352,7 @@ class _ProgressScreenState extends State<ProgressScreen>
     final items = [
       _S('Known', '$_knownCount', Icons.check_circle, Colors.green),
       _S('Discovered', '$_discoveredCount', Icons.explore, _teal),
-      _S('Remaining', '${14870 - _knownCount}', Icons.hourglass_empty,
+      _S('Remaining', '${_totalVocab - _knownCount}', Icons.hourglass_empty,
           Colors.orange),
       _S('Completed\nSurahs', '${_completedSurahs.length}', Icons.menu_book,
           _gold),
@@ -408,8 +411,8 @@ class _ProgressScreenState extends State<ProgressScreen>
   // ── Progress bars ─────────────────────────────────────────────────────────
   Widget _buildProgressBars(bool isDark) {
     final bars = [
-      _B('Words Known', _knownCount / 14870, Colors.green),
-      _B('Words Discovered', _discoveredCount / 14870, _teal),
+      _B('Words Known', _knownCount / _totalVocab, Colors.green),
+      _B('Words Discovered', _discoveredCount / _totalVocab, _teal),
       _B('300 Core Words (80% Quran)', math.min(_knownCount / 300, 1.0), _gold),
       _B('Surahs Completed', _completedSurahs.length / 114, _emerald),
     ];
@@ -472,7 +475,7 @@ class _ProgressScreenState extends State<ProgressScreen>
       _M(1000, 'Scholar', Icons.emoji_events),
       _M(3000, 'Hafiz Path', Icons.military_tech),
       _M(7000, 'Advanced', Icons.diamond),
-      _M(14870, 'Complete!', Icons.mosque),
+      _M(_totalVocab, 'Complete!', Icons.mosque),
     ];
     return _card(
       isDark,
