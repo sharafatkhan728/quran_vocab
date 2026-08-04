@@ -11,6 +11,8 @@ import 'services/word_glossary_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/splash_screen.dart';
 import 'screens/main_navigation.dart';
+import 'providers/learning_state_provider.dart';
+
 
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -32,6 +34,7 @@ void main() async {
         ChangeNotifierProvider.value(value: themeProvider),
         ChangeNotifierProvider(create: (_) => UserProvider()),
         ChangeNotifierProvider(create: (_) => DisplayProvider()),
+        ChangeNotifierProvider(create: (_) => LearningStateProvider()),
       ],
       child: const QuranAppRoot(),
     ),

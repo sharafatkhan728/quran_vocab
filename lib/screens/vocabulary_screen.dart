@@ -5,6 +5,7 @@ import 'word_occurrences_screen.dart';
 import '../providers/display_provider.dart';
 import 'package:provider/provider.dart';
 import 'vocabulary_search_screen.dart';
+import '../providers/learning_state_provider.dart';
 
 class VocabularyScreen extends StatefulWidget {
   const VocabularyScreen({super.key});
@@ -19,6 +20,7 @@ class _VocabularyScreenState extends State<VocabularyScreen>
   List<WordEntry> _allWords = [];
   List<WordEntry> _knownWords = [];
   List<WordEntry> _unknownWords = [];
+  LearningStateProvider? _learning;
   bool _isLoading = true;
   String _searchQuery = '';
   String _sortBy = 'frequency';
@@ -32,11 +34,54 @@ class _VocabularyScreenState extends State<VocabularyScreen>
   }
 
   Future<void> _initLoad() async {
+    // Wait for LearningStateProvider to finish loading from SQLite
+    final learning = context.read<LearningStateProvider>();
+    if (!learning.isLoaded) {
+      await learning.init();
+    }
     await _loadWords();
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final learning = context.read<LearningStateProvider>();
+    if (_learning != learning) {
+      _learning?.removeListener(_onLearningChanged);
+      _learning = learning;
+      _learning!.addListener(_onLearningChanged);
+    }
+  }
+
+  void _onLearningChanged() {
+    if (!mounted || _allWords.isEmpty) return;
+    _reclassifyWords();
+  }
+
+  void _reclassifyWords() {
+    final learning = context.read<LearningStateProvider>();
+    final known = <WordEntry>[];
+    final unknown = <WordEntry>[];
+    for (final w in _allWords) {
+      final isNowKnown = learning.isKnown(w.arabic);
+      w.isKnown = isNowKnown;
+      if (isNowKnown) {
+        known.add(w);
+      } else {
+        unknown.add(w);
+      }
+    }
+    if (mounted) {
+      setState(() {
+        _knownWords = known;
+        _unknownWords = unknown;
+      });
+    }
+  }
+
+  @override
   void dispose() {
+    _learning?.removeListener(_onLearningChanged);
     _tabController.dispose();
     _searchController.dispose();
     super.dispose();
@@ -44,7 +89,7 @@ class _VocabularyScreenState extends State<VocabularyScreen>
 
   Future<void> _loadWords() async {
     setState(() => _isLoading = true);
-    final knownSet = await WordProgressService.getAllKnownWords();
+    final learning = context.read<LearningStateProvider>();
     final wordFreq = await WordProgressService.getWordFrequencies();
 
     final all = wordFreq.entries
@@ -55,7 +100,7 @@ class _VocabularyScreenState extends State<VocabularyScreen>
                   : e.key,
               urdu: e.value.urdu,
               frequency: e.value.frequency,
-              isKnown: knownSet.contains(e.key),
+              isKnown: learning.isKnown(e.key),
             ))
         .toList();
 
@@ -88,14 +133,11 @@ class _VocabularyScreenState extends State<VocabularyScreen>
   }
 
   Future<void> _markKnown(WordEntry word) async {
-    await WordProgressService.markAsKnown(word.arabic);
-    WordProgressService.recalculateAllSurahProgress(); // fire and forget
+    await context.read<LearningStateProvider>().setKnownByClean(word.arabic);
     if (!mounted) return;
-
     final messenger = ScaffoldMessenger.of(context);
     messenger.clearSnackBars();
-
-    final controller = messenger.showSnackBar(SnackBar(
+    messenger.showSnackBar(SnackBar(
       content: const Text('✓ یاد ہے — معنی چھپا دیا'),
       backgroundColor: Colors.green.shade800,
       duration: const Duration(seconds: 4),
@@ -103,30 +145,22 @@ class _VocabularyScreenState extends State<VocabularyScreen>
         label: 'Undo',
         textColor: Colors.white,
         onPressed: () async {
-          await WordProgressService.markAsUnknown(word.arabic);
-          WordProgressService.recalculateAllSurahProgress(); // fire and forget
-          if (mounted) await _loadWords();
+          if (mounted) {
+            await context
+                .read<LearningStateProvider>()
+                .setUnknownByClean(word.arabic);
+          }
         },
       ),
     ));
-
-    // Auto dismiss and reload AFTER snackbar closes naturally
-    controller.closed.then((reason) {
-      if (reason != SnackBarClosedReason.action && mounted) {
-        _loadWords();
-      }
-    });
   }
 
   Future<void> _markUnknown(WordEntry word) async {
-    await WordProgressService.markAsUnknown(word.arabic);
-    WordProgressService.recalculateAllSurahProgress(); // fire and forget
+    await context.read<LearningStateProvider>().setUnknownByClean(word.arabic);
     if (!mounted) return;
-
     final messenger = ScaffoldMessenger.of(context);
     messenger.clearSnackBars();
-
-    final controller = messenger.showSnackBar(SnackBar(
+    messenger.showSnackBar(SnackBar(
       content: const Text('معنی واپس آ گیا'),
       backgroundColor: Colors.grey.shade700,
       duration: const Duration(seconds: 4),
@@ -134,18 +168,14 @@ class _VocabularyScreenState extends State<VocabularyScreen>
         label: 'Undo',
         textColor: Colors.white,
         onPressed: () async {
-          await WordProgressService.markAsKnown(word.arabic);
-          WordProgressService.recalculateAllSurahProgress(); // fire and forget
-          if (mounted) await _loadWords();
+          if (mounted) {
+            await context
+                .read<LearningStateProvider>()
+                .setKnownByClean(word.arabic);
+          }
         },
       ),
     ));
-
-    controller.closed.then((reason) {
-      if (reason != SnackBarClosedReason.action && mounted) {
-        _loadWords();
-      }
-    });
   }
 
   @override

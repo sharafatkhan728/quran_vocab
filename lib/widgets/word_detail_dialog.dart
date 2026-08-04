@@ -8,6 +8,7 @@ import '../providers/theme_provider.dart';
 import '../services/word_progress_service.dart';
 // import 'morphology_sheet.dart';
 import '../screens/morphology_sheet.dart';
+import '../providers/learning_state_provider.dart';
 
 class WordDetailDialog extends StatefulWidget {
   final QuranWord word;
@@ -46,7 +47,10 @@ class _WordDetailDialogState extends State<WordDetailDialog> {
 
   Future<void> _toggle() async {
     HapticFeedback.lightImpact();
-    final nowKnown = await WordProgressService.toggleWord(widget.word.arabic);
+    final normalized =
+        WordProgressService.normalizeArabic(widget.word.arabic);
+    final learning = context.read<LearningStateProvider>();
+    final nowKnown = await learning.toggleByClean(normalized);
     if (mounted) {
       setState(() => _isKnown = nowKnown);
       widget.onKnownToggled(nowKnown);

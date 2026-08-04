@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../database/database_importer.dart';
 import '../database/migration_manager.dart';
+import 'package:provider/provider.dart';
+import '../providers/learning_state_provider.dart';
 
 class SplashScreen extends StatefulWidget {
   final Widget child;
@@ -61,7 +63,11 @@ class _SplashScreenState extends State<SplashScreen> {
       }
     }
 
-    if (mounted) setState(() => _done = true);
+    // Init learning state after DB is ready
+    if (mounted) {
+      await context.read<LearningStateProvider>().init();
+      setState(() => _done = true);
+    }
   }
 
   @override

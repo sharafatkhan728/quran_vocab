@@ -67,8 +67,13 @@ class SrsRepository {
   }
 
   static Future<void> initMissingCards(List<int> vocabWordIds) async {
+    if (vocabWordIds.isEmpty) return;
     final db = await DatabaseManager.db;
-    final existing = await db.query('srs_cards', columns: ['vocab_word_id']);
+    // Only fetch ids that already exist — avoids loading all cards
+    final placeholders = vocabWordIds.map((_) => '?').join(',');
+    final existing = await db.rawQuery(
+        'SELECT vocab_word_id FROM srs_cards WHERE vocab_word_id IN ($placeholders)',
+        vocabWordIds);
     final existingIds = existing.map((r) => r['vocab_word_id'] as int).toSet();
     final now = DateTime.now().millisecondsSinceEpoch;
     const batchSize = 300;
@@ -100,9 +105,11 @@ class SrsRepository {
     await batch.commit(noResult: true);
   }
 
+  // Loads only non-deleted cards — one query
   static Future<Map<int, SrsCardRow>> loadAllCards() async {
     final db = await DatabaseManager.db;
-    final rows = await db.query('srs_cards', where: 'is_deleted = 0');
+    final rows =
+        await db.query('srs_cards', where: 'is_deleted = 0 OR is_deleted IS NULL');
     return {
       for (final r in rows) (r['vocab_word_id'] as int): SrsCardRow.fromMap(r)
     };
@@ -119,12 +126,8 @@ class SrsRepository {
   static Future<void> addPoints(int pts) async {
     final current = await getTotalPoints();
     final db = await DatabaseManager.db;
-    await db.insert(
-        'user_meta',
-        {
-          'key': 'srs_total_points',
-          'value': '${current + pts}',
-        },
+    await db.insert('user_meta',
+        {'key': 'srs_total_points', 'value': '${current + pts}'},
         conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
@@ -140,12 +143,8 @@ class SrsRepository {
     final current = await getCurrentSession();
     final next = current + 1;
     final db = await DatabaseManager.db;
-    await db.insert(
-        'user_meta',
-        {
-          'key': 'srs_total_sessions',
-          'value': '$next',
-        },
+    await db.insert('user_meta',
+        {'key': 'srs_total_sessions', 'value': '$next'},
         conflictAlgorithm: ConflictAlgorithm.replace);
     return next;
   }
@@ -163,12 +162,8 @@ class SrsRepository {
   static Future<void> saveSavedSession(
       List<int> vocabWordIds, int index) async {
     final db = await DatabaseManager.db;
-    await db.insert(
-        'user_meta',
-        {
-          'key': 'srs_session_v2',
-          'value': '$index|${vocabWordIds.join(",")}',
-        },
+    await db.insert('user_meta',
+        {'key': 'srs_session_v2', 'value': '$index|${vocabWordIds.join(",")}'},
         conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
@@ -214,5 +209,24 @@ class SrsRepository {
     return '${now.year}-'
         '${now.month.toString().padLeft(2, '0')}-'
         '${now.day.toString().padLeft(2, '0')}';
+  }
+
+  /// Fetches next unseen words via LEFT JOIN — no Dart-side 15K scan.
+  /// Uses srs_cards absence as the "unseen" signal.
+  static Future<List<String>> fetchNextUnseenWords({
+    required int limit,
+  }) async {
+    final db = await DatabaseManager.db;
+    final rows = await db.rawQuery('''
+      SELECT v.arabic_clean
+      FROM vocab_words v
+      LEFT JOIN srs_cards s ON s.vocab_word_id = v.id
+      WHERE (s.vocab_word_id IS NULL OR s.is_deleted = 0 AND s.total_reviews = 0)
+        AND v.frequency > 0
+        AND v.meaning_ur != ''
+      ORDER BY v.frequency DESC
+      LIMIT ?
+    ''', [limit]);
+    return rows.map((r) => r['arabic_clean'] as String).toList();
   }
 }

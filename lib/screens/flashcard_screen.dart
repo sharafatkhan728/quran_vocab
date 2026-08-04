@@ -12,6 +12,7 @@ import '../services/translation_service.dart';
 import 'morphology_sheet.dart';
 import '../repositories/vocabulary_repository.dart';
 import '../models/word.dart';
+import '../providers/learning_state_provider.dart';
 
 // ── FlashWord model ─────────────────────────────────────────────────────────
 class FlashWord {
@@ -176,9 +177,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     );
     if (confirm == true && mounted) {
       setState(() => _loading = true);
-      final freq = await WordProgressService.getWordFrequencies();
-      final allWords = freq.keys.toList();
-      final extra = await SrsService.buildExtraSession(allWords, 10);
+      final dailyGoal = context.read<UserProvider>().dailyGoal;
+      final extra = await SrsService.buildExtraSession(dailyGoal);
       if (extra.isEmpty) {
         setState(() => _loading = false);
         if (mounted) {
@@ -187,6 +187,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
         }
         return;
       }
+      final freq = await WordProgressService.getWordFrequencies();
       final cards = _buildCards(extra.words, freq);
       if (mounted) {
         setState(() {
@@ -206,8 +207,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     }
   }
 
-  Future<void> _loadSession({bool forceNew = false}) async {
-    final dailyGoal = context.read<UserProvider>().dailyGoal;
+Future<void> _loadSession({bool forceNew = false}) async {
     setState(() {
       _loading = true;
       _sessionDone = false;
@@ -216,22 +216,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
       await SrsService.clearSession();
     }
     _totalPoints = await SrsService.getTotalPoints();
+
     final freq = await WordProgressService.getWordFrequencies();
-    final sorted = freq.entries.toList()
-      ..sort((a, b) => b.value.frequency.compareTo(a.value.frequency));
-    final allWords = sorted.map((e) => e.key).toList();
-
-    if (allWords.isEmpty) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _cards = [];
-        });
-      }
-      return;
-    }
-
-    await SrsService.initMissingCards(allWords);
 
     if (!forceNew) {
       final saved = await SrsService.loadSession();
@@ -255,7 +241,9 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     }
 
     await SrsService.startNewSession();
-    final result = await SrsService.buildSession(allWords.toList(), dailyGoal);
+    // Read dailyGoal here — after providers have fully loaded
+    final dailyGoal = context.read<UserProvider>().dailyGoal;
+    final result = await SrsService.buildSession(dailyGoal);
 
     if (result.isEmpty) {
       if (mounted) {
@@ -323,16 +311,17 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     });
   }
 
-  Future<void> _swipeKnown() async {
-    if (!_isFlipped) {
-      _flip();
-      return;
-    }
+Future<void> _swipeKnown() async {
+    if (!_isFlipped) { _flip(); return; }
     HapticFeedback.mediumImpact();
     final existingCard = await SrsService.getCard(_current.normalizedForLookup);
     final wasNew = existingCard?.totalReviews == 0;
     final pts = await SrsService.markKnown(_current.normalizedForLookup);
-    await WordProgressService.markAsKnown(_current.normalizedForLookup);
+    // Single source of truth — LearningStateProvider handles known_words
+    if (mounted) {
+      await context.read<LearningStateProvider>()
+          .setKnownByClean(_current.normalizedForLookup);
+    }
     if (wasNew) await SrsService.recordNewCardReviewed();
     if (!mounted) return;
     setState(() {
@@ -352,6 +341,10 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     HapticFeedback.mediumImpact();
     await SrsService.markUnknown(_current.normalizedForLookup);
     if (!mounted) return;
+    // Mark as unknown in global learning state
+    await context.read<LearningStateProvider>()
+        .setUnknownByClean(_current.normalizedForLookup);
+    if (!mounted) return;
     final remaining = _cards.length - _currentIndex - 1;
     if (remaining > 2) {
       final insertAt =
@@ -365,7 +358,13 @@ class _FlashcardScreenState extends State<FlashcardScreen>
   }
 
   Future<void> _deleteCard() async {
+    // Delete = remove from SRS only. Word stays Known in Quran/Vocabulary.
+    // Mark as known in global state so it's hidden from Quran reader.
     await SrsService.deleteCard(_current.normalizedForLookup);
+    if (mounted) {
+      await context.read<LearningStateProvider>()
+          .setKnownByClean(_current.normalizedForLookup);
+    }
     if (!mounted) return;
     await _animateDismiss(toRight: true);
     if (!mounted) return;

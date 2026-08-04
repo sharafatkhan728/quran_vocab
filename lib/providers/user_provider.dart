@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/sync_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class UserProvider extends ChangeNotifier {
   User? _user;
@@ -17,9 +18,16 @@ class UserProvider extends ChangeNotifier {
   String get email => _user?.email ?? '';
   String get photoUrl => _profile['photoUrl'] ?? _user?.photoURL ?? '';
   String get gender => _profile['gender'] ?? '';
-  int get dailyGoal => _profile['dailyGoal'] ?? 5;
+  int get dailyGoal {
+    final fromProfile = _profile['dailyGoal'];
+    if (fromProfile != null) return fromProfile as int;
+    return _localDailyGoal;
+  }
+
+  int _localDailyGoal = 5;
 
   UserProvider() {
+    _loadLocalGoal();
     FirebaseAuth.instance.authStateChanges().listen((user) async {
       final previousUid = _user?.uid;
       _user = user;
@@ -63,13 +71,20 @@ class UserProvider extends ChangeNotifier {
   }
 
   Future<void> updateProfile(Map<String, dynamic> data) async {
-    if (_user == null) return;
     _profile.addAll(data);
+    // Save daily goal locally so it works offline and without login
+    if (data.containsKey('dailyGoal')) {
+      _localDailyGoal = data['dailyGoal'] as int;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('daily_goal', _localDailyGoal);
+    }
     notifyListeners();
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(_user!.uid)
-        .set(data, SetOptions(merge: true));
+    if (_user != null) {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(_user!.uid)
+          .set(data, SetOptions(merge: true));
+    }
   }
 
   Future<void> signOut() async {
@@ -77,6 +92,12 @@ class UserProvider extends ChangeNotifier {
     await SyncService.syncUp();
     await FirebaseAuth.instance.signOut();
     _profile = {};
+    notifyListeners();
+  }
+
+  Future<void> _loadLocalGoal() async {
+    final prefs = await SharedPreferences.getInstance();
+    _localDailyGoal = prefs.getInt('daily_goal') ?? 5;
     notifyListeners();
   }
 }

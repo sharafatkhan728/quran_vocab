@@ -16,6 +16,7 @@ import '../services/word_glossary_service.dart';
 import '../services/word_progress_service.dart';
 import '../widgets/word_tile.dart';
 import '../widgets/word_detail_dialog.dart';
+import '../providers/learning_state_provider.dart';
 
 class SurahReaderScreen extends StatefulWidget {
   final Surah surah;
@@ -57,6 +58,8 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
 
   bool get _showBismillahHeader => widget.surah.id != 9 && widget.surah.id != 1;
 
+  LearningStateProvider? _learning;
+
   @override
   void initState() {
     super.initState();
@@ -66,7 +69,23 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final learning = context.read<LearningStateProvider>();
+    if (_learning != learning) {
+      _learning?.removeListener(_onLearningStateChanged);
+      _learning = learning;
+      _learning!.addListener(_onLearningStateChanged);
+    }
+  }
+
+  void _onLearningStateChanged() {
+    if (mounted) setState(() {}); // triggers Consumer rebuild
+  }
+
+  @override
   void dispose() {
+    _learning?.removeListener(_onLearningStateChanged);
     _itemPositionsListener.itemPositions.removeListener(_onScroll);
     super.dispose();
   }
@@ -113,8 +132,8 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
   }
 
   Future<void> _loadKnownWords() async {
-    final known = await WordProgressService.getAllKnownWords();
-    if (mounted) setState(() => _knownNormalizedWords = known);
+    // LearningStateProvider is the source of truth — no separate load needed
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadLastRead() async {
@@ -174,11 +193,12 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
       final segments = segRows.map(WordSegment.fromRow).toList();
       final normalized = WordProgressService.normalizeArabic(wr.arabicText);
 
+      final learning = context.read<LearningStateProvider>();
       result.add(QuranWord(
         id: '${widget.surah.id}:${ayah.ayahNumber}:${wr.position}',
         arabic: wr.arabicText,
         urduMeaning: meaning,
-        isKnown: _knownNormalizedWords.contains(normalized),
+        isKnown: learning.isKnown(normalized),
         isWaqf: wr.isWaqf == 1,
         segments: segments,
       ));
@@ -211,16 +231,13 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
     HapticFeedback.lightImpact();
   }
 
-  Future<void> _onWordLongPress(QuranWord word) async {
-    final nowKnown = await WordProgressService.toggleWord(word.arabic);
+Future<void> _onWordLongPress(QuranWord word) async {
     final normalized = WordProgressService.normalizeArabic(word.arabic);
+    final learning = context.read<LearningStateProvider>();
+    final nowKnown = await learning.toggleByClean(normalized);
     if (!mounted) return;
+    // Update cached QuranWord objects so word tiles and count badge rebuild
     setState(() {
-      if (nowKnown) {
-        _knownNormalizedWords.add(normalized);
-      } else {
-        _knownNormalizedWords.remove(normalized);
-      }
       for (final ayahNum in _ayahCache.keys) {
         _ayahCache[ayahNum] = _ayahCache[ayahNum]!.map((w) {
           if (WordProgressService.normalizeArabic(w.arabic) == normalized) {
@@ -230,7 +247,6 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
         }).toList();
       }
     });
-    WordProgressService.recalculateAllSurahProgress();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content:
@@ -255,28 +271,21 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
         word: word,
         surahId: widget.surah.id,
         ayahId: ayahNum,
-        isKnown: _knownNormalizedWords
-            .contains(WordProgressService.normalizeArabic(word.arabic)),
+        isKnown: context.read<LearningStateProvider>()
+            .isKnown(WordProgressService.normalizeArabic(word.arabic)),
         ayahWords: _ayahCache[ayahNum] ?? [],
-        onKnownToggled: (nowKnown) {
+onKnownToggled: (nowKnown) {
           final normalized = WordProgressService.normalizeArabic(word.arabic);
           setState(() {
-            if (nowKnown) {
-              _knownNormalizedWords.add(normalized);
-            } else {
-              _knownNormalizedWords.remove(normalized);
-            }
             for (final ayah in _ayahCache.keys) {
               _ayahCache[ayah] = _ayahCache[ayah]!.map((w) {
-                if (WordProgressService.normalizeArabic(w.arabic) ==
-                    normalized) {
+                if (WordProgressService.normalizeArabic(w.arabic) == normalized) {
                   return w.copyWith(isKnown: nowKnown);
                 }
                 return w;
               }).toList();
             }
           });
-          WordProgressService.recalculateAllSurahProgress();
         },
       ),
     );
@@ -544,9 +553,11 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
                         _urduFontSize = (13 * _pinchScale).clamp(10, 26);
                       });
                     },
-                    child: _mushafMode
-                        ? _buildMushafList(isDark)
-                        : _buildCardList(isDark),
+                  child: Consumer<LearningStateProvider>(
+                  builder: (_, learning, __) =>  _mushafMode
+                    ? _buildMushafList(isDark, learning)
+                    : _buildCardList(isDark, learning),
+                ),
                   ),
                 ),
               ],
@@ -556,8 +567,9 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
 
   // ── Card mode ─────────────────────────────────────────────────────────────
 
-  Widget _buildCardList(bool isDark) {
+  Widget _buildCardList(bool isDark, [LearningStateProvider? learning]) {
     return ScrollablePositionedList.builder(
+      key: ValueKey(context.read<LearningStateProvider>().knownCount),
       itemScrollController: _itemScrollController,
       itemPositionsListener: _itemPositionsListener,
       padding: const EdgeInsets.all(12),
@@ -669,12 +681,21 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
                             alignment: WrapAlignment.start,
                             crossAxisAlignment: WrapCrossAlignment.start,
                             textDirection: TextDirection.rtl,
-                            children: words
-                                .map<Widget>((word) => WordTile(
-                                      word: word,
-                                      onTap: () => _showWordDetail(word),
-                                      onLongPress: () => _onWordLongPress(word),
-                                    ))
+                              children: words
+                                .map<Widget>((word) {
+                                  final normalized = WordProgressService
+                                      .normalizeArabic(word.arabic);
+                                  final lp = context
+                                      .read<LearningStateProvider>();
+                                  final live = word.copyWith(
+                                      isKnown: lp.isKnown(normalized));
+                                  return WordTile(
+                                    word: live,
+                                    onTap: () => _showWordDetail(live),
+                                    onLongPress: () =>
+                                        _onWordLongPress(live),
+                                  );
+                                })
                                 .toList(),
                           ),
                         ),
@@ -707,7 +728,7 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
 
   // ── Mushaf mode ───────────────────────────────────────────────────────────
 
-  Widget _buildMushafList(bool isDark) {
+  Widget _buildMushafList(bool isDark, [LearningStateProvider? learning]) {
     return Container(
       margin: const EdgeInsets.all(8),
       decoration: BoxDecoration(
@@ -758,22 +779,30 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
             crossAxisAlignment: WrapCrossAlignment.start,
             textDirection: TextDirection.rtl,
             children: [
-              ...words.map<Widget>((word) => GestureDetector(
-                    onTap: () => _showWordDetail(word),
-                    onLongPress: () => _onWordLongPress(word),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 2),
-                      child: AnimatedOpacity(
-                        opacity: word.isKnown ? 0.35 : 1.0,
-                        duration: const Duration(milliseconds: 80),
-                        child: Text(
-                          word.arabic,
-                          textDirection: TextDirection.rtl,
-                          style: _mushafStyle(isDark),
+              ...words.map<Widget>((word) {
+                    final normalized = WordProgressService
+                        .normalizeArabic(word.arabic);
+                    final isKnown = context
+                        .read<LearningStateProvider>()
+                        .isKnown(normalized);
+                    return GestureDetector(
+                      onTap: () => _showWordDetail(word),
+                      onLongPress: () => _onWordLongPress(word),
+                      child: Padding(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 2),
+                        child: AnimatedOpacity(
+                          opacity: isKnown ? 0.35 : 1.0,
+                          duration: const Duration(milliseconds: 80),
+                          child: Text(
+                            word.arabic,
+                            textDirection: TextDirection.rtl,
+                            style: _mushafStyle(isDark),
+                          ),
                         ),
                       ),
-                    ),
-                  )),
+                    );
+                  }).toList(),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 child: Text(
