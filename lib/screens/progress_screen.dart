@@ -275,7 +275,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                           fontWeight: FontWeight.bold,
                           color: isDark ? Colors.white : _green),
                     ),
-                    Text('of Quran',
+                    Text('words covered',
                         style: TextStyle(
                             fontSize: 12,
                             color: isDark

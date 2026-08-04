@@ -4,6 +4,7 @@ import '../repositories/vocabulary_repository.dart';
 import '../repositories/srs_repository.dart';
 import '../database/database_manager.dart';
 
+
 class WordProgressService {
   static String normalizeArabic(String text) =>
       text.replaceAll(RegExp(r'[\u064B-\u065F\u0670\u0640]'), '').trim();
@@ -78,18 +79,41 @@ class WordProgressService {
   static Future<Set<String>> getAllKnownWords() =>
       VocabularyRepository.getAllKnownWordCleans();
 
+  /// Overall % = sum of frequency of all known words / total word occurrences in Quran
   static Future<double> getProgressPercent() async {
-    final known = await getAllKnownWords();
-    final total = await getTotalVocabCount();
-    if (total == 0) return 0;
-    return (known.length / total) * 100;
+    final db = await DatabaseManager.db;
+    // Sum frequency of known words
+    final knownFreqRows = await db.rawQuery('''
+      SELECT COALESCE(SUM(v.frequency), 0) as total
+      FROM known_words k
+      JOIN vocab_words v ON v.id = k.vocab_word_id
+      WHERE v.frequency > 0
+    ''');
+    final knownOccurrences =
+        (knownFreqRows.first['total'] as int?) ?? 0;
+
+    // Total word occurrences in Quran
+    final totalOccurrences = await getTotalWordOccurrences();
+    if (totalOccurrences == 0) return 0;
+    return (knownOccurrences / totalOccurrences) * 100;
   }
 
+  /// Total unique vocab words (for vocabulary progress display)
   static Future<int> getTotalVocabCount() async {
     final db = await DatabaseManager.db;
     final rows = await db.rawQuery(
         'SELECT COUNT(*) as cnt FROM vocab_words WHERE frequency > 0');
     return (rows.first['cnt'] as int?) ?? 0;
+  }
+
+  /// Total word occurrences across the entire Quran
+  /// = sum of frequency column across all vocab_words
+  /// This equals the total number of words in Quran (~77,430)
+  static Future<int> getTotalWordOccurrences() async {
+    final db = await DatabaseManager.db;
+    final rows = await db.rawQuery(
+        'SELECT COALESCE(SUM(frequency), 0) as total FROM vocab_words WHERE frequency > 0');
+    return (rows.first['total'] as int?) ?? 77430;
   }
 
   static int get totalUniqueWords => 15072;
