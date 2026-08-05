@@ -1,5 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 import '../database/database_manager.dart';
+import '../services/sync_service.dart';
 
 class SrsCardRow {
   final int vocabWordId;
@@ -64,6 +65,7 @@ class SrsRepository {
           'updated_at': now,
         },
         conflictAlgorithm: ConflictAlgorithm.replace);
+        SyncService.scheduleSyncUp();
   }
 
   static Future<void> initMissingCards(List<int> vocabWordIds) async {
@@ -129,6 +131,7 @@ class SrsRepository {
     await db.insert('user_meta',
         {'key': 'srs_total_points', 'value': '${current + pts}'},
         conflictAlgorithm: ConflictAlgorithm.replace);
+        SyncService.scheduleSyncUp();
   }
 
   static Future<int> getCurrentSession() async {
@@ -202,6 +205,7 @@ class SrsRepository {
       ON CONFLICT(date_key) DO UPDATE
       SET words_learned = words_learned + 1
     ''', [today]);
+    SyncService.scheduleSyncUp();
   }
 
   static String _todayKey() {

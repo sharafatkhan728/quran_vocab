@@ -3,6 +3,7 @@ import '../database/database_importer.dart';
 import '../database/migration_manager.dart';
 import 'package:provider/provider.dart';
 import '../providers/learning_state_provider.dart';
+import '../services/sync_service.dart';
 
 class SplashScreen extends StatefulWidget {
   final Widget child;
@@ -63,9 +64,13 @@ class _SplashScreenState extends State<SplashScreen> {
       }
     }
 
-    // Init learning state after DB is ready
     if (mounted) {
-      await context.read<LearningStateProvider>().init();
+      final learning = context.read<LearningStateProvider>();
+      await learning.init();
+      // Register reload callback for syncDown
+      SyncService.onSyncDownComplete = () async {
+        learning.reload();
+      };
       setState(() => _done = true);
     }
   }

@@ -125,6 +125,17 @@ bool isKnown(String arabicClean) {
     return result;
   }
 
+  /// Reload known words from SQLite (called after cloud sync restores data).
+  Future<void> reload() async {
+    final db = await DatabaseManager.db;
+    _knownIds.clear();
+    final knownRows = await db.query('known_words', columns: ['vocab_word_id']);
+    for (final r in knownRows) {
+      _knownIds[r['vocab_word_id'] as int] = true;
+    }
+    notifyListeners();
+  }
+
   int get knownCount => _knownIds.length;
 
   int? vocabIdForClean(String arabicClean) => _cleanToId[arabicClean];

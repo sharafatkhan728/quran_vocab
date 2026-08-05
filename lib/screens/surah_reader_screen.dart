@@ -80,7 +80,8 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
   }
 
   void _onLearningStateChanged() {
-    if (mounted) setState(() {}); // triggers Consumer rebuild
+    // Do nothing here — scroll position is preserved by updating
+    // _ayahCache directly in _onWordLongPress instead
   }
 
   @override
@@ -553,11 +554,9 @@ onKnownToggled: (nowKnown) {
                         _urduFontSize = (13 * _pinchScale).clamp(10, 26);
                       });
                     },
-                  child: Consumer<LearningStateProvider>(
-                  builder: (_, learning, __) =>  _mushafMode
-                    ? _buildMushafList(isDark, learning)
-                    : _buildCardList(isDark, learning),
-                ),
+                  child: _mushafMode
+                      ? _buildMushafList(isDark)
+                      : _buildCardList(isDark),
                   ),
                 ),
               ],
@@ -569,7 +568,6 @@ onKnownToggled: (nowKnown) {
 
   Widget _buildCardList(bool isDark, [LearningStateProvider? learning]) {
     return ScrollablePositionedList.builder(
-      key: ValueKey(context.read<LearningStateProvider>().knownCount),
       itemScrollController: _itemScrollController,
       itemPositionsListener: _itemPositionsListener,
       padding: const EdgeInsets.all(12),

@@ -13,10 +13,15 @@ class SyncService {
   static bool _syncing = false;
   static bool _syncQueued = false;
 
+  /// Called after syncDown completes to reload in-memory learning state.
+  /// Set this in main.dart or splash_screen.dart.
+  static Future<void> Function()? onSyncDownComplete;
+
   static final _statusCtrl = StreamController<SyncStatus>.broadcast();
   static Stream<SyncStatus> get statusStream => _statusCtrl.stream;
   static SyncStatus _lastStatus = SyncStatus.idle;
   static SyncStatus get lastStatus => _lastStatus;
+  static String? lastError;
 
   static void _emit(SyncStatus s) {
     _lastStatus = s;
@@ -47,12 +52,11 @@ class SyncService {
 
       // ── 1. Known words ────────────────────────────────────────────────────
       final knownRows = await db.rawQuery('''
-        SELECT v.arabic_clean
-        FROM known_words k
-        JOIN vocab_words v ON v.id = k.vocab_word_id
+        SELECT vocab_word_id FROM known_words
       ''');
       final knownWords = <String, bool>{
-        for (final r in knownRows) r['arabic_clean'] as String: true,
+        for (final r in knownRows)
+          (r['vocab_word_id'] as int).toString(): true,
       };
 
       // ── 2. SRS cards ──────────────────────────────────────────────────────
@@ -100,10 +104,27 @@ class SyncService {
       final srsSessions = _metaInt(metaRows, 'srs_total_sessions');
 
       final ref = _db.collection('users').doc(uid).collection('progress');
-      final batch = _db.batch();
 
+      // Split srs_cards into chunks of 5000 to stay under Firestore field limit
+      const chunkSize = 5000;
+      final srsEntries = srsCards.entries.toList();
+      final srsChunkCount = (srsEntries.length / chunkSize).ceil();
+
+      // Write srs_cards in separate batches (each chunk is one document)
+      for (int i = 0; i < srsChunkCount; i++) {
+        final start = i * chunkSize;
+        final end = (start + chunkSize).clamp(0, srsEntries.length);
+        final chunk = Map.fromEntries(srsEntries.sublist(start, end));
+        final chunkBatch = _db.batch();
+        chunkBatch.set(ref.doc('srs_cards_$i'), chunk);
+        await chunkBatch.commit();
+      }
+      // Store how many chunks exist so syncDown knows how many to read
+      await ref.doc('srs_cards_meta').set({'chunks': srsChunkCount});
+
+      // Write remaining data in one batch
+      final batch = _db.batch();
       batch.set(ref.doc('known_words'), knownWords);
-      batch.set(ref.doc('srs_cards'), srsCards);
       batch.set(ref.doc('daily_stats'), dailyStats);
       batch.set(ref.doc('reading_progress'), readingProgress);
       batch.set(ref.doc('bookmarks'), {'list': bookmarks});
@@ -113,7 +134,6 @@ class SyncService {
         'longest_streak': longestStreak,
         'srs_total_sessions': srsSessions,
       });
-
       await batch.commit();
 
       // Store local sync timestamp in user_meta
@@ -129,6 +149,9 @@ class SyncService {
       _emit(SyncStatus.done);
     } catch (e, stack) {
       debugPrint('SyncService.syncUp error: $e\n$stack');
+      lastError = e.toString().length > 80
+          ? e.toString().substring(0, 80)
+          : e.toString();
       _emit(SyncStatus.error);
     } finally {
       _syncing = false;
@@ -190,20 +213,56 @@ class SyncService {
       final knownDoc = await ref.doc('known_words').get();
       if (knownDoc.exists) {
         for (final entry in knownDoc.data()!.entries) {
-          final vocabId = vocabMap[entry.key];
+          // Key is now vocab_word_id as string
+          final vocabId = int.tryParse(entry.key);
           if (vocabId == null) continue;
           await db.insert(
             'known_words',
             {'vocab_word_id': vocabId, 'marked_at': now},
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
+      }
+
+      // ── Restore SRS cards (chunked) ───────────────────────────────────────
+      final srsMetaDoc = await ref.doc('srs_cards_meta').get();
+      final chunkCount = srsMetaDoc.exists
+          ? (srsMetaDoc.data()!['chunks'] as int? ?? 1)
+          : 1;
+
+      for (int i = 0; i < chunkCount; i++) {
+        final srsDoc = await ref.doc('srs_cards_$i').get();
+        if (!srsDoc.exists) continue;
+        for (final entry in srsDoc.data()!.entries) {
+          final vocabId = int.tryParse(entry.key);
+          if (vocabId == null) continue;
+          final parts = entry.value.toString().split('|');
+          await db.insert(
+            'srs_cards',
+            {
+              'vocab_word_id': vocabId,
+              'stage': int.tryParse(parts.elementAtOrNull(0) ?? '') ?? 0,
+              'next_review_session':
+                  int.tryParse(parts.elementAtOrNull(1) ?? '') ?? 0,
+              'ease_factor':
+                  double.tryParse(parts.elementAtOrNull(2) ?? '') ?? 2.5,
+              'fail_count': int.tryParse(parts.elementAtOrNull(3) ?? '') ?? 0,
+              'total_reviews':
+                  int.tryParse(parts.elementAtOrNull(4) ?? '') ?? 0,
+              'last_result': int.tryParse(parts.elementAtOrNull(5) ?? '') ?? -1,
+              'is_deleted': 0,
+              'created_at': now,
+              'updated_at': now,
+            },
             conflictAlgorithm: ConflictAlgorithm.ignore,
           );
         }
       }
 
-      // ── Restore SRS cards ─────────────────────────────────────────────────
-      final srsDoc = await ref.doc('srs_cards').get();
-      if (srsDoc.exists) {
-        for (final entry in srsDoc.data()!.entries) {
+      // Also handle old format (single srs_cards doc) for backward compat
+      final oldSrsDoc = await ref.doc('srs_cards').get();
+      if (oldSrsDoc.exists && chunkCount == 1) {
+        for (final entry in oldSrsDoc.data()!.entries) {
           final vocabId = int.tryParse(entry.key);
           if (vocabId == null) continue;
           final parts = entry.value.toString().split('|');
@@ -306,6 +365,8 @@ class SyncService {
       await metaBatch.commit(noResult: true);
 
       _emit(SyncStatus.done);
+      // Reload in-memory learning state so UI reflects restored data instantly
+      await onSyncDownComplete?.call();
       return RestoreResult.restoredFromCloud;
     } catch (e, stack) {
       debugPrint('SyncService.syncUp error: $e\n$stack');

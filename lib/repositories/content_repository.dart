@@ -1,5 +1,6 @@
 import '../database/database_manager.dart';
 import 'package:sqflite/sqflite.dart';
+import '../services/sync_service.dart';
 
 // ── Data models ───────────────────────────────────────────────────────────────
 
@@ -310,6 +311,7 @@ class ContentRepository {
           'last_read_at': DateTime.now().millisecondsSinceEpoch,
         },
         conflictAlgorithm: ConflictAlgorithm.replace);
+        SyncService.scheduleSyncUp();
   }
 
   /// Bookmarks
@@ -339,6 +341,7 @@ class ContentRepository {
             'created_at': DateTime.now().millisecondsSinceEpoch,
           },
           conflictAlgorithm: ConflictAlgorithm.ignore);
+          SyncService.scheduleSyncUp();
     }
   }
 

@@ -546,7 +546,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
           SyncStatus.error => (
               Icons.cloud_off,
               Colors.red,
-              'Sync failed — tap to retry'
+              'Sync failed: ${SyncService.lastError ?? "tap to retry"}'
             ),
           SyncStatus.idle => (
               Icons.cloud_upload_outlined,
