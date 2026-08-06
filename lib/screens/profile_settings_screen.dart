@@ -10,6 +10,7 @@ import '../providers/theme_provider.dart';
 import '../providers/display_provider.dart';
 import '../providers/user_provider.dart';
 import '../services/sync_service.dart';
+import '../screens/auth_screen.dart';
 
 class ProfileSettingsScreen extends StatefulWidget {
   const ProfileSettingsScreen({super.key});
@@ -47,7 +48,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
           isDark ? const Color(0xFF0A1628) : const Color(0xFFF5F0E8),
       body: CustomScrollView(
         slivers: [
-          // Profile header as sliver app bar
           SliverAppBar(
             expandedHeight: 280,
             pinned: true,
@@ -67,7 +67,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       const SizedBox(height: 16),
-                      // Avatar
                       Stack(
                         children: [
                           CircleAvatar(
@@ -109,7 +108,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                               color: Colors.white)),
                       Text(user.email,
                           style: TextStyle(
-                              fontSize: 13, //
+                              fontSize: 13,
                               color: Colors.white.withValues(alpha: 0.7))),
                     ],
                   ),
@@ -119,7 +118,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                   style: TextStyle(fontSize: 14)),
             ),
           ),
-
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -143,8 +141,8 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                         icon: Icons.notifications_active,
                         iconColor: Colors.orange,
                         title: 'Daily Reminder',
-                        subtitle: 'Set time to open app',
-                        onTap: () => _showReminderDialog()),
+                        subtitle: 'Coming Soon',
+                        onTap: null),
                   ]),
                   const SizedBox(height: 16),
 
@@ -153,24 +151,27 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     _buildTile(isDark,
                         icon: Icons.share,
                         iconColor: _teal,
-                        title: 'Share App (Coming Soon)',
-                        onTap: () => _share()),
+                        title: 'Share App',
+                        subtitle: 'Coming Soon',
+                        onTap: null),
                     _buildTile(isDark,
                         icon: Icons.star_rate,
                         iconColor: _gold,
-                        title: 'Rate App (Coming Soon)',
-                        onTap: () => _rateApp()),
+                        title: 'Rate App',
+                        subtitle: 'Available after Play Store release',
+                        onTap: null),
                     _buildTile(isDark,
                         icon: Icons.volunteer_activism,
                         iconColor: Colors.red,
-                        title: 'Donate (Coming Soon)',
-                        subtitle: 'Support Quran learning',
-                        onTap: () => _donate()),
+                        title: 'Donate',
+                        subtitle: 'Coming Soon',
+                        onTap: null),
                     _buildTile(isDark,
                         icon: Icons.shopping_bag,
                         iconColor: Colors.purple,
-                        title: 'Purchase Premium (Coming Soon)',
-                        onTap: () {}),
+                        title: 'Purchase Premium',
+                        subtitle: 'Coming Soon',
+                        onTap: null),
                   ]),
                   const SizedBox(height: 16),
 
@@ -185,28 +186,32 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     _buildTile(isDark,
                         icon: Icons.tour,
                         iconColor: _teal,
-                        title: 'App Tour (Coming Soon)',
-                        onTap: () {}),
+                        title: 'App Tour',
+                        subtitle: 'Coming Soon',
+                        onTap: null),
                     _buildTile(isDark,
                         icon: Icons.help_outline,
                         iconColor: Colors.orange,
-                        title: 'FAQ (Coming Soon)',
-                        onTap: () {}),
+                        title: 'FAQ',
+                        subtitle: 'Frequently Asked Questions',
+                        onTap: () => _showFAQ()),
                     _buildTile(isDark,
                         icon: Icons.support_agent,
                         iconColor: Colors.green,
-                        title: 'Support (Coming Soon)',
+                        title: 'Support',
+                        subtitle: 'support@qurankalima.com',
                         onTap: () => _email()),
                     _buildTile(isDark,
                         icon: Icons.camera_alt,
                         iconColor: Colors.pink,
-                        title: 'Instagram (Coming Soon)',
+                        title: 'Instagram',
+                        subtitle: '@qurankalima',
                         onTap: () => _instagram()),
                   ]),
                   const SizedBox(height: 16),
 
                   // ── Cloud Sync ────────────────────────────────────────
-                  _buildSyncCard(isDark),
+                  _buildSyncCard(isDark, user),
                   const SizedBox(height: 16),
 
                   // ── Account ───────────────────────────────────────────
@@ -214,7 +219,8 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     _buildTile(isDark,
                         icon: Icons.lock,
                         iconColor: Colors.grey,
-                        title: 'Change Password (Coming Soon)',
+                        title: 'Change Password',
+                        subtitle: 'Send reset email',
                         onTap: () => _changePassword()),
                     _buildTile(isDark,
                         icon: Icons.logout,
@@ -230,7 +236,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                   ]),
                   const SizedBox(height: 32),
 
-                  // Footer
                   Text('Quran Kalima $_appVersion',
                       style: TextStyle(
                           fontSize: 12,
@@ -252,7 +257,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     );
   }
 
-  // ── Display preview ─────────────────────────────────────────────────────────
+  // ── Display preview ───────────────────────────────────────────────────────
   Widget _buildDisplayPreview(DisplayProvider display, bool isDark) {
     return _card(isDark,
         title: 'Preview',
@@ -266,7 +271,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
           ),
           child: Column(
             children: [
-              // Arabic preview
               Text(
                 'بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ',
                 textDirection: TextDirection.rtl,
@@ -274,15 +278,16 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                 style: _arabicStyle(display),
               ),
               const SizedBox(height: 8),
-              // Urdu preview
               Text(
                 'اللہ کے نام سے جو بڑا مہربان نہایت رحم والا ہے',
                 textDirection: TextDirection.rtl,
                 textAlign: TextAlign.center,
                 style: TextStyle(
+                  // Urdu Nastaliq font
+                  fontFamily: 'JameelNoori',
                   fontSize: display.urduFontSize,
                   color: isDark ? Colors.white70 : _teal,
-                  height: 1.5,
+                  height: 1.8,
                 ),
               ),
             ],
@@ -308,7 +313,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     }
   }
 
-  // ── Display settings ────────────────────────────────────────────────────────
+  // ── Display settings ──────────────────────────────────────────────────────
   Widget _buildDisplaySettings(
       DisplayProvider display, ThemeProvider theme, bool isDark) {
     return _card(isDark,
@@ -317,7 +322,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Dark mode toggle
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -335,11 +339,9 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
               ],
             ),
             const Divider(),
-
-            // Arabic font
             const Text('Arabic Font',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-            const SizedBox(height: 8), // ye kya hai?
+            const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               children: [
@@ -349,8 +351,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
               ],
             ),
             const SizedBox(height: 14),
-
-            // Arabic size
             _slider(
               label: 'Arabic Size',
               value: display.arabicFontSize,
@@ -359,8 +359,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
               onChanged: display.setArabicSize,
               isDark: isDark,
             ),
-
-            // Urdu size
             _slider(
               label: 'Urdu Size',
               value: display.urduFontSize,
@@ -368,19 +366,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
               max: 40,
               onChanged: display.setUrduSize,
               isDark: isDark,
-            ),
-
-            const SizedBox(height: 12),
-
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              value: display.grammarColorEnabled,
-              onChanged: display.setGrammarColorEnabled,
-              title: const Text('Grammar Color Coding'),
-              subtitle: const Text(
-                'Highlight Nouns, Verbs and Particles',
-              ),
-              secondary: const Icon(Icons.palette),
             ),
           ],
         ));
@@ -443,7 +428,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     );
   }
 
-  // ── Profile settings ────────────────────────────────────────────────────────
+  // ── Profile settings ──────────────────────────────────────────────────────
   Widget _buildProfileSettings(UserProvider user, bool isDark) {
     final nameCtrl = TextEditingController(text: user.displayName);
     return _card(isDark,
@@ -481,7 +466,111 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
         ));
   }
 
-  // ── Helpers ─────────────────────────────────────────────────────────────────
+  // ── Sync card ─────────────────────────────────────────────────────────────
+  Widget _buildSyncCard(bool isDark, UserProvider user) {
+    return StreamBuilder<SyncStatus>(
+      stream: SyncService.statusStream,
+      initialData: SyncService.lastStatus,
+      builder: (context, snapshot) {
+        final status = snapshot.data ?? SyncStatus.idle;
+        final (icon, color, label) = switch (status) {
+          SyncStatus.syncing => (Icons.sync, Colors.blue, 'Syncing...'),
+          SyncStatus.done => (
+              Icons.cloud_done,
+              Colors.green,
+              'Synced to cloud'
+            ),
+          SyncStatus.error => (
+              Icons.cloud_off,
+              Colors.red,
+              SyncService.lastError != null
+                  ? 'Error: ${SyncService.lastError}'
+                  : 'Sync failed — tap to retry'
+            ),
+          SyncStatus.idle => (
+              Icons.cloud_upload_outlined,
+              _teal,
+              user.isLoggedIn
+                  ? 'Sync progress to cloud'
+                  : 'Login to enable sync'
+            ),
+        };
+        return _card(
+          isDark,
+          title: 'Cloud Backup',
+          titleIcon: Icons.cloud,
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  AnimatedRotation(
+                    turns: status == SyncStatus.syncing ? 1 : 0,
+                    duration: const Duration(seconds: 1),
+                    child: Icon(icon, color: color, size: 24),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: isDark ? Colors.white70 : Colors.black87,
+                      ),
+                    ),
+                  ),
+                  if (status != SyncStatus.syncing)
+                    TextButton(
+                      onPressed: () async {
+                        if (!user.isLoggedIn) {
+                          // Not logged in — go to auth screen
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const AuthScreen()),
+                          );
+                          return;
+                        }
+                        await SyncService.syncUp();
+                      },
+                      style: TextButton.styleFrom(foregroundColor: _teal),
+                      child: Text(user.isLoggedIn ? 'Sync Now' : 'Login'),
+                    ),
+                ],
+              ),
+              if (user.isLoggedIn) ...[
+                const SizedBox(height: 8),
+                const Divider(),
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.info_outline,
+                        size: 12, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Auto-syncs 3 seconds after any change',
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: isDark ? Colors.white38 : Colors.grey),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSection(bool isDark,
+      {required String title, required List<Widget> items}) {
+    return _card(isDark,
+        title: title,
+        titleIcon: Icons.settings,
+        child: Column(children: items));
+  }
+
   Widget _card(bool isDark,
       {required String title,
       required IconData titleIcon,
@@ -502,7 +591,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Section header
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
@@ -528,72 +616,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
         ],
       ),
     );
-  }
-
-  Widget _buildSyncCard(bool isDark) {
-    return StreamBuilder<SyncStatus>(
-      stream: SyncService.statusStream,
-      initialData: SyncService.lastStatus,
-      builder: (context, snapshot) {
-        final status = snapshot.data ?? SyncStatus.idle;
-        final (icon, color, label) = switch (status) {
-          SyncStatus.syncing => (Icons.sync, Colors.blue, 'Syncing...'),
-          SyncStatus.done => (
-              Icons.cloud_done,
-              Colors.green,
-              'Synced to cloud'
-            ),
-          SyncStatus.error => (
-              Icons.cloud_off,
-              Colors.red,
-              'Sync failed: ${SyncService.lastError ?? "tap to retry"}'
-            ),
-          SyncStatus.idle => (
-              Icons.cloud_upload_outlined,
-              _teal,
-              'Sync progress to cloud'
-            ),
-        };
-        return _card(
-          isDark,
-          title: 'Cloud Backup',
-          titleIcon: Icons.cloud,
-          child: Row(
-            children: [
-              AnimatedRotation(
-                turns: status == SyncStatus.syncing ? 1 : 0,
-                duration: const Duration(seconds: 1),
-                child: Icon(icon, color: color, size: 24),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: isDark ? Colors.white70 : Colors.black87,
-                  ),
-                ),
-              ),
-              if (status != SyncStatus.syncing)
-                TextButton(
-                  onPressed: () => SyncService.syncUp(),
-                  style: TextButton.styleFrom(foregroundColor: _teal),
-                  child: const Text('Sync Now'),
-                ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildSection(bool isDark,
-      {required String title, required List<Widget> items}) {
-    return _card(isDark,
-        title: title,
-        titleIcon: Icons.settings,
-        child: Column(children: items));
   }
 
   Widget _buildTile(bool isDark,
@@ -631,7 +653,8 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     );
   }
 
-  // ── Actions ─────────────────────────────────────────────────────────────────
+  // ── Actions ───────────────────────────────────────────────────────────────
+
   void _editField(
       String label, TextEditingController ctrl, Function(String) onSave) {
     showDialog(
@@ -717,20 +740,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     );
   }
 
-  void _showReminderDialog() {
-    showTimePicker(
-      context: context,
-      initialTime: const TimeOfDay(hour: 8, minute: 0),
-    ).then((time) {
-      if (time != null) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Reminder set for ${time.format(context)}'),
-          backgroundColor: _green,
-        ));
-      }
-    });
-  }
-
   void _showWhatsNew() {
     showDialog(
       context: context,
@@ -745,6 +754,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
             Text('• Vocabulary screen with swipe gestures'),
             Text('• Progress dashboard with heatmap'),
             Text('• Font customization'),
+            Text('• Cloud sync across devices'),
           ],
         ),
         actions: [
@@ -756,43 +766,120 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     );
   }
 
-  Future<void> _share() async {
-    // Will use share_plus in future
-    ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Share feature coming soon!')));
+  void _showFAQ() {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.help_outline, color: Color(0xFF1B4332)),
+            SizedBox(width: 8),
+            Text('FAQ'),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _faqItem(
+                'How does the Flashcard system work?',
+                'Quran Kalima uses Spaced Repetition (SRS). Words you know are shown less often. Words you struggle with appear more frequently. This is scientifically proven to maximize memory retention. Swipe right (Known) or left (Unknown) on each card.',
+              ),
+              const Divider(),
+              _faqItem(
+                'How do I mark a word as known in the Quran Reader?',
+                'Long press any word in the Surah Reader to toggle it between Known and Unknown. Known words become faded so you can focus on words you have not learned yet. The count badge on each ayah updates instantly.',
+              ),
+              const Divider(),
+              _faqItem(
+                'Will my progress sync across devices?',
+                'Yes. Make sure you are logged in with the same account on both devices. Your known words, flashcard progress, bookmarks, and reading position are all backed up to the cloud and restored automatically when you log in.',
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1B4332)),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Got it',
+                style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
   }
 
-  Future<void> _rateApp() async {
-    const url = 'https://play.google.com/store';
-    if (await canLaunchUrl(Uri.parse(url))) {
-      await launchUrl(Uri.parse(url));
-    }
+  Widget _faqItem(String question, String answer) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            question,
+            style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+                color: Color(0xFF1B4332)),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            answer,
+            style: const TextStyle(fontSize: 12, height: 1.5),
+          ),
+        ],
+      ),
+    );
   }
 
-  Future<void> _donate() async {
-    const url = 'https://www.paypal.com';
-    if (await canLaunchUrl(Uri.parse(url))) {
-      await launchUrl(Uri.parse(url));
-    }
-  }
+
 
   Future<void> _email() async {
     final url = Uri.parse('mailto:support@qurankalima.com');
-    if (await canLaunchUrl(url)) await launchUrl(url);
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('support@qurankalima.com')));
+      }
+    }
   }
 
   Future<void> _instagram() async {
     final url = Uri.parse('https://instagram.com/qurankalima');
-    if (await canLaunchUrl(url)) await launchUrl(url);
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('instagram.com/qurankalima')));
+      }
+    }
   }
 
   Future<void> _changePassword() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user?.email != null) {
+    if (user?.email == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No email associated with account')));
+      return;
+    }
+    try {
       await FirebaseAuth.instance.sendPasswordResetEmail(email: user!.email!);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Password reset email sent!')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Password reset email sent to ${user.email}'),
+          backgroundColor: Colors.green,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     }
   }
@@ -841,7 +928,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     );
     if (confirm == true) {
       try {
-        // Delete cloud data before deleting auth account
         await SyncService.deleteCloudData();
         await FirebaseAuth.instance.currentUser?.delete();
       } catch (e) {

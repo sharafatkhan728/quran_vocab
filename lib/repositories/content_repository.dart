@@ -190,6 +190,7 @@ class ContentRepository {
   }
 
   /// All word translations for an ayah, keyed by word_id.
+  // ignore: unintended_html_in_doc_comment
   /// Returns Map<wordId, Map<language, WordTranslationRow>>.
   static Future<Map<int, Map<String, WordTranslationRow>>>
       getWordTranslationsForAyah(int ayahId, String language) async {

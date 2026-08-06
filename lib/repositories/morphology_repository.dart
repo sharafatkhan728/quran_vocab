@@ -1,3 +1,4 @@
+// ignore_for_file: curly_braces_in_flow_control_structures
 import '../database/database_manager.dart';
 import 'content_repository.dart';
 
@@ -53,6 +54,7 @@ class MorphologyRepository {
   }
 
   /// All forms derived from a root, grouped by lemma.
+  // ignore: unintended_html_in_doc_comment
   /// Returns Map<lemma, List<{surahId, ayahNumber, position}>>.
   static Future<Map<String, List<Map<String, dynamic>>>> getRootForms(
       String root) async {

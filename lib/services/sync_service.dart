@@ -201,11 +201,7 @@ class SyncService {
       }
 
       // Build vocab lookup once: arabic_clean → vocab_word_id
-      final vocabRows =
-          await db.query('vocab_words', columns: ['id', 'arabic_clean']);
-      final vocabMap = <String, int>{
-        for (final r in vocabRows) r['arabic_clean'] as String: r['id'] as int,
-      };
+      await db.query('vocab_words', columns: ['id', 'arabic_clean']);
 
       final now = DateTime.now().millisecondsSinceEpoch;
 

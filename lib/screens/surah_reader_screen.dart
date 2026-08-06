@@ -35,7 +35,6 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
 
   // ayahNumber → list of words — populated progressively
   final Map<int, List<QuranWord>> _ayahCache = {};
-  Set<String> _knownNormalizedWords = {};
   bool _isLoading = true;
 
   double _arabicFontSize = 32;
@@ -194,6 +193,7 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
       final segments = segRows.map(WordSegment.fromRow).toList();
       final normalized = WordProgressService.normalizeArabic(wr.arabicText);
 
+      if (!mounted) break;
       final learning = context.read<LearningStateProvider>();
       result.add(QuranWord(
         id: '${widget.surah.id}:${ayah.ayahNumber}:${wr.position}',
@@ -566,7 +566,7 @@ onKnownToggled: (nowKnown) {
 
   // ── Card mode ─────────────────────────────────────────────────────────────
 
-  Widget _buildCardList(bool isDark, [LearningStateProvider? learning]) {
+  Widget _buildCardList(bool isDark) {
     return ScrollablePositionedList.builder(
       itemScrollController: _itemScrollController,
       itemPositionsListener: _itemPositionsListener,
@@ -726,7 +726,7 @@ onKnownToggled: (nowKnown) {
 
   // ── Mushaf mode ───────────────────────────────────────────────────────────
 
-  Widget _buildMushafList(bool isDark, [LearningStateProvider? learning]) {
+  Widget _buildMushafList(bool isDark) {
     return Container(
       margin: const EdgeInsets.all(8),
       decoration: BoxDecoration(
@@ -800,7 +800,7 @@ onKnownToggled: (nowKnown) {
                         ),
                       ),
                     );
-                  }).toList(),
+                  }),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 child: Text(
