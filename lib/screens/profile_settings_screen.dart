@@ -663,7 +663,17 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
         title: Text('Edit $label'),
         content: TextField(
           controller: ctrl,
-          decoration: InputDecoration(hintText: label),
+          style: TextStyle(
+              color: Theme.of(context).brightness == Brightness.dark
+                  ? Colors.white
+                  : Colors.black87),
+          decoration: InputDecoration(
+            hintText: label,
+            hintStyle: TextStyle(
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? Colors.white38
+                    : Colors.grey),
+          ),
         ),
         actions: [
           TextButton(

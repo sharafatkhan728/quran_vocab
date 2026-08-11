@@ -17,6 +17,7 @@ import '../services/word_progress_service.dart';
 import '../widgets/word_tile.dart';
 import '../widgets/word_detail_dialog.dart';
 import '../providers/learning_state_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class SurahReaderScreen extends StatefulWidget {
   final Surah surah;
@@ -63,8 +64,21 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
   void initState() {
     super.initState();
     _selectedLang = WordGlossaryService.selectedLang;
+    _loadReadingPrefs();
     _initData();
     _itemPositionsListener.itemPositions.addListener(_onScroll);
+  }
+
+  Future<void> _loadReadingPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _showTranslation = prefs.getBool('show_ayah_translation') ?? true;
+        if (prefs.getBool('mushaf_mode_default') ?? false) {
+          _mushafMode = true;
+        }
+      });
+    }
   }
 
   @override

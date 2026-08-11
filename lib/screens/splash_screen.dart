@@ -4,6 +4,7 @@ import '../database/migration_manager.dart';
 import 'package:provider/provider.dart';
 import '../providers/learning_state_provider.dart';
 import '../services/sync_service.dart';
+import 'onboarding_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   final Widget child;
@@ -18,6 +19,7 @@ class _SplashScreenState extends State<SplashScreen> {
   double _progress = 0;
   bool _done = false;
   bool _hasError = false;
+  bool _showOnboarding = false;
 
   @override
   void initState() {
@@ -67,17 +69,25 @@ class _SplashScreenState extends State<SplashScreen> {
     if (mounted) {
       final learning = context.read<LearningStateProvider>();
       await learning.init();
-      // Register reload callback for syncDown
       SyncService.onSyncDownComplete = () async {
         learning.reload();
       };
-      setState(() => _done = true);
+      final needsOnboarding = await OnboardingScreen.shouldShow();
+      setState(() {
+        _showOnboarding = needsOnboarding;
+        _done = true;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_done) return widget.child;
+    if (_done) {
+      if (_showOnboarding) {
+        return OnboardingScreen(child: widget.child);
+      }
+      return widget.child;
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xFF1B4332),
