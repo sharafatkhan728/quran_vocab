@@ -45,7 +45,7 @@ class ImportProgress {
 class DatabaseImporter {
   // ── Bump when content data changes (importer fix, new asset, etc.) ────────
   // Every existing user gets a safe atomic reimport on next launch.
-  static const int _contentVersion = 5;
+  static const int _contentVersion = 6;
   static const int _schemaVersion = 1;
 
   // Content tables — these are wiped and rebuilt on each content version bump.
@@ -110,6 +110,27 @@ class DatabaseImporter {
     // The user's existing content is untouched until we commit.
     yield ImportProgress(ImportStep.surahs, 0, 114, 'Importing Surahs...');
 
+    // Save known words BEFORE wipe so we can restore after reimport
+    // Uses arabic_clean strings as stable identity across reimports
+    List<Map<String, Object?>> savedKnown = [];
+    List<Map<String, Object?>> savedSrsCards = [];
+    try {
+      savedKnown = await db.rawQuery('''
+        SELECT v.arabic_clean, k.marked_at
+        FROM known_words k
+        JOIN vocab_words v ON v.id = k.vocab_word_id
+      ''');
+      savedSrsCards = await db.rawQuery('''
+        SELECT v.arabic_clean, s.stage, s.next_review_session,
+               s.ease_factor, s.fail_count, s.total_reviews,
+               s.last_result, s.is_deleted, s.created_at, s.updated_at
+        FROM srs_cards s
+        JOIN vocab_words v ON v.id = s.vocab_word_id
+      ''');
+    } catch (e) {
+      debugPrint('runImport: could not save user data — $e');
+    }
+
     bool success = false;
     String? failureReason;
 
@@ -159,7 +180,7 @@ class DatabaseImporter {
             conflictAlgorithm: ConflictAlgorithm.replace);
       });
 
-      success = true;
+success = true;
     } catch (e) {
       failureReason = e.toString();
       debugPrint('runImport: transaction failed → $e');
@@ -168,11 +189,56 @@ class DatabaseImporter {
     }
 
     if (!success) {
-      // Transaction rolled back — old content is intact
       yield ImportProgress(ImportStep.error, 0, 1,
           'Import failed: $failureReason\nYour data is safe.',
           error: failureReason);
       return;
+    }
+
+    // Restore user data using new vocab_word IDs
+    if (savedKnown.isNotEmpty || savedSrsCards.isNotEmpty) {
+      try {
+        final vocabRows = await db.query('vocab_words',
+            columns: ['id', 'arabic_clean']);
+        final newIdMap = <String, int>{
+          for (final r in vocabRows)
+            r['arabic_clean'] as String: r['id'] as int
+        };
+        final now = DateTime.now().millisecondsSinceEpoch;
+        final batch = db.batch();
+
+        for (final r in savedKnown) {
+          final id = newIdMap[r['arabic_clean'] as String];
+          if (id == null) continue;
+          batch.insert('known_words',
+              {'vocab_word_id': id, 'marked_at': r['marked_at'] ?? now},
+              conflictAlgorithm: ConflictAlgorithm.ignore);
+        }
+
+        for (final r in savedSrsCards) {
+          final id = newIdMap[r['arabic_clean'] as String];
+          if (id == null) continue;
+          batch.insert('srs_cards', {
+            'vocab_word_id': id,
+            'stage': r['stage'] ?? 0,
+            'next_review_session': r['next_review_session'] ?? 0,
+            'ease_factor': r['ease_factor'] ?? 2.5,
+            'fail_count': r['fail_count'] ?? 0,
+            'total_reviews': r['total_reviews'] ?? 0,
+            'last_result': r['last_result'] ?? -1,
+            'is_deleted': r['is_deleted'] ?? 0,
+            'created_at': r['created_at'] ?? now,
+            'updated_at': r['updated_at'] ?? now,
+          }, conflictAlgorithm: ConflictAlgorithm.ignore);
+        }
+
+        await batch.commit(noResult: true);
+        debugPrint(
+            'runImport: restored ${savedKnown.length} known words '
+            'and ${savedSrsCards.length} SRS cards');
+      } catch (e) {
+        debugPrint('runImport: restore warning — $e');
+      }
     }
 
     debugPrint('runImport: transaction committed successfully');
