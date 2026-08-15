@@ -225,9 +225,13 @@ class SrsRepository {
       SELECT v.arabic_clean
       FROM vocab_words v
       LEFT JOIN srs_cards s ON s.vocab_word_id = v.id
-      WHERE (s.vocab_word_id IS NULL OR s.is_deleted = 0 AND s.total_reviews = 0)
+      WHERE (s.vocab_word_id IS NULL OR (s.total_reviews = 0 AND s.is_deleted = 0))
         AND v.frequency > 0
         AND v.meaning_ur != ''
+        AND NOT EXISTS (
+          SELECT 1 FROM srs_cards d
+          WHERE d.vocab_word_id = v.id AND d.is_deleted = 1
+        )
       ORDER BY v.frequency DESC
       LIMIT ?
     ''', [limit]);

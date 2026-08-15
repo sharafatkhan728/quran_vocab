@@ -13,7 +13,6 @@ import '../widgets/surah_search_delegate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'flashcard_screen.dart';
 import 'db_debug_screen.dart';
-import 'package:provider/provider.dart';
 import '../providers/learning_state_provider.dart';
 
 class SurahListScreen extends StatefulWidget {

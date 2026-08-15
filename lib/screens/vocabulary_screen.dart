@@ -101,7 +101,6 @@ class _VocabularyScreenState extends State<VocabularyScreen>
     final learning = context.read<LearningStateProvider>();
     final wordFreq = await WordProgressService.getWordFrequencies();
 
-    final lang = WordGlossaryService.selectedLang;
     final all = wordFreq.entries
         .map((e) => WordEntry(
               arabic: e.key,
@@ -362,6 +361,7 @@ class _VocabularyScreenState extends State<VocabularyScreen>
 }
 
 // ── Stat Badge ────────────────────────────────────────────────────────────────
+// ignore: unused_element
 class _StatBadge extends StatelessWidget {
   final String label;
   final String value;
