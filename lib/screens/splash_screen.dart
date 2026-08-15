@@ -6,6 +6,7 @@ import '../providers/learning_state_provider.dart';
 import '../services/sync_service.dart';
 import 'onboarding_screen.dart';
 
+
 class SplashScreen extends StatefulWidget {
   final Widget child;
   const SplashScreen({super.key, required this.child});

@@ -1,5 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import '../repositories/content_repository.dart';
+import 'package:flutter/foundation.dart';
 
 class GlossarySource {
   final String name;
@@ -7,6 +8,7 @@ class GlossarySource {
 }
 
 class WordGlossaryService {
+  static final ValueNotifier<String> langNotifier = ValueNotifier<String>('ur');
   static const Map<String, GlossarySource> glossaries = {
     'ur': GlossarySource(name: 'اردو'),
     'en': GlossarySource(name: 'English'),
@@ -18,6 +20,7 @@ class WordGlossaryService {
   static Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     _selectedLang = prefs.getString('word_gloss_lang') ?? 'ur';
+    langNotifier.value = _selectedLang;
   }
 
   static String get selectedLang => _selectedLang;
@@ -26,6 +29,7 @@ class WordGlossaryService {
 
   static Future<void> setLanguage(String lang) async {
     _selectedLang = lang;
+    langNotifier.value = lang;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('word_gloss_lang', lang);
   }

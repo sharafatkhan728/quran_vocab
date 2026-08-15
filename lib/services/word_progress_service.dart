@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../repositories/vocabulary_repository.dart';
 import '../repositories/srs_repository.dart';
 import '../database/database_manager.dart';
+import 'word_glossary_service.dart';
 
 
 class WordProgressService {
@@ -121,10 +122,15 @@ class WordProgressService {
   /// Returns frequency map from SQLite vocab_words table.
   static Future<Map<String, WordData>> getWordFrequencies() async {
     final rows = await VocabularyRepository.getAllWordsByFrequency();
+    final lang = WordGlossaryService.selectedLang;
     return {
       for (final r in rows)
         r.arabicClean: WordData(
-          urdu: r.meaningUr,
+          urdu: lang == 'en'
+              ? (r.meaningEn.isNotEmpty ? r.meaningEn : r.meaningUr)
+              : lang == 'hi'
+                  ? (r.meaningHi.isNotEmpty ? r.meaningHi : r.meaningUr)
+                  : r.meaningUr,
           frequency: r.frequency,
           originalArabic: r.arabicDisplay,
         )

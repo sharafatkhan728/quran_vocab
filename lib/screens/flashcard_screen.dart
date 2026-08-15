@@ -207,7 +207,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     }
   }
 
-Future<void> _loadSession({bool forceNew = false}) async {
+  Future<void> _loadSession({bool forceNew = false}) async {
     setState(() {
       _loading = true;
       _sessionDone = false;
@@ -217,6 +217,7 @@ Future<void> _loadSession({bool forceNew = false}) async {
     }
     _totalPoints = await SrsService.getTotalPoints();
 
+    await TranslationService.init();
     final freq = await WordProgressService.getWordFrequencies();
 
     if (!forceNew) {
@@ -309,17 +310,25 @@ Future<void> _loadSession({bool forceNew = false}) async {
       _isFlipped = true;
       _hasBeenFlipped = true;
     });
+    // Ensure ayah translation loads when card flips
+    _current.loadAyah().then((_) {
+      if (mounted) setState(() {});
+    });
   }
 
-Future<void> _swipeKnown() async {
-    if (!_isFlipped) { _flip(); return; }
+  Future<void> _swipeKnown() async {
+    if (!_isFlipped) {
+      _flip();
+      return;
+    }
     HapticFeedback.mediumImpact();
     final existingCard = await SrsService.getCard(_current.normalizedForLookup);
     final wasNew = existingCard?.totalReviews == 0;
     final pts = await SrsService.markKnown(_current.normalizedForLookup);
     // Single source of truth — LearningStateProvider handles known_words
     if (mounted) {
-      await context.read<LearningStateProvider>()
+      await context
+          .read<LearningStateProvider>()
           .setKnownByClean(_current.normalizedForLookup);
     }
     if (wasNew) await SrsService.recordNewCardReviewed();
@@ -342,7 +351,8 @@ Future<void> _swipeKnown() async {
     await SrsService.markUnknown(_current.normalizedForLookup);
     if (!mounted) return;
     // Mark as unknown in global learning state
-    await context.read<LearningStateProvider>()
+    await context
+        .read<LearningStateProvider>()
         .setUnknownByClean(_current.normalizedForLookup);
     if (!mounted) return;
     final remaining = _cards.length - _currentIndex - 1;
@@ -362,7 +372,8 @@ Future<void> _swipeKnown() async {
     // Mark as known in global state so it's hidden from Quran reader.
     await SrsService.deleteCard(_current.normalizedForLookup);
     if (mounted) {
-      await context.read<LearningStateProvider>()
+      await context
+          .read<LearningStateProvider>()
           .setKnownByClean(_current.normalizedForLookup);
     }
     if (!mounted) return;
@@ -970,20 +981,28 @@ Future<void> _swipeKnown() async {
                     style:
                         _arabicStyle(display, isDark, 23).copyWith(height: 1.9),
                   ),
-                  if (_current.sampleAyahTranslation.isNotEmpty) ...[
-                    const SizedBox(height: 8),
+                  const SizedBox(height: 8),
+                  if (_current.sampleAyahTranslation.isEmpty)
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Color(0xFFD4AF37),
+                      ),
+                    )
+                  else
                     Text(
                       _current.sampleAyahTranslation,
                       textDirection: TextDirection.rtl,
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontFamily: 'JameelNoori',
-                        fontSize: 13,
+                        fontSize: 16,
                         color: isDark ? Colors.white60 : Colors.grey.shade600,
                         height: 1.5,
                       ),
                     ),
-                  ],
                 ]),
               ),
               const SizedBox(height: 12),

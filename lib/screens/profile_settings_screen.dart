@@ -11,6 +11,7 @@ import '../providers/display_provider.dart';
 import '../providers/user_provider.dart';
 import '../services/sync_service.dart';
 import '../screens/auth_screen.dart';
+import '../services/word_glossary_service.dart';
 
 class ProfileSettingsScreen extends StatefulWidget {
   const ProfileSettingsScreen({super.key});
@@ -367,6 +368,21 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
               onChanged: display.setUrduSize,
               isDark: isDark,
             ),
+            const Divider(),
+            const Text('Word-by-Word Language',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            const SizedBox(height: 8),
+            ValueListenableBuilder<String>(
+              valueListenable: WordGlossaryService.langNotifier,
+              builder: (_, lang, __) => Wrap(
+                spacing: 8,
+                children: [
+                  _wbwChip('Urdu', 'ur', lang),
+                  _wbwChip('English', 'en', lang),
+                  _wbwChip('Hindi', 'hi', lang),
+                ],
+              ),
+            ),
           ],
         ));
   }
@@ -387,6 +403,31 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                 color: selected ? Colors.white : Colors.grey,
                 fontSize: 12,
                 fontWeight: selected ? FontWeight.bold : FontWeight.normal)),
+      ),
+    );
+  }
+
+  Widget _wbwChip(String label, String key, String selected) {
+    final sel = selected == key;
+    return GestureDetector(
+      onTap: () async {
+        await WordGlossaryService.setLanguage(key);
+      },
+      child: Container(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: sel ? _green : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          border:
+              Border.all(color: sel ? _green : Colors.grey.shade300),
+        ),
+        child: Text(label,
+            style: TextStyle(
+                color: sel ? Colors.white : Colors.grey,
+                fontSize: 12,
+                fontWeight:
+                    sel ? FontWeight.bold : FontWeight.normal)),
       ),
     );
   }

@@ -13,6 +13,8 @@ import '../widgets/surah_search_delegate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'flashcard_screen.dart';
 import 'db_debug_screen.dart';
+import 'package:provider/provider.dart';
+import '../providers/learning_state_provider.dart';
 
 class SurahListScreen extends StatefulWidget {
   const SurahListScreen({super.key});
@@ -27,10 +29,33 @@ class _SurahListScreenState extends State<SurahListScreen> {
   Map<int, int> _lastReadAyahs = {};
   List<Map<String, dynamic>> _bookmarks = [];
 
+  LearningStateProvider? _learning;
+
   @override
   void initState() {
     super.initState();
     _loadProgress();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final learning = context.read<LearningStateProvider>();
+    if (_learning != learning) {
+      _learning?.removeListener(_onLearningChanged);
+      _learning = learning;
+      _learning!.addListener(_onLearningChanged);
+    }
+  }
+
+  void _onLearningChanged() {
+    if (mounted) _loadProgress();
+  }
+
+  @override
+  void dispose() {
+    _learning?.removeListener(_onLearningChanged);
+    super.dispose();
   }
 
   Future<void> _loadProgress() async {

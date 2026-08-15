@@ -6,6 +6,8 @@ import '../providers/display_provider.dart';
 import 'package:provider/provider.dart';
 import 'vocabulary_search_screen.dart';
 import '../providers/learning_state_provider.dart';
+import '../services/word_glossary_service.dart';
+
 
 class VocabularyScreen extends StatefulWidget {
   const VocabularyScreen({super.key});
@@ -31,6 +33,12 @@ class _VocabularyScreenState extends State<VocabularyScreen>
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _initLoad();
+        // Reload when WBW language changes
+    WordGlossaryService.langNotifier.addListener(_onLangChanged);
+  }
+
+  void _onLangChanged() {
+    if (mounted) _loadWords();
   }
 
   Future<void> _initLoad() async {
@@ -82,6 +90,7 @@ class _VocabularyScreenState extends State<VocabularyScreen>
   @override
   void dispose() {
     _learning?.removeListener(_onLearningChanged);
+    WordGlossaryService.langNotifier.removeListener(_onLangChanged);
     _tabController.dispose();
     _searchController.dispose();
     super.dispose();
@@ -92,13 +101,14 @@ class _VocabularyScreenState extends State<VocabularyScreen>
     final learning = context.read<LearningStateProvider>();
     final wordFreq = await WordProgressService.getWordFrequencies();
 
+    final lang = WordGlossaryService.selectedLang;
     final all = wordFreq.entries
         .map((e) => WordEntry(
               arabic: e.key,
               originalArabic: e.value.originalArabic.isNotEmpty
                   ? e.value.originalArabic
                   : e.key,
-              urdu: e.value.urdu,
+              urdu: e.value.urdu,  // keep as urdu field name for compatibility
               frequency: e.value.frequency,
               isKnown: learning.isKnown(e.key),
             ))
@@ -233,27 +243,27 @@ class _VocabularyScreenState extends State<VocabularyScreen>
       body: Column(
         children: [
           // Stats bar
-          Container(
-            color: const Color(0xFF1B4332),
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _StatBadge(
-                    label: 'Total Unique',
-                    value: '14,870',
-                    color: Colors.white70),
-                _StatBadge(
-                    label: 'Discovered',
-                    value: '${_allWords.length}',
-                    color: Colors.amber),
-                _StatBadge(
-                    label: 'Known',
-                    value: '${_knownWords.length}',
-                    color: Colors.greenAccent),
-              ],
-            ),
-          ),
+          // Container(
+          //   color: const Color(0xFF1B4332),
+          //   padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          //   child: Row(
+          //     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          //     children: [
+          //       _StatBadge(
+          //           label: 'Total Unique',
+          //           value: '14,870',
+          //           color: Colors.white70),
+          //       _StatBadge(
+          //           label: 'Discovered',
+          //           value: '${_allWords.length}',
+          //           color: Colors.amber),
+          //       _StatBadge(
+          //           label: 'Known',
+          //           value: '${_knownWords.length}',
+          //           color: Colors.greenAccent),
+          //     ],
+          //   ),
+          // ),
           // Search bar
           Padding(
             padding: const EdgeInsets.all(12),
@@ -595,7 +605,7 @@ class _WordCard extends StatelessWidget {
                             textDirection: TextDirection.rtl,
                             style: TextStyle(
                               fontFamily: 'JameelNoori',
-                              fontSize: 13,
+                              fontSize: 20, // for Urdu text
                               color: Theme.of(context).colorScheme.primary,
                             ),
                           ),
