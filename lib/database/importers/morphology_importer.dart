@@ -190,9 +190,9 @@ class MorphologyImporter {
 
       for (final token in tag.split('|')) {
         final tok = token.trim();
-        if (tok.startsWith('ROOT:'))
+        if (tok.startsWith('ROOT:')) {
           root = tok.substring(5);
-        else if (tok.startsWith('LEM:'))
+        } else if (tok.startsWith('LEM:'))
           lemma = tok.substring(4);
         else if (tok.startsWith('POS:'))
           effectivePosCode = tok.substring(4);

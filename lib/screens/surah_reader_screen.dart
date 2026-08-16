@@ -919,23 +919,52 @@ class _BismillahHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final display = context.read<DisplayProvider>();
+
+    // Build style matching user's selected Arabic font
+    TextStyle arabicStyle;
+    switch (display.arabicFont) {
+      case 'indopak':
+        arabicStyle = TextStyle(
+            fontFamily: 'IndoPak',
+            fontSize: display.arabicFontSize.clamp(22, 36),
+            color: isDark ? const Color(0xFFD4AF37) : const Color(0xFF1B4332),
+            height: 2.0);
+        break;
+      case 'noorehuda':
+        arabicStyle = TextStyle(
+            fontFamily: 'NoorehudaFont',
+            fontSize: display.arabicFontSize.clamp(22, 36),
+            color: isDark ? const Color(0xFFD4AF37) : const Color(0xFF1B4332),
+            height: 2.0);
+        break;
+      default:
+        arabicStyle = GoogleFonts.amiriQuran(
+            fontSize: display.arabicFontSize.clamp(22, 36),
+            color: isDark ? const Color(0xFFD4AF37) : const Color(0xFF1B4332),
+            height: 2.0);
+    }
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.symmetric(vertical: 16),
+      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
       decoration: BoxDecoration(
+        // Better dark mode contrast
         color: isDark
-            ? const Color(0xFF1B4332).withValues(alpha: 0.3)
+            ? const Color(0xFF1B4332).withValues(alpha: 0.5)
             : const Color(0xFFF0F7F0),
         borderRadius: BorderRadius.circular(12),
-        border:
-            Border.all(color: const Color(0xFF1B4332).withValues(alpha: 0.3)),
+        border: Border.all(
+            color: isDark
+                ? const Color(0xFFD4AF37).withValues(alpha: 0.4)
+                : const Color(0xFF1B4332).withValues(alpha: 0.3),
+            width: isDark ? 1.5 : 1.0),
       ),
       child: Center(
         child: Text(
           quran.basmala,
           textDirection: TextDirection.rtl,
-          style: GoogleFonts.amiriQuran(
-              fontSize: 24, color: const Color(0xFF1B4332)),
+          style: arabicStyle,
         ),
       ),
     );

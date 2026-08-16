@@ -49,7 +49,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   bool _showBismillah = true;
   bool _showWbw = true;
   bool _showAyahTranslation = true;
-  bool _mushafMode = false;
+  final bool _mushafMode = false;
 
   late AnimationController _fadeCtrl;
   late Animation<double> _fadeAnim;
@@ -1067,7 +1067,7 @@ class _ReadingPrefsPage extends StatelessWidget {
               color: isDark ? Colors.white54 : Colors.grey.shade500)),
       value: value,
       onChanged: onChanged,
-      activeColor: const Color(0xFF1B4332),
+      activeThumbColor: const Color(0xFF1B4332),
       activeTrackColor: const Color(0xFF1B4332).withValues(alpha: 0.4),
     );
   }

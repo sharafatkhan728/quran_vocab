@@ -12,6 +12,8 @@ import '../providers/user_provider.dart';
 import '../services/sync_service.dart';
 import '../screens/auth_screen.dart';
 import '../services/word_glossary_service.dart';
+import 'notification_settings_screen.dart';
+import 'feedback_screen.dart';
 
 class ProfileSettingsScreen extends StatefulWidget {
   const ProfileSettingsScreen({super.key});
@@ -141,9 +143,14 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     _buildTile(isDark,
                         icon: Icons.notifications_active,
                         iconColor: Colors.orange,
-                        title: 'Daily Reminder',
-                        subtitle: 'Coming Soon',
-                        onTap: null),
+                        title: 'Notifications',
+                        subtitle: 'Review reminders, streak, weekly progress',
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                const NotificationSettingsScreen()),
+                        )),
                   ]),
                   const SizedBox(height: 16),
 
@@ -202,6 +209,16 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                         title: 'Support',
                         subtitle: 'support@qurankalima.com',
                         onTap: () => _email()),
+                    _buildTile(isDark,
+                    icon: Icons.feedback,
+                    iconColor: Colors.blue,
+                    title: 'Feedback & Bug Report',
+                    subtitle: 'Send screenshots, suggestions or bugs',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const FeedbackScreen()),
+                    )),
                     _buildTile(isDark,
                         icon: Icons.camera_alt,
                         iconColor: Colors.pink,

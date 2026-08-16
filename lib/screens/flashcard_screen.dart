@@ -100,6 +100,9 @@ class _FlashcardScreenState extends State<FlashcardScreen>
   bool _sessionDone = false;
   bool _isFlipped = false;
   bool _hasBeenFlipped = false;
+  FlashWord? _lastCard;
+  int _lastIndex = 0;
+  bool _canUndo = false;
   String? _swipeHint;
   double _dragX = 0;
   bool _isDragging = false;
@@ -400,13 +403,18 @@ class _FlashcardScreenState extends State<FlashcardScreen>
       setState(() {
         _sessionDone = true;
         _isFlipped = false;
+        _canUndo = false;
       });
     } else {
+      // Save current card so user can undo
+      _lastCard = _current;
+      _lastIndex = _currentIndex;
       setState(() {
         _currentIndex++;
         _isFlipped = false;
         _hasBeenFlipped = false;
         _swipeHint = null;
+        _canUndo = true;
       });
       _entryCtrl.reset();
       _entryCtrl.forward();
@@ -416,6 +424,23 @@ class _FlashcardScreenState extends State<FlashcardScreen>
       }
       _preloadCards(_currentIndex);
     }
+  }
+
+  Future<void> _undoLastSwipe() async {
+    if (!_canUndo || _lastCard == null) return;
+    HapticFeedback.lightImpact();
+    // Go back to previous card
+    setState(() {
+      _currentIndex = _lastIndex;
+      _isFlipped = false;
+      _hasBeenFlipped = false;
+      _swipeHint = null;
+      _canUndo = false;
+      _lastCard = null;
+    });
+    _flipCtrl.reset();
+    _entryCtrl.reset();
+    _entryCtrl.forward();
   }
 
   Future<void> _playAudio() async {
@@ -1044,12 +1069,44 @@ class _FlashcardScreenState extends State<FlashcardScreen>
   Widget _buildFlipHint(bool isDark) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 4, 24, 20),
-      child: Text(
-        'Tap card to reveal meaning',
-        textAlign: TextAlign.center,
-        style: TextStyle(
-            fontSize: 13,
-            color: isDark ? Colors.white38 : Colors.grey.shade400),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_canUndo)
+            GestureDetector(
+              onTap: _undoLastSwipe,
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 20, vertical: 6),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(20),
+                  color: Colors.orange.withValues(alpha: 0.1),
+                  border: Border.all(
+                      color: Colors.orange.withValues(alpha: 0.4)),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.undo, color: Colors.orange, size: 16),
+                    SizedBox(width: 6),
+                    Text('Undo last swipe',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.orange,
+                            fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+            ),
+          Text(
+            'Tap card to reveal meaning',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                fontSize: 13,
+                color: isDark ? Colors.white38 : Colors.grey.shade400),
+          ),
+        ],
       ),
     );
   }
@@ -1057,11 +1114,44 @@ class _FlashcardScreenState extends State<FlashcardScreen>
   Widget _buildActionButtons(bool isDark) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 4, 24, 20),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          GestureDetector(
-            onTap: _swipeUnknown,
+          // Undo button — only visible after a swipe
+          if (_canUndo)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: GestureDetector(
+                onTap: _undoLastSwipe,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 20, vertical: 6),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    color: Colors.orange.withValues(alpha: 0.1),
+                    border: Border.all(
+                        color: Colors.orange.withValues(alpha: 0.4)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.undo, color: Colors.orange, size: 16),
+                      SizedBox(width: 6),
+                      Text('Undo last swipe',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.orange,
+                              fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              GestureDetector(
+                onTap: _swipeUnknown,
             child: Container(
               width: 110,
               height: 50,
@@ -1121,6 +1211,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                 ],
               ),
             ),
+          ),
+        ],
           ),
         ],
       ),
