@@ -163,7 +163,7 @@ class _NotificationSettingsScreenState
                       value: _settings!.enabled,
                       onChanged: (v) =>
                           setState(() => _settings = _settings!.copyWith(enabled: v)),
-                      activeColor: _green,
+                      activeThumbColor: _green,
                     )),
                 const SizedBox(height: 16),
 
@@ -490,7 +490,7 @@ class _NotificationSettingsScreenState
               color: isDark ? Colors.white54 : Colors.grey)),
       value: value,
       onChanged: onChanged,
-      activeColor: _green,
+      activeThumbColor: _green,
     );
   }
 

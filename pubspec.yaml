@@ -32,7 +32,6 @@ dependencies:
   path: ^1.9.0
   crypto: ^3.0.3
   flutter_local_notifications: ^18.0.0
-  flutter_email_sender: ^10.0.1
   device_info_plus: ^13.2.0
 
 dev_dependencies:

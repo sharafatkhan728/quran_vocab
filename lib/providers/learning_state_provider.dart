@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import '../database/database_manager.dart';
 import '../services/sync_service.dart';
-import '../services/notification_service.dart';
 
 /// Single source of truth for word known/unknown status.
 /// All screens read from and write to this provider.

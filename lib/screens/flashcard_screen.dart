@@ -13,6 +13,7 @@ import 'morphology_sheet.dart';
 import '../repositories/vocabulary_repository.dart';
 import '../models/word.dart';
 import '../providers/learning_state_provider.dart';
+import '../widgets/progress_graph.dart';
 
 // ── FlashWord model ─────────────────────────────────────────────────────────
 class FlashWord {
@@ -1225,15 +1226,15 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     return Scaffold(
       backgroundColor:
           isDark ? const Color(0xFF0A1628) : const Color(0xFFF0EBE0),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Text('🌟', style: TextStyle(fontSize: 72)),
-              const SizedBox(height: 16),
-              Text('Session Complete!',
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const SizedBox(height: 24),
+            const Text('🌟', style: TextStyle(fontSize: 72)),
+            const SizedBox(height: 16),
+            Text('Session Complete!',
                   style: TextStyle(
                       fontSize: 26,
                       fontWeight: FontWeight.bold,
@@ -1279,6 +1280,9 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                 ),
               ),
               const SizedBox(height: 28),
+              // ── Progress graph ────────────────────────────────────────
+              _ProgressGraphSection(isDark: isDark),
+              const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: () => Navigator.pop(context),
                 style: ElevatedButton.styleFrom(
@@ -1293,12 +1297,13 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                     style:
                         TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ),
+              const SizedBox(height: 32),
             ],
           ),
         ),
-      ),
-    );
-  }
+      );
+  } //
+    
 
   Widget _statsRow(String label, String value) {
     return Padding(
@@ -1499,5 +1504,109 @@ class _FlashcardScreenState extends State<FlashcardScreen>
         return GoogleFonts.amiriQuran(
             fontSize: size, color: color, height: 1.4);
     }
+  }
+}
+
+
+/// Loads graph data and shows animated progress graph
+class _ProgressGraphSection extends StatefulWidget {
+  final bool isDark;
+  const _ProgressGraphSection({required this.isDark});
+  @override
+  State<_ProgressGraphSection> createState() => _ProgressGraphSectionState();
+}
+
+class _ProgressGraphSectionState extends State<_ProgressGraphSection> {
+  static const _green  = Color(0xFF1B4332);
+  static const _gold   = Color(0xFFD4AF37);
+  List<ProgressPoint>? _points;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final pts = await ProgressGraphData.load();
+    if (mounted) setState(() => _points = pts);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = widget.isDark;
+
+    if (_points == null) {
+      return const SizedBox(
+        height: 80,
+        child: Center(
+          child: CircularProgressIndicator(
+              color: Color(0xFFD4AF37), strokeWidth: 2),
+        ),
+      );
+    }
+
+    if (_points!.length < 2) {
+      return const SizedBox.shrink();
+    }
+
+    final latest = _points!.last.percent;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1A2E1F) : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _gold.withValues(alpha: 0.3)),
+        boxShadow: [
+          BoxShadow(
+              color: _green.withValues(alpha: 0.08),
+              blurRadius: 12,
+              offset: const Offset(0, 3)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Quran Vocabulary Progress',
+                style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: isDark ? Colors.white : _green),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _gold.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: _gold.withValues(alpha: 0.4)),
+                ),
+                child: Text(
+                  '${latest.toStringAsFixed(1)}% covered',
+                  style: const TextStyle(
+                      fontSize: 11,
+                      color: _gold,
+                      fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'You know ${latest.toStringAsFixed(1)}% of all Quran word occurrences',
+            style: TextStyle(
+                fontSize: 11,
+                color: isDark ? Colors.white54 : Colors.grey.shade500),
+          ),
+          const SizedBox(height: 12),
+          ProgressGraph(points: _points!, isDark: isDark),
+        ],
+      ),
+    );
   }
 }

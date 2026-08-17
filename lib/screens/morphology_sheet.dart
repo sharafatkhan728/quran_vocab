@@ -862,7 +862,8 @@ class _MorphologySheetState extends State<MorphologySheet>
                     Text(
                       root,
                       textDirection: TextDirection.rtl,
-                      style: GoogleFonts.amiriQuran(fontSize: 24, color: _gold),
+                      style: _arabicStyle(display, isDark, size: 24)
+                          .copyWith(color: _gold),
                     ),
                     const Spacer(),
                     Container(
@@ -890,12 +891,13 @@ class _MorphologySheetState extends State<MorphologySheet>
                         color: isDark ? Colors.white : Colors.black87),
                     children: [
                       TextSpan(text: _showUrdu ? 'جذر ' : 'The root '),
-                      TextSpan(
-                        text: root,
-                        style: TextStyle(
-                            fontFamily: 'AmiriQuran',
-                            fontSize: 18,
-                            color: _gold),
+                      WidgetSpan(
+                        child: Text(
+                          root,
+                          textDirection: TextDirection.rtl,
+                          style: _arabicStyle(display, isDark, size: 18)
+                              .copyWith(color: _gold),
+                        ),
                       ),
                       TextSpan(
                         text: _showUrdu
@@ -958,9 +960,9 @@ class _MorphologySheetState extends State<MorphologySheet>
                           Text(
                             lemma,
                             textDirection: TextDirection.rtl,
-                            style: GoogleFonts.amiriQuran(
-                                fontSize: 20,
-                                color: isDark ? Colors.white : _green),
+                            style: _arabicStyle(display, isDark, size: 20)
+                                .copyWith(
+                                    color: isDark ? Colors.white : _green),
                           ),
                           const SizedBox(width: 8),
                           Icon(

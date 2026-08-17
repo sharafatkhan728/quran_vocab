@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:flutter_email_sender/flutter_email_sender.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 
@@ -114,26 +114,41 @@ Category: $catLabel
 ''';
 
     try {
-      final email = Email(
-        recipients: [_supportEmail],
-        subject: subject,
-        body: body,
-        attachmentPaths: _attachments,
-        isHTML: false,
+      final uri = Uri(
+        scheme: 'mailto',
+        path: _supportEmail,
+        queryParameters: {
+          'subject': subject,
+          'body': body,
+        },
       );
-      await FlutterEmailSender.send(email);
-      if (mounted) {
-        _showSuccessDialog();
-      }
-    } catch (e) {
-      if (mounted) {
-        // Fallback — copy to clipboard if mail app not installed
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+        if (mounted) _showSuccessDialog();
+      } else {
+        // Fallback — copy to clipboard
         await Clipboard.setData(ClipboardData(
             text: 'To: $_supportEmail\nSubject: $subject\n\n$body'));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: const Text(
+                'No mail app found. Details copied to clipboard.'),
+            duration: const Duration(seconds: 5),
+            backgroundColor: Colors.orange,
+            action: SnackBarAction(
+              label: 'OK',
+              textColor: Colors.white,
+              onPressed: () {},
+            ),
+          ));
+        }
+      }
+    } catch (e) {
+      await Clipboard.setData(ClipboardData(
+          text: 'To: $_supportEmail\nSubject: $subject\n\n$body'));
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text(
-              'Mail app not found. Email copied to clipboard — paste it manually.'),
-          duration: Duration(seconds: 5),
+          content: Text('Copied to clipboard — paste in your email app.'),
           backgroundColor: Colors.orange,
         ));
       }
