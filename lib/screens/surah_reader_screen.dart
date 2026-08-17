@@ -223,17 +223,40 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
 
   Future<void> _reloadWithNewLanguage() async {
     if (!mounted) return;
-    _ayahCache.clear();
-    setState(() => _isLoading = true);
+
+    // Save current visible ayah before clearing cache
+    int savedAyah = 0;
+    final positions = _itemPositionsListener.itemPositions.value;
+    if (positions.isNotEmpty) {
+      final visible = positions.where((p) => p.itemLeadingEdge >= 0);
+      if (visible.isNotEmpty) {
+        savedAyah = visible
+            .reduce((a, b) => a.itemLeadingEdge < b.itemLeadingEdge ? a : b)
+            .index;
+      }
+    }
+
+    // Clear cache but do NOT set _isLoading = true
+    // This keeps the list visible (with old meanings) during reload
+    // instead of jumping to top with a loading spinner
+    setState(() => _ayahCache.clear());
 
     final ayahRows = await ContentRepository.getAyahsForSurah(widget.surah.id);
     if (!mounted) return;
-    setState(() {
-      _totalAyahs = ayahRows.length;
-      _isLoading = false;
-    });
+    setState(() => _totalAyahs = ayahRows.length);
+
     _loadAllTranslations();
     await _loadWordsProgressively(ayahRows);
+
+    // Restore scroll position after words are loaded
+    if (savedAyah > 0 && mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_itemScrollController.isAttached) {
+          _itemScrollController.jumpTo(
+              index: savedAyah, alignment: 0.0);
+        }
+      });
+    }
   }
 
   // ── User interactions ─────────────────────────────────────────────────────

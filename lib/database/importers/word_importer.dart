@@ -193,65 +193,102 @@ class WordImporter {
       bySurah.putIfAbsent(s, () => []).add(key);
     }
 
+// Waqf sign Unicode range — these are Quranic punctuation marks
+    final waqfRegex = RegExp(
+        r'^[\u06D6-\u06DC\u06DF-\u06E4\u06E7\u06E8\u06EA-\u06ED\s]+$');
+
     // Pass 3 — insert ayah_words + word_translations
+    // Waqf signs are appended to the PRECEDING word's arabic_text instead of
+    // creating a separate ayah_words row. This keeps them visible in the
+    // reader while not affecting word positions, translations, or SRS.
     int surahDone = 0;
     for (int s = 1; s <= 114; s++) {
-      final keys = bySurah[s] ?? [];
+      final keys = (bySurah[s] ?? [])
+        ..sort((a, b) {
+          // Sort by ayah then position so we can find preceding word
+          final aParts = a.split(':');
+          final bParts = b.split(':');
+          final aAyah = int.tryParse(aParts[1]) ?? 0;
+          final bAyah = int.tryParse(bParts[1]) ?? 0;
+          if (aAyah != bAyah) return aAyah.compareTo(bAyah);
+          final aPos = int.tryParse(aParts[2]) ?? 0;
+          final bPos = int.tryParse(bParts[2]) ?? 0;
+          return aPos.compareTo(bPos);
+        });
+
       final ayahMap = surahAyahMap[s] ?? {};
+
+      // Pre-pass: build map of wordKey → arabic_text with Waqf appended
+      // "surah:ayah:pos" → display text (may include trailing Waqf)
+      final displayText = <String, String>{};
+      for (int i = 0; i < keys.length; i++) {
+        final wordKey = keys[i];
+        final arabic = _morphWordText[wordKey]!;
+        final clean = WordProgressService.normalizeArabic(arabic);
+        final isWaqfOnly = waqfRegex.hasMatch(arabic.trim());
+
+        if (isWaqfOnly && i > 0) {
+          // Append this Waqf sign to the previous word's display text
+          final prevKey = keys[i - 1];
+          displayText[prevKey] = (displayText[prevKey] ??
+                  _morphWordText[prevKey]!) +
+              arabic;
+          // Do NOT add this key to displayText — it will not get its own row
+        } else {
+          displayText[wordKey] = arabic;
+        }
+      }
 
       var wBatch = txn.batch();
       var tBatch = txn.batch();
       int wCount = 0;
 
       for (final wordKey in keys) {
+        // Skip pure Waqf-sign keys — they've been appended to previous word
+        if (!displayText.containsKey(wordKey)) continue;
+
         final parts = wordKey.split(':');
         final a = int.tryParse(parts[1]) ?? 0;
         final pos = int.tryParse(parts[2]) ?? 0;
         final ayahId = ayahMap[a];
         if (ayahId == null) continue;
 
-        final arabic = _morphWordText[wordKey]!;
-        final clean = WordProgressService.normalizeArabic(arabic);
-        final stripped = clean
-            .replaceAll(
-                RegExp(
-                    r'[\u06D6-\u06DC\u06DF-\u06E4\u06E7\u06E8\u06EA-\u06ED]'),
-                '')
-            .trim();
-        final isWaqf = stripped.isEmpty ? 1 : 0;
-        final vocabId = isWaqf == 0 ? vocabCache[clean] : null;
+        // Use display text (which may have Waqf appended)
+        final arabicDisplay = displayText[wordKey]!;
+        // Clean is still the original word without Waqf for vocab lookup
+        final arabicOrig = _morphWordText[wordKey]!;
+        final clean = WordProgressService.normalizeArabic(arabicOrig);
+        final vocabId = vocabCache[clean];
         final glKey = '$s:$a:$pos';
 
         wBatch.rawInsert('''
           INSERT OR IGNORE INTO ayah_words
             (ayah_id, position, arabic_text, arabic_clean, is_waqf, vocab_word_id)
-          VALUES (?, ?, ?, ?, ?, ?)
-        ''', [ayahId, pos, arabic, clean, isWaqf, vocabId]);
+          VALUES (?, ?, ?, ?, 0, ?)
+        ''', [ayahId, pos, arabicDisplay, clean, vocabId]);
 
-        if (isWaqf == 0) {
-          final urdu = _urduGlossary[glKey] ?? '';
-          final en = _englishGlossary[glKey] ?? '';
-          final enRaw = _englishRaw[glKey] ?? '';
-          final hi = _hindiGlossary[glKey] ?? '';
+        final urdu  = _urduGlossary[glKey] ?? '';
+        final en    = _englishGlossary[glKey] ?? '';
+        final enRaw = _englishRaw[glKey] ?? '';
+        final hi    = _hindiGlossary[glKey] ?? '';
 
-          if (urdu.isNotEmpty) {
-            tBatch.rawInsert(
-                'INSERT OR IGNORE INTO word_translations(word_id,language,text,text_raw) '
-                'SELECT id,?,?,? FROM ayah_words WHERE ayah_id=? AND position=?',
-                ['ur', urdu, urdu, ayahId, pos]);
-          }
-          if (en.isNotEmpty) {
-            tBatch.rawInsert(
-                'INSERT OR IGNORE INTO word_translations(word_id,language,text,text_raw) '
-                'SELECT id,?,?,? FROM ayah_words WHERE ayah_id=? AND position=?',
-                ['en', en, enRaw, ayahId, pos]);
-          }
-          if (hi.isNotEmpty) {
-            tBatch.rawInsert(
-                'INSERT OR IGNORE INTO word_translations(word_id,language,text,text_raw) '
-                'SELECT id,?,?,? FROM ayah_words WHERE ayah_id=? AND position=?',
-                ['hi', hi, hi, ayahId, pos]);
-          }
+        if (urdu.isNotEmpty) {
+          tBatch.rawInsert(
+              'INSERT OR IGNORE INTO word_translations(word_id,language,text,text_raw) '
+              'SELECT id,?,?,? FROM ayah_words WHERE ayah_id=? AND position=?',
+              ['ur', urdu, urdu, ayahId, pos]);
+        }
+        if (en.isNotEmpty) {
+          tBatch.rawInsert(
+              'INSERT OR IGNORE INTO word_translations(word_id,language,text,text_raw) '
+              'SELECT id,?,?,? FROM ayah_words WHERE ayah_id=? AND position=?',
+              ['en', en, enRaw, ayahId, pos]);
+        }
+        if (hi.isNotEmpty) {
+          tBatch.rawInsert(
+              'INSERT OR IGNORE INTO word_translations(word_id,language,text,text_raw) '
+              'SELECT id,?,?,? FROM ayah_words WHERE ayah_id=? AND position=?',
+              ['hi', hi, hi, ayahId, pos]);
         }
 
         wCount++;
@@ -265,7 +302,6 @@ class WordImporter {
 
       await wBatch.commit(noResult: true);
       await tBatch.commit(noResult: true);
-
       surahDone++;
       onProgress(114 + surahDone, 228);
     }

@@ -45,7 +45,7 @@ class ImportProgress {
 class DatabaseImporter {
   // ── Bump when content data changes (importer fix, new asset, etc.) ────────
   // Every existing user gets a safe atomic reimport on next launch.
-  static const int _contentVersion = 6;
+  static const int _contentVersion = 7;
   static const int _schemaVersion = 1;
 
   // Content tables — these are wiped and rebuilt on each content version bump.
