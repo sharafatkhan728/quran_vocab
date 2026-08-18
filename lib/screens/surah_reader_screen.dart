@@ -18,6 +18,7 @@ import '../widgets/word_tile.dart';
 import '../widgets/word_detail_dialog.dart';
 import '../providers/learning_state_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../widgets/ayah_share_card.dart';
 
 class SurahReaderScreen extends StatefulWidget {
   final Surah surah;
@@ -267,6 +268,33 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
         await ContentRepository.getBookmarksForSurah(widget.surah.id);
     if (mounted) setState(() => _bookmarks = updated);
     HapticFeedback.lightImpact();
+  }
+
+
+    Future<void> _shareAyah(int ayahNum) async {
+    final words = _ayahCache[ayahNum];
+    // Build full Arabic text from cached words
+    final arabicText = words != null
+        ? words.map((w) => w.arabic).join(' ')
+        : '';
+    final translation = _ayahTranslations[ayahNum] ?? '';
+    final scholar = TranslationService
+            .scholars[TranslationService.selectedScholar]?.name ??
+        '';
+
+    final display = context.read<DisplayProvider>();
+    await AyahShareCard.share(
+      context: context,
+      surahId: widget.surah.id,
+      surahNameEnglish: widget.surah.englishName,
+      surahNameArabic: widget.surah.arabicName,
+      ayahNumber: ayahNum,
+      arabicText: arabicText,
+      translation: translation,
+      translationLang: _selectedLang,
+      scholarName: scholar,
+      arabicFont: display.arabicFont,
+    );
   }
 
 Future<void> _onWordLongPress(QuranWord word) async {
@@ -645,6 +673,7 @@ onKnownToggled: (nowKnown) {
                       color: isDark ? Colors.white38 : Colors.grey.shade400),
                 ),
               const SizedBox(width: 6),
+
               GestureDetector(
                 onTap: () => _toggleBookmark(ayahNum),
                 child: Icon(
@@ -656,6 +685,12 @@ onKnownToggled: (nowKnown) {
                       : Colors.grey,
                   size: 18,
                 ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () => _shareAyah(ayahNum),
+                child: const Icon(Icons.share_outlined,
+                    color: Colors.grey, size: 18),
               ),
               const Spacer(),
               // Juz badge

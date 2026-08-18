@@ -33,6 +33,8 @@ dependencies:
   crypto: ^3.0.3
   flutter_local_notifications: ^18.0.0
   device_info_plus: ^13.2.0
+  # share_plus: ^13.1.0
+  path_provider: ^2.0.0
 
 dev_dependencies:
   flutter_test:
