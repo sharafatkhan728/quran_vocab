@@ -8,7 +8,6 @@ import 'vocabulary_search_screen.dart';
 import '../providers/learning_state_provider.dart';
 import '../services/word_glossary_service.dart';
 
-
 class VocabularyScreen extends StatefulWidget {
   const VocabularyScreen({super.key});
 
@@ -33,7 +32,7 @@ class _VocabularyScreenState extends State<VocabularyScreen>
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _initLoad();
-        // Reload when WBW language changes
+    // Reload when WBW language changes
     WordGlossaryService.langNotifier.addListener(_onLangChanged);
   }
 
@@ -107,7 +106,7 @@ class _VocabularyScreenState extends State<VocabularyScreen>
               originalArabic: e.value.originalArabic.isNotEmpty
                   ? e.value.originalArabic
                   : e.key,
-              urdu: e.value.urdu,  // keep as urdu field name for compatibility
+              urdu: e.value.urdu, // keep as urdu field name for compatibility
               frequency: e.value.frequency,
               isKnown: learning.isKnown(e.key),
             ))
@@ -147,9 +146,13 @@ class _VocabularyScreenState extends State<VocabularyScreen>
     final messenger = ScaffoldMessenger.of(context);
     messenger.clearSnackBars();
     messenger.showSnackBar(SnackBar(
-      content: const Text('✓ یاد ہے — معنی چھپا دیا'),
+      content: const Text('✓ یاد ہے'),
       backgroundColor: Colors.green.shade800,
-      duration: const Duration(seconds: 4),
+      duration: const Duration(seconds: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      behavior: SnackBarBehavior.floating,
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
       action: SnackBarAction(
         label: 'Undo',
         textColor: Colors.white,
@@ -170,9 +173,13 @@ class _VocabularyScreenState extends State<VocabularyScreen>
     final messenger = ScaffoldMessenger.of(context);
     messenger.clearSnackBars();
     messenger.showSnackBar(SnackBar(
-      content: const Text('معنی واپس آ گیا'),
+      content: const Text('نہیں جانتا'),
       backgroundColor: Colors.grey.shade700,
-      duration: const Duration(seconds: 4),
+      duration: const Duration(seconds: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      behavior: SnackBarBehavior.floating,
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
       action: SnackBarAction(
         label: 'Undo',
         textColor: Colors.white,

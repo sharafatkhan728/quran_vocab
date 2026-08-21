@@ -229,7 +229,8 @@ class _ProgressScreenState extends State<ProgressScreen>
                 style: TextStyle(
                     fontSize: 22, color: _gold.withValues(alpha: 0.9))),
             const SizedBox(height: 16),
-            Stack(
+            Center( 
+              child: Stack(
               alignment: Alignment.center,
               children: [
                 SizedBox(
@@ -301,6 +302,7 @@ class _ProgressScreenState extends State<ProgressScreen>
                   ],
                 ),
               ],
+            ),
             ),
             const SizedBox(height: 16),
             Text(

@@ -334,41 +334,17 @@ class _NotificationSettingsScreenState
                   const SizedBox(height: 16),
 
                   // Frequency
-                  _card(isDark,
-                      title: 'Notification Frequency',
-                      icon: Icons.speed,
-                      child: Column(
-                        children: ['minimal', 'normal', 'frequent']
-                            .map((f) => RadioListTile<String>(
-                                  contentPadding: EdgeInsets.zero,
-                                  value: f,
-                                  groupValue: _settings!.frequency,
-                                  onChanged: (v) => setState(() =>
-                                      _settings =
-                                          _settings!.copyWith(frequency: v)),
-                                  title: Text(
-                                    f[0].toUpperCase() + f.substring(1),
-                                    style: TextStyle(
-                                        color: isDark
-                                            ? Colors.white
-                                            : Colors.black87),
-                                  ),
-                                  subtitle: Text(
-                                    f == 'minimal'
-                                        ? 'Only critical reminders'
-                                        : f == 'normal'
-                                            ? 'Balanced — recommended'
-                                            : 'All reminders, multiple times',
-                                    style: TextStyle(
-                                        fontSize: 12,
-                                        color: isDark
-                                            ? Colors.white54
-                                            : Colors.grey),
-                                  ),
-                                  activeColor: _green,
-                                ))
-                            .toList(),
-                      )),
+                  _card(
+                    isDark,
+                    title: 'Notification Frequency',
+                    icon: Icons.speed,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: _buildFrequencyOptions(isDark),
+                    ),
+                  ),
+
+
                   const SizedBox(height: 16),
 
                   // Test button
@@ -399,6 +375,70 @@ class _NotificationSettingsScreenState
               ],
             ),
     );
+  }
+
+
+    List<Widget> _buildFrequencyOptions(bool isDark) {
+    final options = {
+      'minimal': 'Only critical reminders',
+      'normal': 'Balanced — recommended',
+      'frequent': 'All reminders, multiple times',
+    };
+    return options.entries.map((entry) {
+      final f = entry.key;
+      final desc = entry.value;
+      final sel = _settings!.frequency == f;
+      return GestureDetector(
+        onTap: () => setState(
+            () => _settings = _settings!.copyWith(frequency: f)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: sel ? _green : Colors.transparent,
+                  border: Border.all(
+                    color: sel ? _green : Colors.grey.shade400,
+                    width: 2,
+                  ),
+                ),
+                child: sel
+                    ? const Icon(Icons.check,
+                        size: 12, color: Colors.white)
+                    : null,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      f[0].toUpperCase() + f.substring(1),
+                      style: TextStyle(
+                          color:
+                              isDark ? Colors.white : Colors.black87),
+                    ),
+                    Text(
+                      desc,
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: isDark
+                              ? Colors.white54
+                              : Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }).toList();
   }
 
   Widget _warningCard(bool isDark) {

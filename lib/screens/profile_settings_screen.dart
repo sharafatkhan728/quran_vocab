@@ -14,6 +14,8 @@ import '../screens/auth_screen.dart';
 import '../services/word_glossary_service.dart';
 import 'notification_settings_screen.dart';
 import 'feedback_screen.dart';
+import '../services/translation_service.dart';
+
 
 class ProfileSettingsScreen extends StatefulWidget {
   const ProfileSettingsScreen({super.key});
@@ -400,8 +402,47 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                 ],
               ),
             ),
+            const Divider(height: 24),
+            const Text('Ayah Translation Language',
+                style: TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 13)),
+            const SizedBox(height: 8),
+            ValueListenableBuilder<String>(
+              valueListenable: TranslationLangService.langNotifier,
+              builder: (_, lang, __) => Wrap(
+                spacing: 8,
+                children: [
+                  _translationChip('Urdu', 'ur', lang),
+                  _translationChip('English', 'en', lang),
+                  _translationChip('Hindi', 'hi', lang),
+                ],
+              ),
+            ),
           ],
         ));
+  }
+
+    Widget _translationChip(String label, String key, String selected) {
+    final sel = selected == key;
+    return GestureDetector(
+      onTap: () => TranslationLangService.setLang(key),
+      child: Container(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: sel ? _teal : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          border:
+              Border.all(color: sel ? _teal : Colors.grey.shade300),
+        ),
+        child: Text(label,
+            style: TextStyle(
+                color: sel ? Colors.white : Colors.grey,
+                fontSize: 12,
+                fontWeight:
+                    sel ? FontWeight.bold : FontWeight.normal)),
+      ),
+    );
   }
 
   Widget _fontChip(String label, String key, DisplayProvider display) {

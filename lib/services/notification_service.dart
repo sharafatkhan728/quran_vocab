@@ -1,4 +1,4 @@
-// ignore_for_file: use_build_context_synchronously
+// ignore_for_file: unused_local_variable, use_build_context_synchronously
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -141,7 +141,6 @@ class NotificationService {
     final minute = prefs.getInt(_kMinute) ?? 0;
     final quietStart = prefs.getInt(_kQuietStart) ?? 22;
     final quietEnd   = prefs.getInt(_kQuietEnd) ?? 7;
-    final freq       = prefs.getString(_kFrequency) ?? 'normal';
 
     // Cancel all then selectively reschedule based on SQLite state
     await _plugin.cancelAll();
@@ -307,7 +306,6 @@ class NotificationService {
           // Build weekly stats from SQLite
           int weekWords = 0;
           int weekSessions = 0;
-          int weekReading = 0;
           for (int d = 0; d < 7; d++) {
             final day = now.subtract(Duration(days: d));
             final key = _dateKey(day);
@@ -323,7 +321,6 @@ class NotificationService {
             SELECT COUNT(*) as cnt FROM reading_progress
             WHERE last_read_at > ?
           ''', [now.subtract(const Duration(days: 7)).millisecondsSinceEpoch]);
-          weekReading = (readRows.first['cnt'] as int? ?? 0);
 
           // Streak from user_meta
           final metaRows = await db.query('user_meta',

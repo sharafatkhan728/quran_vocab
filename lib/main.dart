@@ -14,7 +14,6 @@ import 'screens/main_navigation.dart';
 import 'providers/learning_state_provider.dart';
 import 'services/notification_service.dart';
 
-
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
 // Pass to NotificationService for deep-link taps
@@ -33,6 +32,7 @@ void main() async {
 
   // Heavy services still needed by surah reader until fully migrated
   await TranslationService.init();
+  await TranslationLangService.init();
   await WordGlossaryService.init();
   _initNotifications();
   runApp(

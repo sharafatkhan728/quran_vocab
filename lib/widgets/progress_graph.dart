@@ -273,7 +273,9 @@ class _GraphPainter extends CustomPainter {
     // Gradient fill
     if (drawn.length >= 2) {
       final fp = Path()..moveTo(drawn.first.dx, padT + gH);
-      for (final pt in drawn) fp.lineTo(pt.dx, pt.dy);
+      for (final pt in drawn) {
+        fp.lineTo(pt.dx, pt.dy);
+      }
       fp
         ..lineTo(drawn.last.dx, padT + gH)
         ..close();

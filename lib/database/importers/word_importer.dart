@@ -224,7 +224,7 @@ class WordImporter {
       for (int i = 0; i < keys.length; i++) {
         final wordKey = keys[i];
         final arabic = _morphWordText[wordKey]!;
-        final clean = WordProgressService.normalizeArabic(arabic);
+        WordProgressService.normalizeArabic(arabic);
         final isWaqfOnly = waqfRegex.hasMatch(arabic.trim());
 
         if (isWaqfOnly && i > 0) {

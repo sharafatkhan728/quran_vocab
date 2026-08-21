@@ -68,6 +68,7 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
     _loadReadingPrefs();
     _initData();
     _itemPositionsListener.itemPositions.addListener(_onScroll);
+    TranslationLangService.langNotifier.addListener(_onTranslationLangChanged);
   }
 
   Future<void> _loadReadingPrefs() async {
@@ -98,10 +99,15 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
     // _ayahCache directly in _onWordLongPress instead
   }
 
+  void _onTranslationLangChanged() {
+    _loadAllTranslations();
+  }
+
   @override
   void dispose() {
     _learning?.removeListener(_onLearningStateChanged);
     _itemPositionsListener.itemPositions.removeListener(_onScroll);
+    TranslationLangService.langNotifier.removeListener(_onTranslationLangChanged);
     super.dispose();
   }
 
@@ -163,8 +169,9 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
   }
 
   Future<void> _loadAllTranslations() async {
-    final map =
-        await TranslationService.getSurahTranslationsAsync(widget.surah.id);
+    final map = await TranslationService.getSurahTranslationsAsync(
+        widget.surah.id,
+        scholar: TranslationLangService.selectedScholar);
     if (!mounted) return;
     setState(() {
       _ayahTranslations.clear();

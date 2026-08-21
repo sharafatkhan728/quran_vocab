@@ -1,3 +1,5 @@
+// ignore_for_file: use_build_context_synchronously
+
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -56,7 +58,8 @@ class FlashWord {
       sampleAyahArabic =
           await VocabularyRepository.getAyahArabic(sampleSurah, sampleAyahNum);
       sampleAyahTranslation = await TranslationService.getAyahTranslation(
-              sampleSurah, sampleAyahNum) ??
+              sampleSurah, sampleAyahNum,
+              scholar: TranslationLangService.selectedScholar) ??
           '';
       ayahLoaded = true;
     } catch (_) {}
@@ -684,7 +687,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                   return Transform(
                     alignment: Alignment.center,
                     transform: Matrix4.identity()
-                      ..translate(tx, 0.0, 0.0)
+                      ..translate(tx, 0.0)
                       ..rotateZ(rot),
                     child: ScaleTransition(
                       scale: _entryScale,
@@ -1078,13 +1081,13 @@ class _FlashcardScreenState extends State<FlashcardScreen>
               onTap: _undoLastSwipe,
               child: Container(
                 margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 20, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(20),
                   color: Colors.orange.withValues(alpha: 0.1),
-                  border: Border.all(
-                      color: Colors.orange.withValues(alpha: 0.4)),
+                  border:
+                      Border.all(color: Colors.orange.withValues(alpha: 0.4)),
                 ),
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
@@ -1125,13 +1128,13 @@ class _FlashcardScreenState extends State<FlashcardScreen>
               child: GestureDetector(
                 onTap: _undoLastSwipe,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 20, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(20),
                     color: Colors.orange.withValues(alpha: 0.1),
-                    border: Border.all(
-                        color: Colors.orange.withValues(alpha: 0.4)),
+                    border:
+                        Border.all(color: Colors.orange.withValues(alpha: 0.4)),
                   ),
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
@@ -1153,67 +1156,69 @@ class _FlashcardScreenState extends State<FlashcardScreen>
             children: [
               GestureDetector(
                 onTap: _swipeUnknown,
-            child: Container(
-              width: 110,
-              height: 50,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                color: Colors.red.withValues(alpha: 0.1),
-                border: Border.all(color: Colors.red.withValues(alpha: 0.5)),
+                child: Container(
+                  width: 110,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    color: Colors.red.withValues(alpha: 0.1),
+                    border:
+                        Border.all(color: Colors.red.withValues(alpha: 0.5)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.arrow_back, color: Colors.red, size: 18),
+                      const SizedBox(width: 4),
+                      Text('Unknown',
+                          style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.red.shade400,
+                              fontWeight: FontWeight.w700)),
+                    ],
+                  ),
+                ),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.arrow_back, color: Colors.red, size: 18),
-                  const SizedBox(width: 4),
-                  Text('Unknown',
-                      style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.red.shade400,
-                          fontWeight: FontWeight.w700)),
-                ],
+              GestureDetector(
+                onTap: _flip,
+                child: Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _gold.withValues(alpha: 0.1),
+                    border: Border.all(color: _gold.withValues(alpha: 0.5)),
+                  ),
+                  child: const Icon(Icons.flip, color: _gold, size: 22),
+                ),
               ),
-            ),
-          ),
-          GestureDetector(
-            onTap: _flip,
-            child: Container(
-              width: 50,
-              height: 50,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _gold.withValues(alpha: 0.1),
-                border: Border.all(color: _gold.withValues(alpha: 0.5)),
+              GestureDetector(
+                onTap: _swipeKnown,
+                child: Container(
+                  width: 110,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    color: Colors.green.withValues(alpha: 0.1),
+                    border:
+                        Border.all(color: Colors.green.withValues(alpha: 0.5)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text('Known',
+                          style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.green.shade400,
+                              fontWeight: FontWeight.w700)),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.arrow_forward,
+                          color: Colors.green, size: 18),
+                    ],
+                  ),
+                ),
               ),
-              child: const Icon(Icons.flip, color: _gold, size: 22),
-            ),
-          ),
-          GestureDetector(
-            onTap: _swipeKnown,
-            child: Container(
-              width: 110,
-              height: 50,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                color: Colors.green.withValues(alpha: 0.1),
-                border: Border.all(color: Colors.green.withValues(alpha: 0.5)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text('Known',
-                      style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.green.shade400,
-                          fontWeight: FontWeight.w700)),
-                  const SizedBox(width: 4),
-                  const Icon(Icons.arrow_forward,
-                      color: Colors.green, size: 18),
-                ],
-              ),
-            ),
-          ),
-        ],
+            ],
           ),
         ],
       ),
@@ -1235,75 +1240,73 @@ class _FlashcardScreenState extends State<FlashcardScreen>
             const Text('🌟', style: TextStyle(fontSize: 72)),
             const SizedBox(height: 16),
             Text('Session Complete!',
-                  style: TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? Colors.white : _green)),
-              const SizedBox(height: 8),
-              Text('بارک اللہ فیک',
-                  style: GoogleFonts.amiriQuran(fontSize: 28, color: _gold)),
-              const SizedBox(height: 28),
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20),
-                  color: isDark ? const Color(0xFF1A2E1F) : Colors.white,
-                  border: Border.all(color: _gold.withValues(alpha: 0.3)),
-                ),
-                child: Column(children: [
-                  _summaryRow('Cards reviewed', '${_cards.length}', Icons.style,
-                      isDark),
-                  const Divider(height: 16),
-                  _summaryRow(
-                      'Points earned', '+$_sessionPoints', Icons.stars, isDark),
-                  const Divider(height: 16),
-                  _summaryRow('Total points', '$_totalPoints',
-                      Icons.emoji_events, isDark),
-                ]),
+                style: TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : _green)),
+            const SizedBox(height: 8),
+            Text('بارک اللہ فیک',
+                style: GoogleFonts.amiriQuran(fontSize: 28, color: _gold)),
+            const SizedBox(height: 28),
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                color: isDark ? const Color(0xFF1A2E1F) : Colors.white,
+                border: Border.all(color: _gold.withValues(alpha: 0.3)),
               ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: _gold.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: _gold.withValues(alpha: 0.2)),
-                ),
-                child: Text(
-                  'Consistency is better than speed.\n'
-                  'قليل دائم خير من كثير منقطع',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                      fontSize: 13,
-                      color: isDark ? Colors.white70 : Colors.grey.shade700,
-                      height: 1.5),
-                ),
+              child: Column(children: [
+                _summaryRow(
+                    'Cards reviewed', '${_cards.length}', Icons.style, isDark),
+                const Divider(height: 16),
+                _summaryRow(
+                    'Points earned', '+$_sessionPoints', Icons.stars, isDark),
+                const Divider(height: 16),
+                _summaryRow('Total points', '$_totalPoints', Icons.emoji_events,
+                    isDark),
+              ]),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: _gold.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: _gold.withValues(alpha: 0.2)),
               ),
-              const SizedBox(height: 28),
-              // ── Progress graph ────────────────────────────────────────
-              _ProgressGraphSection(isDark: isDark),
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _green,
-                  foregroundColor: Colors.white,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                ),
-                child: const Text('Back to Quran',
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              child: Text(
+                'Consistency is better than speed.\n'
+                'قليل دائم خير من كثير منقطع',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    fontSize: 13,
+                    color: isDark ? Colors.white70 : Colors.grey.shade700,
+                    height: 1.5),
               ),
-              const SizedBox(height: 32),
-            ],
-          ),
+            ),
+            const SizedBox(height: 28),
+            // ── Progress graph ────────────────────────────────────────
+            _ProgressGraphSection(isDark: isDark),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _green,
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+              ),
+              child: const Text('Back to Quran',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            ),
+            const SizedBox(height: 32),
+          ],
         ),
-      );
+      ),
+    );
   } //
-    
 
   Widget _statsRow(String label, String value) {
     return Padding(
@@ -1507,7 +1510,6 @@ class _FlashcardScreenState extends State<FlashcardScreen>
   }
 }
 
-
 /// Loads graph data and shows animated progress graph
 class _ProgressGraphSection extends StatefulWidget {
   final bool isDark;
@@ -1517,8 +1519,8 @@ class _ProgressGraphSection extends StatefulWidget {
 }
 
 class _ProgressGraphSectionState extends State<_ProgressGraphSection> {
-  static const _green  = Color(0xFF1B4332);
-  static const _gold   = Color(0xFFD4AF37);
+  static const _green = Color(0xFF1B4332);
+  static const _gold = Color(0xFFD4AF37);
   List<ProgressPoint>? _points;
 
   @override
@@ -1579,8 +1581,8 @@ class _ProgressGraphSectionState extends State<_ProgressGraphSection> {
                     color: isDark ? Colors.white : _green),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: _gold.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(8),
@@ -1589,9 +1591,7 @@ class _ProgressGraphSectionState extends State<_ProgressGraphSection> {
                 child: Text(
                   '${latest.toStringAsFixed(1)}% covered',
                   style: const TextStyle(
-                      fontSize: 11,
-                      color: _gold,
-                      fontWeight: FontWeight.bold),
+                      fontSize: 11, color: _gold, fontWeight: FontWeight.bold),
                 ),
               ),
             ],

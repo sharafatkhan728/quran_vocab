@@ -8,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+
 /// Paste your Play Store link here when app is published
 const String kPlayStoreLink =
     'https://play.google.com/store/apps/details?id=com.qurankalima.app';
@@ -274,10 +275,12 @@ class _SharePreviewSheetState extends State<_SharePreviewSheet> {
       final shareText =
           '$surahRef\n\nLearn Quran vocabulary with Quran Kalima:\n$kPlayStoreLink';
 
-      await Share.shareXFiles(
-        [XFile(file.path)],
-        text: shareText,
-        subject: 'Quran Ayah — $surahRef',
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(file.path)],
+          text: shareText,
+          subject: 'Quran Ayah — $surahRef',
+        ),
       );
 
       if (mounted) Navigator.pop(context);
