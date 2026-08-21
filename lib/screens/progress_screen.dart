@@ -194,21 +194,21 @@ class _ProgressScreenState extends State<ProgressScreen>
               child: Column(
                 children: [
                   _buildMainRing(isDark),
-                  const SizedBox(height: 16),
-                  _buildStreakRow(isDark),
-                  const SizedBox(height: 16),
-                  _buildStatGrid(isDark),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 1),
                   _buildProgressBars(isDark),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 1),
                   _buildMilestoneJourney(isDark),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 1),
                   _buildHeatmap(isDark),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 1),
                   _buildCompletedSurahs(isDark),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 1),
                   _buildAchievements(isDark),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 1),
+                  _buildStreakRow(isDark),
+                  const SizedBox(height: 5),
+                  _buildStatGrid(isDark),
+                  const SizedBox(height: 1),
                   _buildMotivation(isDark),
                   const SizedBox(height: 32),
                 ],
@@ -229,80 +229,81 @@ class _ProgressScreenState extends State<ProgressScreen>
                 style: TextStyle(
                     fontSize: 22, color: _gold.withValues(alpha: 0.9))),
             const SizedBox(height: 16),
-            Center( 
+            Center(
               child: Stack(
-              alignment: Alignment.center,
-              children: [
-                SizedBox(
-                  width: 200,
-                  height: 200,
-                  child: CircularProgressIndicator(
-                    value: 1,
-                    strokeWidth: 2,
-                    color: _gold.withValues(alpha: 0.15),
-                  ),
-                ),
-                SizedBox(
-                  width: 188,
-                  height: 188,
-                  child: CircularProgressIndicator(
-                    value: (_percent / 100) * _ringAnim.value,
-                    strokeWidth: 18,
-                    backgroundColor:
-                        isDark ? Colors.white12 : Colors.grey.shade200,
-                    strokeCap: StrokeCap.round,
-                    valueColor: AlwaysStoppedAnimation(
-                        _percent > 30 ? _gold : _emerald),
-                  ),
-                ),
-                SizedBox(
-                  width: 144,
-                  height: 144,
-                  child: CircularProgressIndicator(
-                    value: (_knownCount / _totalVocab) * _ringAnim.value,
-                    strokeWidth: 6,
-                    backgroundColor: Colors.transparent,
-                    strokeCap: StrokeCap.round,
-                    valueColor: const AlwaysStoppedAnimation(_gold),
-                  ),
-                ),
-                Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      '${(_percent * _ringAnim.value).toStringAsFixed(1)}%',
-                      style: TextStyle(
-                          fontSize: 34,
-                          fontWeight: FontWeight.bold,
-                          color: isDark ? Colors.white : _green),
+                alignment: Alignment.center,
+                children: [
+                  SizedBox(
+                    width: 200,
+                    height: 200,
+                    child: CircularProgressIndicator(
+                      value: 1,
+                      strokeWidth: 2,
+                      color: _gold.withValues(alpha: 0.15),
                     ),
-                    Text('words covered',
+                  ),
+                  SizedBox(
+                    width: 188,
+                    height: 188,
+                    child: CircularProgressIndicator(
+                      value: (_percent / 100) * _ringAnim.value,
+                      strokeWidth: 18,
+                      backgroundColor:
+                          isDark ? Colors.white12 : Colors.grey.shade200,
+                      strokeCap: StrokeCap.round,
+                      valueColor: AlwaysStoppedAnimation(
+                          _percent > 30 ? _gold : _emerald),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 144,
+                    height: 144,
+                    child: CircularProgressIndicator(
+                      value: (_knownCount / _totalVocab) * _ringAnim.value,
+                      strokeWidth: 6,
+                      backgroundColor: Colors.transparent,
+                      strokeCap: StrokeCap.round,
+                      valueColor: const AlwaysStoppedAnimation(_gold),
+                    ),
+                  ),
+                  Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        '${(_percent * _ringAnim.value).toStringAsFixed(1)}%',
                         style: TextStyle(
-                            fontSize: 12,
-                            color: isDark
-                                ? Colors.white54
-                                : Colors.grey.shade600)),
-                    const SizedBox(height: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: _gold.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: _gold.withValues(alpha: 0.4)),
+                            fontSize: 34,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.white : _green),
                       ),
-                      child: Text(
-                        '$_knownCount words',
-                        style: const TextStyle(
-                            fontSize: 10,
-                            color: _gold,
-                            fontWeight: FontWeight.bold),
+                      Text('words covered',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: isDark
+                                  ? Colors.white54
+                                  : Colors.grey.shade600)),
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: _gold.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(8),
+                          border:
+                              Border.all(color: _gold.withValues(alpha: 0.4)),
+                        ),
+                        child: Text(
+                          '$_knownCount words',
+                          style: const TextStyle(
+                              fontSize: 10,
+                              color: _gold,
+                              fontWeight: FontWeight.bold),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+                    ],
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 16),
             Text(
