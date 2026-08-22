@@ -25,6 +25,8 @@ class TranslationLangService {
     langNotifier.value = key;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('selected_scholar', key);
+    // Keep TranslationService in sync so getAyahTranslation works correctly
+    await TranslationService.setScholar(key);
   }
 
   // Alias so profile_settings_screen can call either name

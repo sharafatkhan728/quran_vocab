@@ -307,10 +307,10 @@ class _VocabularyScreenState extends State<VocabularyScreen>
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Text(
                   _tabController.index == 1
-                      ? '← Swipe right to mark as Forgotten'
-                      : 'Swipe left to mark as Remembered →',
+                      ? 'Swipe right to mark as Forgotten -->>'
+                      : '<<-- Swipe left to mark as Remembered ',
                   style: TextStyle(
-                      fontSize: 11,
+                      fontSize: 15,
                       color: Theme.of(context).colorScheme.onSurfaceVariant),
                   textAlign: TextAlign.center,
                 ),
@@ -444,7 +444,7 @@ class _WordList extends StatelessWidget {
             Icon(Icons.auto_stories_outlined,
                 size: 64,
                 color: Theme.of(context).colorScheme.onSurfaceVariant),
-            const SizedBox(height: 16),
+            const SizedBox(height: 16), 
             Text(
               'Open surahs to discover words',
               style: TextStyle(

@@ -57,10 +57,15 @@ class FlashWord {
       wordPositionInAyah = vocab.firstWordPosition;
       sampleAyahArabic =
           await VocabularyRepository.getAyahArabic(sampleSurah, sampleAyahNum);
-      sampleAyahTranslation = await TranslationService.getAyahTranslation(
-              sampleSurah, sampleAyahNum,
-              scholar: TranslationLangService.selectedScholar) ??
-          '';
+      final scholarKey = TranslationLangService.selectedScholar;
+      final source = TranslationService.scholars[scholarKey];
+      if (source != null) {
+        sampleAyahTranslation = await TranslationService.getAyahTranslation(
+                sampleSurah, sampleAyahNum,
+                scholar: scholarKey) ?? '';
+      }
+      // Reset so it reloads if language changes
+      if (sampleAyahTranslation.isNotEmpty) ayahLoaded = true;
       ayahLoaded = true;
     } catch (_) {}
   }
@@ -143,6 +148,23 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     _dismissFade = Tween<double>(begin: 1, end: 0)
         .animate(CurvedAnimation(parent: _dismissCtrl, curve: Curves.easeIn));
     _loadSession();
+    TranslationLangService.langNotifier
+        .addListener(_onTranslationLangChanged);
+  }
+
+  void _onTranslationLangChanged() {
+    // Reset ayah loaded flag so new language translation is fetched
+    for (final card in _cards) {
+      card.ayahLoaded = false;
+      card.sampleAyahTranslation = '';
+    }
+    if (mounted) setState(() {});
+    // Reload current card's translation immediately
+    if (_cards.isNotEmpty && _currentIndex < _cards.length) {
+      _cards[_currentIndex].loadAyah().then((_) {
+        if (mounted) setState(() {});
+      });
+    }
   }
 
   @override
@@ -152,6 +174,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     _dismissCtrl.dispose();
     _audio.dispose();
     super.dispose();
+        TranslationLangService.langNotifier
+        .removeListener(_onTranslationLangChanged);
   }
 
   // ── Session loading ─────────────────────────────────────────────────────

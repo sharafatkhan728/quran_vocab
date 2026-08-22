@@ -286,7 +286,7 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
         : '';
     final translation = _ayahTranslations[ayahNum] ?? '';
     final scholar = TranslationService
-            .scholars[TranslationService.selectedScholar]?.name ??
+            .scholars[TranslationLangService.selectedScholar]?.name ??
         '';
 
     final display = context.read<DisplayProvider>();
@@ -366,7 +366,7 @@ onKnownToggled: (nowKnown) {
 
   // ── Settings UI ───────────────────────────────────────────────────────────
 
-  void _showScholarPicker() {
+  void _showTranslationPicker() {
     showModalBottomSheet(
       context: context,
       backgroundColor: Theme.of(context).cardColor,
@@ -382,15 +382,14 @@ onKnownToggled: (nowKnown) {
           ),
           ...TranslationService.scholars.entries.map((e) => ListTile(
                 title: Text(e.value.name),
-                trailing: TranslationService.selectedScholar == e.key
+                trailing: TranslationLangService.selectedScholar == e.key
                     ? const Icon(Icons.check, color: Color(0xFF1B4332))
                     : null,
                 onTap: () async {
                   Navigator.pop(ctx);
-                  await TranslationService.setScholar(e.key);
-                  if (!mounted) return;
-                  setState(() => _ayahTranslations.clear());
-                  await _loadAllTranslations();
+                  // Use TranslationLangService — single source of truth
+                  // This fires langNotifier which triggers _onTranslationLangChanged
+                  await TranslationLangService.setScholar(e.key);
                 },
               )),
           const SizedBox(height: 16),
@@ -571,7 +570,8 @@ onKnownToggled: (nowKnown) {
             ),
           ),
           IconButton(
-              icon: const Icon(Icons.translate), onPressed: _showScholarPicker),
+              icon: const Icon(Icons.translate),
+              onPressed: _showTranslationPicker),
           IconButton(
             icon: Icon(
                 _showTranslation ? Icons.visibility : Icons.visibility_off),
@@ -782,18 +782,29 @@ onKnownToggled: (nowKnown) {
                         const SizedBox(height: 8),
                         const Divider(height: 1),
                         const SizedBox(height: 8),
-                        Text(
-                          _ayahTranslations[ayahNum]!,
-                          textDirection: TextDirection.rtl,
-                          textAlign: TextAlign.right,
-                          style: TextStyle(
-                            fontFamily: 'JameelNoori',
-                            fontSize: _urduFontSize + 2,
-                            color:
-                                isDark ? Colors.white60 : Colors.grey.shade700,
-                            height: 1.7,
-                          ),
-                        ),
+                        Builder(builder: (_) {
+                          final scholar =
+                              TranslationLangService.selectedScholar;
+                          final isUrdu = scholar.startsWith('ur');
+                          return Text(
+                            _ayahTranslations[ayahNum]!,
+                            textDirection: isUrdu
+                                ? TextDirection.rtl
+                                : TextDirection.ltr,
+                            textAlign: isUrdu
+                                ? TextAlign.right
+                                : TextAlign.left,
+                            style: TextStyle(
+                              fontFamily:
+                                  isUrdu ? 'JameelNoori' : null,
+                              fontSize: _urduFontSize + 2,
+                              color: isDark
+                                  ? Colors.white60
+                                  : Colors.grey.shade700,
+                              height: 1.7,
+                            ),
+                          );
+                        }),
                       ],
                     ],
                   ),
@@ -809,7 +820,7 @@ onKnownToggled: (nowKnown) {
     return Container(
       margin: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF0A1E11) : const Color(0xFFFEFAF0),
+        color: isDark ? const Color(0xFF0A1E11) : const Color.fromARGB(255, 255, 255, 255), // 
         border: Border.all(
             color: const Color(0xFFD4AF37).withValues(alpha: 0.5), width: 1.5),
         borderRadius: BorderRadius.circular(4),

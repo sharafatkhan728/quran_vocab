@@ -16,7 +16,6 @@ import 'notification_settings_screen.dart';
 import 'feedback_screen.dart';
 import '../services/translation_service.dart';
 
-
 class ProfileSettingsScreen extends StatefulWidget {
   const ProfileSettingsScreen({super.key});
   @override
@@ -125,20 +124,20 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
           ),
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(5), //
               child: Column(
                 children: [
                   // ── Display Preview ───────────────────────────────────
                   _buildDisplayPreview(display, isDark),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 5),
 
                   // ── Display Settings ──────────────────────────────────
                   _buildDisplaySettings(display, theme, isDark),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 5),
 
                   // ── Profile Settings ──────────────────────────────────
                   _buildProfileSettings(user, isDark),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 5),
 
                   // ── Notifications ─────────────────────────────────────
                   _buildSection(isDark, title: 'Reminders', items: [
@@ -148,13 +147,13 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                         title: 'Notifications',
                         subtitle: 'Review reminders, streak, weekly progress',
                         onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                const NotificationSettingsScreen()),
-                        )),
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) =>
+                                      const NotificationSettingsScreen()),
+                            )),
                   ]),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 5),
 
                   // ── App ───────────────────────────────────────────────
                   _buildSection(isDark, title: 'App', items: [
@@ -183,7 +182,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                         subtitle: 'Coming Soon',
                         onTap: null),
                   ]),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 5),
 
                   // ── Support ───────────────────────────────────────────
                   _buildSection(isDark, title: 'Support & Info', items: [
@@ -212,15 +211,15 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                         subtitle: 'support@qurankalima.com',
                         onTap: () => _email()),
                     _buildTile(isDark,
-                    icon: Icons.feedback,
-                    iconColor: Colors.blue,
-                    title: 'Feedback & Bug Report',
-                    subtitle: 'Send screenshots, suggestions or bugs',
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const FeedbackScreen()),
-                    )),
+                        icon: Icons.feedback,
+                        iconColor: Colors.blue,
+                        title: 'Feedback & Bug Report',
+                        subtitle: 'Send screenshots, suggestions or bugs',
+                        onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => const FeedbackScreen()),
+                            )),
                     _buildTile(isDark,
                         icon: Icons.camera_alt,
                         iconColor: Colors.pink,
@@ -228,11 +227,11 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                         subtitle: '@qurankalima',
                         onTap: () => _instagram()),
                   ]),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 5),
 
                   // ── Cloud Sync ────────────────────────────────────────
                   _buildSyncCard(isDark, user),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 5),
 
                   // ── Account ───────────────────────────────────────────
                   _buildSection(isDark, title: 'Account', items: [
@@ -277,19 +276,28 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     );
   }
 
-  // ── Display preview ───────────────────────────────────────────────────────
+// ── Display preview ───────────────────────────────────────────────────────
+
   Widget _buildDisplayPreview(DisplayProvider display, bool isDark) {
-    return _card(isDark,
-        title: 'Preview',
-        titleIcon: Icons.visibility,
+    return _card(
+      isDark,
+      title: 'Preview',
+      titleIcon: Icons.visibility,
+      child: Center(
         child: Container(
-          padding: const EdgeInsets.all(16),
+          width: double.infinity,
+          padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF0D1B12) : const Color(0xFFFDF8F0),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: _gold.withValues(alpha: 0.3)),
+            borderRadius: BorderRadius.circular(30),
+            border: Border.all(
+              color: _gold.withValues(alpha: 0.3),
+            ),
           ),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Text(
                 'بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ',
@@ -303,7 +311,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                 textDirection: TextDirection.rtl,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  // Urdu Nastaliq font
                   fontFamily: 'JameelNoori',
                   fontSize: display.urduFontSize,
                   color: isDark ? Colors.white70 : _teal,
@@ -312,24 +319,32 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
               ),
             ],
           ),
-        ));
+        ),
+      ),
+    );
   }
 
   TextStyle _arabicStyle(DisplayProvider display) {
     switch (display.arabicFont) {
       case 'indopak':
         return TextStyle(
-            fontFamily: 'IndoPak',
-            fontSize: display.arabicFontSize,
-            height: 1.8);
+          fontFamily: 'IndoPak',
+          fontSize: display.arabicFontSize,
+          height: 1.8,
+        );
+
       case 'noorehuda':
         return TextStyle(
-            fontFamily: 'NoorehudaFont',
-            fontSize: display.arabicFontSize,
-            height: 1.8);
+          fontFamily: 'NoorehudaFont',
+          fontSize: display.arabicFontSize,
+          height: 1.8,
+        );
+
       default:
         return GoogleFonts.amiriQuran(
-            fontSize: display.arabicFontSize, height: 1.8);
+          fontSize: display.arabicFontSize,
+          height: 1.8,
+        );
     }
   }
 
@@ -404,17 +419,16 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
             ),
             const Divider(height: 24),
             const Text('Ayah Translation Language',
-                style: TextStyle(
-                    fontWeight: FontWeight.bold, fontSize: 13)),
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
             const SizedBox(height: 8),
             ValueListenableBuilder<String>(
               valueListenable: TranslationLangService.langNotifier,
-              builder: (_, lang, __) => Wrap(
+              builder: (_, scholar, __) => Wrap(
                 spacing: 8,
                 children: [
-                  _translationChip('Urdu', 'ur', lang),
-                  _translationChip('English', 'en', lang),
-                  _translationChip('Hindi', 'hi', lang),
+                  _translationChip('Urdu', 'ur.bayanulquran', scholar),
+                  _translationChip('English', 'en.sahihintl', scholar),
+                  _translationChip('Hindi', 'hi.azizulhaque', scholar),
                 ],
               ),
             ),
@@ -422,25 +436,22 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
         ));
   }
 
-    Widget _translationChip(String label, String key, String selected) {
+  Widget _translationChip(String label, String key, String selected) {
     final sel = selected == key;
     return GestureDetector(
       onTap: () => TranslationLangService.setLang(key),
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
           color: sel ? _teal : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
-          border:
-              Border.all(color: sel ? _teal : Colors.grey.shade300),
+          border: Border.all(color: sel ? _teal : Colors.grey.shade300),
         ),
         child: Text(label,
             style: TextStyle(
                 color: sel ? Colors.white : Colors.grey,
                 fontSize: 12,
-                fontWeight:
-                    sel ? FontWeight.bold : FontWeight.normal)),
+                fontWeight: sel ? FontWeight.bold : FontWeight.normal)),
       ),
     );
   }
@@ -472,20 +483,17 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
         await WordGlossaryService.setLanguage(key);
       },
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
           color: sel ? _green : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
-          border:
-              Border.all(color: sel ? _green : Colors.grey.shade300),
+          border: Border.all(color: sel ? _green : Colors.grey.shade300),
         ),
         child: Text(label,
             style: TextStyle(
                 color: sel ? Colors.white : Colors.grey,
                 fontSize: 12,
-                fontWeight:
-                    sel ? FontWeight.bold : FontWeight.normal)),
+                fontWeight: sel ? FontWeight.bold : FontWeight.normal)),
       ),
     );
   }
@@ -913,8 +921,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
             style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF1B4332)),
             onPressed: () => Navigator.pop(context),
-            child: const Text('Got it',
-                style: TextStyle(color: Colors.white)),
+            child: const Text('Got it', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -943,8 +950,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       ),
     );
   }
-
-
 
   Future<void> _email() async {
     final url = Uri.parse('mailto:support@qurankalima.com');
