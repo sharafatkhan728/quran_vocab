@@ -306,15 +306,26 @@ class WordImporter {
       onProgress(114 + surahDone, 228);
     }
 
-    // Pass 4 — update frequencies
+    // Pass 4 — update frequencies using GROUP BY (much faster than
+    // correlated subquery which runs COUNT for every vocab row)
+    await txn.execute('''
+      CREATE TEMP TABLE IF NOT EXISTS _freq_agg AS
+      SELECT vocab_word_id, COUNT(*) AS cnt
+      FROM ayah_words
+      WHERE is_waqf = 0 AND vocab_word_id IS NOT NULL
+      GROUP BY vocab_word_id
+    ''');
+
     await txn.rawUpdate('''
       UPDATE vocab_words
       SET frequency = (
-        SELECT COUNT(*) FROM ayah_words
-        WHERE ayah_words.vocab_word_id = vocab_words.id
-          AND ayah_words.is_waqf = 0
+        SELECT cnt FROM _freq_agg
+        WHERE _freq_agg.vocab_word_id = vocab_words.id
       )
+      WHERE id IN (SELECT vocab_word_id FROM _freq_agg)
     ''');
+
+    await txn.execute('DROP TABLE IF EXISTS _freq_agg');
   }
 }
 

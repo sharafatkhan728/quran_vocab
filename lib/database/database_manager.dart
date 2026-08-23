@@ -33,7 +33,51 @@ class DatabaseManager {
     for (final stmt in statements) {
       await db.execute('$stmt;');
     }
+
+        // ── Indexes ───────────────────────────────────────────────────────────
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_ayah_words_ayah_id
+      ON ayah_words(ayah_id)
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_ayah_words_vocab_word_id
+      ON ayah_words(vocab_word_id)
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_word_translations_word_id
+      ON word_translations(word_id)
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_vocab_words_arabic_clean
+      ON vocab_words(arabic_clean)
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_morphology_segments_word_id
+      ON morphology_segments(word_id)
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_morphology_segments_root_id
+      ON morphology_segments(root_id)
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_known_words_vocab_word_id
+      ON known_words(vocab_word_id)
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_srs_cards_vocab_word_id
+      ON srs_cards(vocab_word_id)
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_ayahs_surah_id
+      ON ayahs(surah_id)
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_ayah_translations_ayah_id
+      ON ayah_translations(ayah_id)
+    ''');
+    
   }
+
 
   static Future<void> _onUpgrade(Database db, int old, int newV) async {
     if (old < 2) {

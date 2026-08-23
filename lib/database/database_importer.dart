@@ -27,76 +27,75 @@ class ImportProgress {
   final int total;
   final String label;
   final String? error;
-
   ImportProgress(this.step, this.done, this.total, this.label, {this.error});
-
   double get fraction => total == 0 ? 0 : (done / total).clamp(0.0, 1.0);
 }
 
-/// Production-safe content importer.
+/// Per-dataset version strategy.
+/// Bump ONLY the version whose asset/importer changed.
 ///
-/// Strategy: import into _staging_ tables inside a single SQLite transaction.
-/// If anything fails at any point, SQLite rolls back automatically and the
-/// user's existing content tables remain untouched and fully working.
-/// Only on complete success do we rename staging → live and commit.
-///
-/// User tables (known_words, srs_cards, bookmarks, reading_progress,
-/// daily_stats, user_notes, user_meta) are NEVER touched by this importer.
+///  _vCore        — surahs + ayahs
+///  _vVocab       — vocab_words + ayah_words + word_translations
+///  _vMorphology  — morphology_segments + roots + parts_of_speech
+///  _vTranslation — ayah_translations (Urdu/EN/HI full ayah)
 class DatabaseImporter {
-  // ── Bump when content data changes (importer fix, new asset, etc.) ────────
-  // Every existing user gets a safe atomic reimport on next launch.
-  static const int _contentVersion = 9;
+  static const int _vCore = 1;
+  static const int _vVocab = 9;
+  static const int _vMorphology = 7;
+  static const int _vTranslation = 9;
   static const int _schemaVersion = 1;
 
-  // Content tables — these are wiped and rebuilt on each content version bump.
-  // Order matters: children before parents for DELETE, parents before children
-  // for CREATE.
-  static const List<String> _contentTables = [
-    'morphology_segments',
-    'word_translations',
-    'ayah_words',
-    'vocab_words',
-    'ayah_translations',
-    'ayahs',
-    'surahs',
-    'roots',
-    'parts_of_speech',
-  ];
+  static Future<int> _stored(Database db, String key) async {
+    final rows = await db.query('db_meta', where: 'key = ?', whereArgs: [key]);
+    if (rows.isEmpty) return 0;
+    return int.tryParse(rows.first['value'].toString()) ?? 0;
+  }
 
-  // ── Public API ─────────────────────────────────────────────────────────────
+  static Future<void> _setVer(
+      DatabaseExecutor txn, String key, int value) async {
+    await txn.insert('db_meta', {'key': key, 'value': '$value'},
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
 
   static Future<bool> needsImport() async {
     try {
       final db = await DatabaseManager.db;
-      final rows = await db
-          .query('db_meta', where: 'key = ?', whereArgs: ['content_version']);
-      if (rows.isEmpty) {
-        debugPrint('needsImport: no version stored → true');
-        return true;
-      }
-      final stored = int.tryParse(rows.first['value'].toString()) ?? 0;
-      final result = stored < _contentVersion;
-      debugPrint(
-          'needsImport: stored=$stored target=$_contentVersion needs=$result');
-      return result;
+      final core = await _stored(db, 'v_core');
+      final voc = await _stored(db, 'v_vocab');
+      final mor = await _stored(db, 'v_morphology');
+      final tra = await _stored(db, 'v_translation');
+      final need = core < _vCore ||
+          voc < _vVocab ||
+          mor < _vMorphology ||
+          tra < _vTranslation;
+      debugPrint('needsImport: core=$core/$_vCore voc=$voc/$_vVocab '
+          'mor=$mor/$_vMorphology tra=$tra/$_vTranslation → $need');
+      return need;
     } catch (e) {
-      debugPrint('needsImport: exception → $e');
+      debugPrint('needsImport: $e');
       return true;
     }
   }
 
   static Stream<ImportProgress> runImport() async* {
-    debugPrint('runImport: started (_contentVersion=$_contentVersion)');
     final db = await DatabaseManager.db;
 
-    // ── Phase 1: Load all asset data into memory BEFORE touching the DB ────
-    // If asset loading fails, the live DB is completely untouched.
-    yield ImportProgress(ImportStep.preparing, 0, 1, 'Loading assets...');
+    final storedCore = await _stored(db, 'v_core');
+    final storedVocab = await _stored(db, 'v_vocab');
+    final storedMorph = await _stored(db, 'v_morphology');
+    final storedTrans = await _stored(db, 'v_translation');
 
+    final needCore = storedCore < _vCore;
+    final needVocab = storedVocab < _vVocab || needCore;
+    final needMorph = storedMorph < _vMorphology || needVocab;
+    final needTrans = storedTrans < _vTranslation || needCore;
+
+    // ── Phase 1: Load assets ───────────────────────────────────────────────
+    yield ImportProgress(ImportStep.preparing, 0, 1, 'Loading assets...');
     late WordImporter wordImporter;
     try {
       wordImporter = WordImporter(db);
-      await wordImporter.loadAssets();
+      if (needVocab || needMorph) await wordImporter.loadAssets();
     } catch (e) {
       yield ImportProgress(ImportStep.error, 0, 1, 'Asset load failed: $e',
           error: e.toString());
@@ -104,151 +103,321 @@ class DatabaseImporter {
     }
     yield ImportProgress(ImportStep.preparing, 1, 1, 'Assets loaded ✓');
 
-    // ── Phase 2: Atomic transaction ────────────────────────────────────────
-    // Everything from here runs inside a single transaction.
-    // If ANY step throws, SQLite rolls back automatically.
-    // The user's existing content is untouched until we commit.
-    yield ImportProgress(ImportStep.surahs, 0, 114, 'Importing Surahs...');
-
-    // Save known words BEFORE wipe so we can restore after reimport
-    // Uses arabic_clean strings as stable identity across reimports
+    // ── Phase 2: Save user progress keyed by stable identities ────────────
     List<Map<String, Object?>> savedKnown = [];
-    List<Map<String, Object?>> savedSrsCards = [];
-    try {
-      savedKnown = await db.rawQuery('''
-        SELECT v.arabic_clean, k.marked_at
-        FROM known_words k
-        JOIN vocab_words v ON v.id = k.vocab_word_id
-      ''');
-      savedSrsCards = await db.rawQuery('''
-        SELECT v.arabic_clean, s.stage, s.next_review_session,
-               s.ease_factor, s.fail_count, s.total_reviews,
-               s.last_result, s.is_deleted, s.created_at, s.updated_at
-        FROM srs_cards s
-        JOIN vocab_words v ON v.id = s.vocab_word_id
-      ''');
-    } catch (e) {
-      debugPrint('runImport: could not save user data — $e');
-    }
+    List<Map<String, Object?>> savedSrs = [];
+    List<Map<String, Object?>> savedBookmarks = [];
+    List<Map<String, Object?>> savedReading = [];
 
-    bool success = false;
-    String? failureReason;
-
-    try {
-      await db.execute('PRAGMA foreign_keys = OFF');
-
-      await db.transaction((txn) async {
-        // Step A: Wipe content tables inside transaction
-        for (final table in _contentTables) {
-          await txn.delete(table);
-        }
-
-        // Step B: Surahs
-        await SurahImporter(txn).run();
-
-        // Step C: Ayahs
-        await AyahImporter(txn).run((done, total) {});
-
-        // Step D: Translations
-        await TranslationImporter(txn).run();
-
-        // Step E: Vocabulary + ayah_words (uses pre-loaded assets)
-        await wordImporter.runWithTxn(txn, (done, total) {});
-
-        // Step F: Morphology (reuses lines already in memory)
-        await MorphologyImporter(txn)
-            .runWithLines(wordImporter.morphologyLines, (done, total) {});
-
-        // Step G: Root linking
-        await VocabRootImporter(txn).run();
-
-        // Step H: Mark content version INSIDE the same transaction
-        // This means version only updates if everything above succeeded.
-        final now = DateTime.now().toIso8601String();
-        await txn.insert(
-            'db_meta',
-            {
-              'key': 'content_version',
-              'value': '$_contentVersion',
-            },
-            conflictAlgorithm: ConflictAlgorithm.replace);
-        await txn.insert(
-            'db_meta', {'key': 'schema_version', 'value': '$_schemaVersion'},
-            conflictAlgorithm: ConflictAlgorithm.replace);
-        await txn.insert(
-            'db_meta', {'key': 'import_completed_at', 'value': now},
-            conflictAlgorithm: ConflictAlgorithm.replace);
-      });
-
-success = true;
-    } catch (e) {
-      failureReason = e.toString();
-      debugPrint('runImport: transaction failed → $e');
-    } finally {
-      await db.execute('PRAGMA foreign_keys = ON');
-    }
-
-    if (!success) {
-      yield ImportProgress(ImportStep.error, 0, 1,
-          'Import failed: $failureReason\nYour data is safe.',
-          error: failureReason);
-      return;
-    }
-
-    // Restore user data using new vocab_word IDs
-    if (savedKnown.isNotEmpty || savedSrsCards.isNotEmpty) {
+    if (needVocab) {
       try {
-        final vocabRows = await db.query('vocab_words',
-            columns: ['id', 'arabic_clean']);
-        final newIdMap = <String, int>{
-          for (final r in vocabRows)
-            r['arabic_clean'] as String: r['id'] as int
-        };
-        final now = DateTime.now().millisecondsSinceEpoch;
-        final batch = db.batch();
-
-        for (final r in savedKnown) {
-          final id = newIdMap[r['arabic_clean'] as String];
-          if (id == null) continue;
-          batch.insert('known_words',
-              {'vocab_word_id': id, 'marked_at': r['marked_at'] ?? now},
-              conflictAlgorithm: ConflictAlgorithm.ignore);
-        }
-
-        for (final r in savedSrsCards) {
-          final id = newIdMap[r['arabic_clean'] as String];
-          if (id == null) continue;
-          batch.insert('srs_cards', {
-            'vocab_word_id': id,
-            'stage': r['stage'] ?? 0,
-            'next_review_session': r['next_review_session'] ?? 0,
-            'ease_factor': r['ease_factor'] ?? 2.5,
-            'fail_count': r['fail_count'] ?? 0,
-            'total_reviews': r['total_reviews'] ?? 0,
-            'last_result': r['last_result'] ?? -1,
-            'is_deleted': r['is_deleted'] ?? 0,
-            'created_at': r['created_at'] ?? now,
-            'updated_at': r['updated_at'] ?? now,
-          }, conflictAlgorithm: ConflictAlgorithm.ignore);
-        }
-
-        await batch.commit(noResult: true);
-        debugPrint(
-            'runImport: restored ${savedKnown.length} known words '
-            'and ${savedSrsCards.length} SRS cards');
+        savedKnown = await db.rawQuery('''
+          SELECT v.arabic_clean, k.marked_at
+          FROM known_words k
+          JOIN vocab_words v ON v.id = k.vocab_word_id
+        ''');
+        savedSrs = await db.rawQuery('''
+          SELECT v.arabic_clean, s.stage, s.next_review_session,
+                 s.ease_factor, s.fail_count, s.total_reviews,
+                 s.last_result, s.is_deleted, s.created_at, s.updated_at
+          FROM srs_cards s
+          JOIN vocab_words v ON v.id = s.vocab_word_id
+        ''');
       } catch (e) {
-        debugPrint('runImport: restore warning — $e');
+        debugPrint('save vocab progress: $e');
+      }
+    }
+    if (needCore) {
+      try {
+        savedBookmarks = await db.rawQuery(
+            'SELECT surah_id, ayah_number, created_at FROM bookmarks');
+        savedReading = await db.rawQuery(
+            'SELECT surah_id, last_ayah, last_read_at FROM reading_progress');
+      } catch (e) {
+        debugPrint('save surah progress: $e');
       }
     }
 
-    debugPrint('runImport: transaction committed successfully');
+    // ── Phase 3: Run datasets in separate transactions ─────────────────────
+    // Each dataset is its own transaction so a failure in one does not
+    // roll back an already-committed dataset.
+
+    bool anyError = false;
+    String? errorMsg;
+
+    // ── Core ────────────────────────────────────────────────────────────────
+    if (needCore) {
+      yield ImportProgress(ImportStep.surahs, 0, 1, 'Importing Surahs...');
+      try {
+        await db.execute('PRAGMA foreign_keys = OFF');
+        await db.transaction((txn) async {
+          await txn.delete('ayahs');
+          await txn.delete('surahs');
+          await SurahImporter(txn).run();
+          await AyahImporter(txn).run((_, __) {});
+          await _setVer(txn, 'v_core', _vCore);
+        });
+      } catch (e) {
+        anyError = true;
+        errorMsg = 'Core import failed: $e';
+      } finally {
+        await db.execute('PRAGMA foreign_keys = ON');
+      }
+      if (anyError) {
+        yield ImportProgress(ImportStep.error, 0, 1, errorMsg!,
+            error: errorMsg);
+        return;
+      }
+      yield ImportProgress(ImportStep.surahs, 1, 1, 'Surahs ✓');
+    }
+
+    // ── Vocab ───────────────────────────────────────────────────────────────
+    if (needVocab) {
+      yield ImportProgress(ImportStep.words, 0, 1, 'Building Vocabulary...');
+      try {
+        await db.execute('PRAGMA foreign_keys = OFF');
+        // Drop secondary indexes before bulk insert — recreate after.
+        // This avoids updating B-tree indexes for every inserted row.
+        await _dropVocabIndexes(db);
+        await db.transaction((txn) async {
+          await txn.delete('word_translations');
+          await txn.delete('ayah_words');
+          await txn.delete('known_words');
+          await txn.delete('srs_cards');
+          await txn.delete('vocab_words');
+          await wordImporter.runWithTxn(txn, (_, __) {});
+          await _setVer(txn, 'v_vocab', _vVocab);
+        });
+        await _recreateVocabIndexes(db);
+      } catch (e) {
+        anyError = true;
+        errorMsg = 'Vocab import failed: $e';
+        await _recreateVocabIndexes(db); // always restore indexes
+      } finally {
+        await db.execute('PRAGMA foreign_keys = ON');
+      }
+      if (anyError) {
+        yield ImportProgress(ImportStep.error, 0, 1, errorMsg!,
+            error: errorMsg);
+        return;
+      }
+      yield ImportProgress(ImportStep.words, 1, 1, 'Vocabulary ✓');
+    }
+
+    // ── Morphology ──────────────────────────────────────────────────────────
+    if (needMorph) {
+      yield ImportProgress(ImportStep.morphology, 0, 1,
+          'Importing Morphology...');
+      try {
+        await db.execute('PRAGMA foreign_keys = OFF');
+        await _dropMorphIndexes(db);
+        await db.transaction((txn) async {
+          await txn.delete('morphology_segments');
+          await txn.delete('roots');
+          await txn.delete('parts_of_speech');
+          await MorphologyImporter(txn)
+              .runWithLines(wordImporter.morphologyLines, (_, __) {});
+          await _setVer(txn, 'v_morphology', _vMorphology);
+        });
+        await _recreateMorphIndexes(db);
+        // VocabRootImporter runs AFTER indexes are restored so its
+        // JOIN queries use them efficiently
+        await VocabRootImporter(db).run();
+        await db.insert('db_meta',
+            {'key': 'v_morphology', 'value': '$_vMorphology'},
+            conflictAlgorithm: ConflictAlgorithm.replace);
+      } catch (e) {
+        anyError = true;
+        errorMsg = 'Morphology import failed: $e';
+        await _recreateMorphIndexes(db);
+      } finally {
+        await db.execute('PRAGMA foreign_keys = ON');
+      }
+      if (anyError) {
+        yield ImportProgress(ImportStep.error, 0, 1, errorMsg!,
+            error: errorMsg);
+        return;
+      }
+      yield ImportProgress(ImportStep.morphology, 1, 1, 'Morphology ✓');
+    }
+
+    // ── Translations ────────────────────────────────────────────────────────
+    if (needTrans) {
+      yield ImportProgress(
+          ImportStep.translations, 0, 1, 'Importing Translations...');
+      try {
+        await db.transaction((txn) async {
+          await txn.delete('ayah_translations');
+          await TranslationImporter(txn).run();
+          await _setVer(txn, 'v_translation', _vTranslation);
+        });
+      } catch (e) {
+        // Translations are non-fatal — app works without them
+        debugPrint('Translation import warning: $e');
+      }
+      yield ImportProgress(ImportStep.translations, 1, 1, 'Translations ✓');
+    }
+
+    // Mark legacy key so old version checks also pass
+    await db.insert('db_meta', {'key': 'content_version', 'value': '$_vVocab'},
+        conflictAlgorithm: ConflictAlgorithm.replace);
+    await db.insert(
+        'db_meta',
+        {
+          'key': 'import_completed_at',
+          'value': DateTime.now().toIso8601String()
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace);
+
+    // ── Phase 4: Restore user progress ────────────────────────────────────
+    if (needVocab && (savedKnown.isNotEmpty || savedSrs.isNotEmpty)) {
+      yield ImportProgress(ImportStep.preparing, 0, 1, 'Restoring progress...');
+      await _restoreVocab(db, savedKnown, savedSrs);
+      yield ImportProgress(ImportStep.preparing, 1, 1, 'Progress restored ✓');
+    }
+    if (needCore && (savedBookmarks.isNotEmpty || savedReading.isNotEmpty)) {
+      await _restoreSurah(db, savedBookmarks, savedReading);
+    }
+
     yield ImportProgress(ImportStep.done, 1, 1, 'Setup Complete ✓');
   }
-}
 
-// ignore: unused_element
-class _Progress {
-  final int done;
-  final int total;
-  _Progress(this.done, this.total);
+  static Future<void> _restoreVocab(
+    Database db,
+    List<Map<String, Object?>> known,
+    List<Map<String, Object?>> srs,
+  ) async {
+    try {
+      final rows =
+          await db.query('vocab_words', columns: ['id', 'arabic_clean']);
+      final idMap = <String, int>{
+        for (final r in rows) r['arabic_clean'] as String: r['id'] as int
+      };
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final batch = db.batch();
+
+      for (final r in known) {
+        final id = idMap[r['arabic_clean'] as String];
+        if (id == null) continue;
+        batch.insert('known_words',
+            {'vocab_word_id': id, 'marked_at': r['marked_at'] ?? now},
+            conflictAlgorithm: ConflictAlgorithm.ignore);
+      }
+      for (final r in srs) {
+        final id = idMap[r['arabic_clean'] as String];
+        if (id == null) continue;
+        batch.insert(
+            'srs_cards',
+            {
+              'vocab_word_id': id,
+              'stage': r['stage'] ?? 0,
+              'next_review_session': r['next_review_session'] ?? 0,
+              'ease_factor': r['ease_factor'] ?? 2.5,
+              'fail_count': r['fail_count'] ?? 0,
+              'total_reviews': r['total_reviews'] ?? 0,
+              'last_result': r['last_result'] ?? -1,
+              'is_deleted': r['is_deleted'] ?? 0,
+              'created_at': r['created_at'] ?? now,
+              'updated_at': r['updated_at'] ?? now,
+            },
+            conflictAlgorithm: ConflictAlgorithm.ignore);
+      }
+      await batch.commit(noResult: true);
+      debugPrint('restored ${known.length} known + ${srs.length} SRS cards');
+    } catch (e) {
+      debugPrint('restoreVocab: $e');
+    }
+  }
+
+  static Future<void> _restoreSurah(
+    Database db,
+    List<Map<String, Object?>> bookmarks,
+    List<Map<String, Object?>> reading,
+  ) async {
+    try {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final batch = db.batch();
+      for (final r in bookmarks) {
+        batch.insert(
+            'bookmarks',
+            {
+              'surah_id': r['surah_id'],
+              'ayah_number': r['ayah_number'],
+              'created_at': r['created_at'] ?? now,
+            },
+            conflictAlgorithm: ConflictAlgorithm.ignore);
+      }
+      for (final r in reading) {
+        batch.insert(
+            'reading_progress',
+            {
+              'surah_id': r['surah_id'],
+              'last_ayah': r['last_ayah'],
+              'last_read_at': r['last_read_at'] ?? now,
+            },
+            conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await batch.commit(noResult: true);
+      debugPrint('restored ${bookmarks.length} bookmarks + '
+          '${reading.length} reading positions');
+    } catch (e) {
+      debugPrint('restoreSurah: $e');
+    }
+  }
+
+
+    // ── Index helpers ──────────────────────────────────────────────────────────
+  // Dropping indexes before bulk inserts then recreating after is much
+  // faster than maintaining B-tree indexes on every row insert.
+
+  static Future<void> _dropVocabIndexes(Database db) async {
+    for (final idx in [
+      'idx_ayah_words_ayah_id',
+      'idx_ayah_words_vocab_word_id',
+      'idx_word_translations_word_id',
+      'idx_vocab_words_arabic_clean',
+    ]) {
+      await db.execute('DROP INDEX IF EXISTS $idx');
+    }
+  }
+
+  static Future<void> _recreateVocabIndexes(Database db) async {
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_ayah_words_ayah_id
+      ON ayah_words(ayah_id)
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_ayah_words_vocab_word_id
+      ON ayah_words(vocab_word_id)
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_word_translations_word_id
+      ON word_translations(word_id)
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_vocab_words_arabic_clean
+      ON vocab_words(arabic_clean)
+    ''');
+  }
+
+  static Future<void> _dropMorphIndexes(Database db) async {
+    for (final idx in [
+      'idx_morphology_segments_word_id',
+      'idx_morphology_segments_root_id',
+    ]) {
+      await db.execute('DROP INDEX IF EXISTS $idx');
+    }
+  }
+
+  static Future<void> _recreateMorphIndexes(Database db) async {
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_morphology_segments_word_id
+      ON morphology_segments(word_id)
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_morphology_segments_root_id
+      ON morphology_segments(root_id)
+    ''');
+  }
+  
 }

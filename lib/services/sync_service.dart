@@ -52,11 +52,12 @@ class SyncService {
 
       // ── 1. Known words ────────────────────────────────────────────────────
       final knownRows = await db.rawQuery('''
-        SELECT vocab_word_id FROM known_words
+        SELECT v.arabic_clean
+        FROM known_words k
+        JOIN vocab_words v ON v.id = k.vocab_word_id
       ''');
       final knownWords = <String, bool>{
-        for (final r in knownRows)
-          (r['vocab_word_id'] as int).toString(): true,
+        for (final r in knownRows) r['arabic_clean'] as String: true,
       };
 
       // ── 2. SRS cards ──────────────────────────────────────────────────────
@@ -208,9 +209,13 @@ class SyncService {
       // ── Restore known words ───────────────────────────────────────────────
       final knownDoc = await ref.doc('known_words').get();
       if (knownDoc.exists) {
+        final vocabRows =
+            await db.query('vocab_words', columns: ['id', 'arabic_clean']);
+        final cleanToId = <String, int>{
+          for (final r in vocabRows) r['arabic_clean'] as String: r['id'] as int
+        };
         for (final entry in knownDoc.data()!.entries) {
-          // Key is now vocab_word_id as string
-          final vocabId = int.tryParse(entry.key);
+          final vocabId = cleanToId[entry.key];
           if (vocabId == null) continue;
           await db.insert(
             'known_words',
@@ -222,9 +227,8 @@ class SyncService {
 
       // ── Restore SRS cards (chunked) ───────────────────────────────────────
       final srsMetaDoc = await ref.doc('srs_cards_meta').get();
-      final chunkCount = srsMetaDoc.exists
-          ? (srsMetaDoc.data()!['chunks'] as int? ?? 1)
-          : 1;
+      final chunkCount =
+          srsMetaDoc.exists ? (srsMetaDoc.data()!['chunks'] as int? ?? 1) : 1;
 
       for (int i = 0; i < chunkCount; i++) {
         final srsDoc = await ref.doc('srs_cards_$i').get();
