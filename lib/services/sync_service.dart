@@ -62,12 +62,16 @@ class SyncService {
 
       // ── 2. SRS cards ──────────────────────────────────────────────────────
       // Encode as "stage|nextSession|easeFactor|failCount|totalReviews|lastResult"
+      //
+      // IMPORTANT: key by arabic_clean (stable across re-imports), NOT by
+      // vocab_word_id (AUTOINCREMENT — changes whenever the importer rebuilds).
       final srsRows = await db.query('srs_cards',
           where: 'is_deleted = 0 OR is_deleted IS NULL');
       final srsCards = <String, String>{};
       for (final r in srsRows) {
-        final id = (r['vocab_word_id'] as int).toString();
-        srsCards[id] =
+        final clean = r['arabic_clean'] as String?;
+        if (clean == null || clean.isEmpty) continue;
+        srsCards[clean] =
             '${r['stage']}|${r['next_review_session']}|${r['ease_factor']}'
             '|${r['fail_count']}|${r['total_reviews']}|${r['last_result']}';
       }
@@ -121,7 +125,11 @@ class SyncService {
         await chunkBatch.commit();
       }
       // Store how many chunks exist so syncDown knows how many to read
-      await ref.doc('srs_cards_meta').set({'chunks': srsChunkCount});
+      // Also store schema version so syncDown can migrate old integer-keyed docs
+      await ref.doc('srs_cards_meta').set({
+        'chunks': srsChunkCount,
+        'schemaVersion': '1',
+      });
 
       // Write remaining data in one batch
       final batch = _db.batch();
@@ -201,8 +209,12 @@ class SyncService {
         }
       }
 
-      // Build vocab lookup once: arabic_clean → vocab_word_id
-      await db.query('vocab_words', columns: ['id', 'arabic_clean']);
+      // Build vocab lookup: arabic_clean → vocab_word_id
+      final vocabRows =
+          await db.query('vocab_words', columns: ['id', 'arabic_clean']);
+      final cleanToId = <String, int>{
+        for (final r in vocabRows) r['arabic_clean'] as String: r['id'] as int,
+      };
 
       final now = DateTime.now().millisecondsSinceEpoch;
 
@@ -225,17 +237,76 @@ class SyncService {
         }
       }
 
-      // ── Restore SRS cards (chunked) ───────────────────────────────────────
+      // ── Restore SRS cards (chunked, keyed by arabic_clean) ──────────────
       final srsMetaDoc = await ref.doc('srs_cards_meta').get();
       final chunkCount =
           srsMetaDoc.exists ? (srsMetaDoc.data()!['chunks'] as int? ?? 1) : 1;
+      final cloudSchemaVersion =
+          srsMetaDoc.exists ? (srsMetaDoc.data()!['schemaVersion'] as String?) : null;
 
+      // ── Migrate old integer-keyed cloud docs to new clean-keyed format ────
+      // Old docs key SRS by vocab_word_id (AUTOINCREMENT → changes on re-import).
+      // New docs key by arabic_clean (stable). This migration patches old cloud
+      // data once so it survives future re-imports.
+      if (cloudSchemaVersion == null) {
+        debugPrint('SyncService: migrating old SRS docs to arabic_clean keys');
+        for (int i = 0; i < chunkCount; i++) {
+          final oldDoc = await ref.doc('srs_cards_$i').get();
+          if (!oldDoc.exists) continue;
+          final migration = <String, String>{};
+          for (final entry in oldDoc.data()!.entries) {
+            final oldId = int.tryParse(entry.key);
+            if (oldId == null) continue;
+            final clean = cleanToId.entries
+                .firstWhere(
+                  (e) => e.value == oldId,
+                  orElse: () => MapEntry('', 0),
+                )
+                .key;
+            if (clean.isNotEmpty) migration[clean] = entry.value.toString();
+          }
+          if (migration.isNotEmpty) {
+            final batch = _db.batch();
+            batch.set(ref.doc('srs_cards_$i'), migration);
+            await batch.commit();
+          }
+        }
+        // Also handle old single-doc format (srs_cards without _N suffix)
+        final legacyDoc = await ref.doc('srs_cards').get();
+        if (legacyDoc.exists && chunkCount == 1) {
+          final migration = <String, String>{};
+          for (final entry in legacyDoc.data()!.entries) {
+            final oldId = int.tryParse(entry.key);
+            if (oldId == null) continue;
+            final clean = cleanToId.entries
+                .firstWhere(
+                  (e) => e.value == oldId,
+                  orElse: () => MapEntry('', 0),
+                )
+                .key;
+            if (clean.isNotEmpty) migration[clean] = entry.value.toString();
+          }
+          if (migration.isNotEmpty) {
+            final batch = _db.batch();
+            batch.set(ref.doc('srs_cards'), migration);
+            await batch.commit();
+          }
+        }
+        // Mark schema so we don't re-migrate
+        await ref.doc('srs_cards_meta').set(
+            {'chunks': chunkCount, 'schemaVersion': '1'},
+            SetOptions(merge: true));
+        debugPrint('SyncService: old SRS migration complete');
+      }
+
+      // ── Restore SRS using new clean-keyed docs ────────────────────────────
       for (int i = 0; i < chunkCount; i++) {
         final srsDoc = await ref.doc('srs_cards_$i').get();
         if (!srsDoc.exists) continue;
         for (final entry in srsDoc.data()!.entries) {
-          final vocabId = int.tryParse(entry.key);
-          if (vocabId == null) continue;
+          final clean = entry.key;
+          final vocabId = cleanToId[clean];
+          if (vocabId == null) continue; // word not in local DB (import order changed)
           final parts = entry.value.toString().split('|');
           await db.insert(
             'srs_cards',
@@ -259,11 +330,12 @@ class SyncService {
         }
       }
 
-      // Also handle old format (single srs_cards doc) for backward compat
+      // Also read old single-doc format (for new schemaVersion installs)
       final oldSrsDoc = await ref.doc('srs_cards').get();
       if (oldSrsDoc.exists && chunkCount == 1) {
         for (final entry in oldSrsDoc.data()!.entries) {
-          final vocabId = int.tryParse(entry.key);
+          final clean = entry.key;
+          final vocabId = cleanToId[clean];
           if (vocabId == null) continue;
           final parts = entry.value.toString().split('|');
           await db.insert(
