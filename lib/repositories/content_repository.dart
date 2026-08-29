@@ -293,6 +293,84 @@ class ContentRepository {
     return result;
   }
 
+  /// Morphology segments for ALL words in a surah — one query.
+  /// Returns `Map<ayahId, Map<ayahWordId, List<MorphSegmentRow>>>`.
+  static Future<Map<int, Map<int, List<MorphSegmentRow>>>>
+      getSegmentsForSurah(int surahId) async {
+    final db = await DatabaseManager.db;
+    final rows = await db.rawQuery('''
+      SELECT
+        aw.ayah_id, ms.id, ms.word_id, ms.segment_number, ms.segment_type,
+        ms.arabic_text, ms.lemma, ms.tense, ms.person, ms.gender,
+        ms.number, ms.grammatical_case, ms.voice, ms.state,
+        ms.verb_form, ms.raw_tag,
+        COALESCE(p.code,      '') AS pos_code,
+        COALESCE(p.color_hex, '#888888') AS pos_color_hex,
+        COALESCE(r.arabic,    '') AS root
+      FROM morphology_segments ms
+      JOIN ayah_words aw ON aw.id = ms.word_id
+      JOIN ayahs a ON a.id = aw.ayah_id
+      LEFT JOIN parts_of_speech p ON p.id = ms.pos_id
+      LEFT JOIN roots r ON r.id = ms.root_id
+      WHERE a.surah_id = ?
+      ORDER BY aw.ayah_id ASC, ms.word_id ASC, ms.segment_number ASC
+    ''', [surahId]);
+
+    final result = <int, Map<int, List<MorphSegmentRow>>>{};
+    for (final r in rows) {
+      final ayahId = r['ayah_id'] as int;
+      final wordId = r['word_id'] as int;
+      final seg = MorphSegmentRow.fromMap(r);
+      result
+          .putIfAbsent(ayahId, () => {})
+          .putIfAbsent(wordId, () => [])
+          .add(seg);
+    }
+    return result;
+  }
+
+  /// All words for every ayah in a surah — one query.
+  /// Returns `Map<ayahId, List<AyahWordRow>>`, ordered by position.
+  static Future<Map<int, List<AyahWordRow>>> getWordsForSurah(int surahId) async {
+    final db = await DatabaseManager.db;
+    final rows = await db.rawQuery('''
+      SELECT aw.*
+      FROM ayah_words aw
+      JOIN ayahs a ON a.id = aw.ayah_id
+      WHERE a.surah_id = ?
+      ORDER BY a.ayah_number ASC, aw.position ASC
+    ''', [surahId]);
+
+    final result = <int, List<AyahWordRow>>{};
+    for (final r in rows) {
+      final row = AyahWordRow.fromMap(r);
+      result.putIfAbsent(row.ayahId, () => []).add(row);
+    }
+    return result;
+  }
+
+  /// All word translations for every ayah in a surah — one query.
+  /// Returns `Map<ayahId, Map<wordId, WordTranslationRow>>`.
+  static Future<Map<int, Map<int, WordTranslationRow>>>
+      getWordTranslationsForSurah(int surahId, String language) async {
+    final db = await DatabaseManager.db;
+    final rows = await db.rawQuery('''
+      SELECT aw.ayah_id, wt.word_id, wt.language, wt.text, wt.text_raw
+      FROM word_translations wt
+      JOIN ayah_words aw ON aw.id = wt.word_id
+      JOIN ayahs a ON a.id = aw.ayah_id
+      WHERE a.surah_id = ? AND wt.language = ?
+    ''', [surahId, language]);
+
+    final result = <int, Map<int, WordTranslationRow>>{};
+    for (final r in rows) {
+      final ayahId = r['ayah_id'] as int;
+      final row = WordTranslationRow.fromMap(r);
+      result.putIfAbsent(ayahId, () => {})[row.wordId] = row;
+    }
+    return result;
+  }
+
   /// Reading progress
   static Future<int> getLastReadAyah(int surahId) async {
     final db = await DatabaseManager.db;
