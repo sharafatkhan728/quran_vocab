@@ -39,12 +39,22 @@ class _NotificationSettingsScreenState
   Future<void> _save() async {
     if (_settings == null) return;
     await NotificationService.saveSettings(_settings!);
+    NotificationService.lastScheduleError = null;
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Notification settings saved ✓'),
-        backgroundColor: Color(0xFF1B4332),
-        duration: Duration(seconds: 2),
-      ));
+      final error = NotificationService.lastScheduleError;
+      if (error != null) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(error),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 4),
+        ));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Notification settings saved ✓'),
+          backgroundColor: Color(0xFF1B4332),
+          duration: Duration(seconds: 2),
+        ));
+      }
     }
   }
 
@@ -353,11 +363,19 @@ class _NotificationSettingsScreenState
                       onPressed: () async {
                         await NotificationService.rescheduleAll();
                         if (mounted) {
-                          ScaffoldMessenger.of(context)
-                              .showSnackBar(const SnackBar(
-                            content: Text('Notifications rescheduled ✓'),
-                            backgroundColor: _green,
-                          ));
+                          final error = NotificationService.lastScheduleError;
+                          if (error != null) {
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text(error),
+                              backgroundColor: Colors.orange,
+                              duration: const Duration(seconds: 4),
+                            ));
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                              content: Text('Notifications rescheduled ✓'),
+                              backgroundColor: _green,
+                            ));
+                          }
                         }
                       },
                       icon: const Icon(Icons.refresh, color: _green),

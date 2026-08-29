@@ -1,6 +1,7 @@
 // ignore_for_file: unused_local_variable, use_build_context_synchronously
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/timezone.dart' as tz;
@@ -38,6 +39,15 @@ class NotificationService {
   static const _kQuietStart     = 'notif_quiet_start';
   static const _kQuietEnd       = 'notif_quiet_end';
   static const _kFrequency      = 'notif_frequency'; // minimal/normal/frequent
+
+  // ── Error callback (set from main.dart so we can show a snackbar) ────────
+  /// Called when scheduling a notification fails (e.g. Android 14+ without
+  /// exact-alarm permission). Set this in main.dart after init().
+  static void Function(String message)? onScheduleError;
+
+  /// Last scheduling error message, if any. Checked by the notification
+  /// settings screen after [rescheduleAll] to show a user-visible hint.
+  static String? lastScheduleError;
 
   // ── Init ──────────────────────────────────────────────────────────────────
 
@@ -369,28 +379,42 @@ class NotificationService {
       scheduled = scheduled.add(const Duration(days: 1));
     }
 
-    await _plugin.zonedSchedule(
-      id,
-      title,
-      body,
-      scheduled,
-      NotificationDetails(
-        android: AndroidNotificationDetails(
-          channelId, channelId,
-          importance: channelId == _chStreak || channelId == _chReview
-              ? Importance.high
-              : Importance.defaultImportance,
-          priority: Priority.defaultPriority,
-          styleInformation: BigTextStyleInformation(body),
+    try {
+      await _plugin.zonedSchedule(
+        id,
+        title,
+        body,
+        scheduled,
+        NotificationDetails(
+          android: AndroidNotificationDetails(
+            channelId, channelId,
+            importance: channelId == _chStreak || channelId == _chReview
+                ? Importance.high
+                : Importance.defaultImportance,
+            priority: Priority.defaultPriority,
+            styleInformation: BigTextStyleInformation(body),
+          ),
+          iOS: const DarwinNotificationDetails(),
         ),
-        iOS: const DarwinNotificationDetails(),
-      ),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
-      matchDateTimeComponents: DateTimeComponents.time,
-      payload: payload,
-    );
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        matchDateTimeComponents: DateTimeComponents.time,
+        payload: payload,
+      );
+    } on PlatformException catch (e) {
+      debugPrint(
+          'NotificationService: zonedSchedule failed — ${e.message ?? e.code}');
+      lastScheduleError =
+          'Reminder scheduling is unavailable on this device. '
+          'Open Settings → Apps → Quran Kalima → Notifications and allow '
+          'scheduling.';
+      onScheduleError?.call(lastScheduleError!);
+    } catch (e) {
+      debugPrint('NotificationService: zonedSchedule error: $e');
+      lastScheduleError = 'Unable to schedule reminder. Please check notification settings.';
+      onScheduleError?.call(lastScheduleError!);
+    }
   }
 
   static Future<void> _showImmediate({
