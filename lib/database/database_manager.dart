@@ -89,6 +89,19 @@ class DatabaseManager {
             'ALTER TABLE srs_cards ADD COLUMN is_deleted INTEGER DEFAULT 0');
       }
     }
+    if (old < 3) {
+      // v2 → v3: schema gained the `lemma` column on vocab_words.
+      // Use ALTER TABLE (not DROP+recreate) so existing user data is preserved.
+      final cols = await db.rawQuery('PRAGMA table_info(vocab_words)');
+      final hasLemma = cols.any((c) => c['name'] == 'lemma');
+      if (!hasLemma) {
+        await db.execute(
+            'ALTER TABLE vocab_words ADD COLUMN lemma TEXT DEFAULT \'\'');
+      }
+      // Also ensure db_meta.content_version is cleared so importer re-runs
+      // and rebuilds the vocab / word data using the now-correct schema.
+      await db.execute("DELETE FROM db_meta WHERE key = 'content_version'");
+    }
   }
 
   static const String _sql = '''

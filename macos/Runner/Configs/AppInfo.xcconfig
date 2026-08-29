@@ -8,7 +8,7 @@
 PRODUCT_NAME = quran_vocab
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.example.quranVocab
+PRODUCT_BUNDLE_IDENTIFIER = com.qurankalima.app
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 com.example. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 Quran Kalima. All rights reserved.

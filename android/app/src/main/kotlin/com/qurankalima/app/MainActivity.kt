@@ -1,5 +1,6 @@
-package com.example.quran_vocab
+package com.qurankalima.app
 
 import io.flutter.embedding.android.FlutterActivity
 
 class MainActivity : FlutterActivity()
+
