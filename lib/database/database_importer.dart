@@ -39,7 +39,7 @@ class ImportProgress {
 ///  _vMorphology  — morphology_segments + roots + parts_of_speech
 ///  _vTranslation — ayah_translations (Urdu/EN/HI full ayah)
 class DatabaseImporter {
-  static const int _vCore = 1;
+  static const int _vCore = 2;
   static const int _vVocab = 9;
   static const int _vMorphology = 7;
   static const int _vTranslation = 9;

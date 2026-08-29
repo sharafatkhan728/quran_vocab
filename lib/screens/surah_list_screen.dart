@@ -89,7 +89,7 @@ class _SurahListScreenState extends State<SurahListScreen> {
         title: const Column(
           children: [
             Text('القرآن الكريم', style: TextStyle(fontSize: 22)),
-            Text('Quran Kareem',
+            Text('Quran Kalima',
                 style: TextStyle(fontSize: 11, color: Colors.white70)),
           ],
         ),

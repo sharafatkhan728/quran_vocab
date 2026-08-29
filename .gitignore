@@ -43,3 +43,13 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Signing — never commit keystores or their passwords
+key.properties
+**/key.properties
+*.jks
+*.keystore
+
+# Firebase config — contains project API keys, never commit
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist

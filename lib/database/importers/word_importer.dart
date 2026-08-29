@@ -180,7 +180,7 @@ class WordImporter {
       batch.insert('vocab_words', {
         'arabic_clean':      v.clean,
         'arabic_display':    v.display,
-        'lemma_key':         v.lemma,  // new column — see note below
+        'lemma':         v.lemma,  // new column — see note below
         'frequency':         0,
         'first_surah_id':    v.firstSurah,
         'first_ayah_number': v.firstAyah,
@@ -201,7 +201,7 @@ class WordImporter {
     // ── Build caches ──────────────────────────────────────────────────────
     // vocab cache: "$clean\x00$normLemma" → id
     final vocabRows = await txn.rawQuery(
-        'SELECT id, arabic_clean, COALESCE(lemma_key,"") AS lk FROM vocab_words');
+        'SELECT id, arabic_clean, COALESCE(lemma,"") AS lk FROM vocab_words');
     final vocabCache = <String, int>{
       for (final r in vocabRows)
         '${r['arabic_clean'] as String}\x00${r['lk'] as String}': r['id'] as int

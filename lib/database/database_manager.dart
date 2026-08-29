@@ -3,7 +3,7 @@ import 'package:path/path.dart';
 
 class DatabaseManager {
   static Database? _db;
-  static const int _schemaVersion = 2;
+  static const int _schemaVersion = 3;
 
   static Future<Database> get db async {
     _db ??= await _open();
