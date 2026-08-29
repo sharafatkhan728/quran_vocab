@@ -3,6 +3,7 @@ import '../database/database_importer.dart';
 import '../database/migration_manager.dart';
 import 'package:provider/provider.dart';
 import '../providers/learning_state_provider.dart';
+import '../services/crashlytics_service.dart';
 import '../services/sync_service.dart';
 import 'onboarding_screen.dart';
 
@@ -56,7 +57,7 @@ class _SplashScreenState extends State<SplashScreen> {
         });
         if (p.step == ImportStep.done) break;
       }
-    } catch (e) {
+    } catch (e, stack) {
       if (mounted) {
         setState(() {
           _label = 'Startup error: $e';
@@ -65,6 +66,9 @@ class _SplashScreenState extends State<SplashScreen> {
         });
         await Future.delayed(const Duration(seconds: 4));
       }
+      // Report even if the widget was disposed (e.g. user navigated away)
+      if (!mounted) CrashlyticsService.recordError(e, stack,
+          context: 'SplashScreen._run');
     }
 
     if (mounted) {

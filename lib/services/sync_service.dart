@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import '../database/database_manager.dart';
+import 'crashlytics_service.dart';
 
 class SyncService {
   SyncService._();
@@ -161,6 +162,7 @@ class SyncService {
       lastError = e.toString().length > 80
           ? e.toString().substring(0, 80)
           : e.toString();
+      CrashlyticsService.recordError(e, stack, context: 'SyncService.syncUp');
       _emit(SyncStatus.error);
     } finally {
       _syncing = false;
@@ -441,7 +443,9 @@ class SyncService {
       await onSyncDownComplete?.call();
       return RestoreResult.restoredFromCloud;
     } catch (e, stack) {
-      debugPrint('SyncService.syncUp error: $e\n$stack');
+      debugPrint('SyncService.syncDown error: $e\n$stack');
+      CrashlyticsService.recordError(e, stack,
+          context: 'SyncService.syncDown');
       _emit(SyncStatus.error);
       return RestoreResult.error;
     }

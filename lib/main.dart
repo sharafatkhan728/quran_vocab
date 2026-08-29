@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'providers/theme_provider.dart';
@@ -13,6 +14,7 @@ import 'screens/splash_screen.dart';
 import 'screens/main_navigation.dart';
 import 'providers/learning_state_provider.dart';
 import 'services/notification_service.dart';
+import 'services/crashlytics_service.dart';
 
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -24,31 +26,50 @@ void _initNotifications() {
   // surface them to the user after rescheduleAll() completes.
   NotificationService.onScheduleError = (message) {
     debugPrint('NotificationService: $message');
+    CrashlyticsService.recordError(
+        Exception(message), StackTrace.current,
+        context: 'Notification scheduling');
   };
 }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
+
+  // ── Crash reporting (must be first so all subsequent errors are captured) ─
+  await CrashlyticsService.init();
+
   await SharedPreferences.getInstance();
 
   final themeProvider = ThemeProvider();
   await themeProvider.loadSettings();
 
-  // Heavy services still needed by surah reader until fully migrated
-  await TranslationService.init();
-  await TranslationLangService.init();
-  await WordGlossaryService.init();
+  // ── Lightweight service inits are independent — run them in parallel ──────
+  await Future.wait([
+    TranslationService.init(),
+    TranslationLangService.init(),
+    WordGlossaryService.init(),
+  ]);
+
   _initNotifications();
-  runApp(
-    MultiProvider(
-      providers: [
-        ChangeNotifierProvider.value(value: themeProvider),
-        ChangeNotifierProvider(create: (_) => UserProvider()),
-        ChangeNotifierProvider(create: (_) => DisplayProvider()),
-        ChangeNotifierProvider(create: (_) => LearningStateProvider()),
-      ],
-      child: const QuranAppRoot(),
+
+  // Wrap runApp in runZonedGuarded to catch unhandled async / zone errors
+  // that FlutterError.onError and PlatformDispatcher.instance.onError miss.
+  runZonedGuarded(
+    () => runApp(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider.value(value: themeProvider),
+          ChangeNotifierProvider(create: (_) => UserProvider()),
+          ChangeNotifierProvider(create: (_) => DisplayProvider()),
+          ChangeNotifierProvider(create: (_) => LearningStateProvider()),
+        ],
+        child: const QuranAppRoot(),
+      ),
+    ),
+    (error, stack) => CrashlyticsService.recordError(
+      error, stack,
+      context: 'runZonedGuarded (unhandled app error)',
     ),
   );
 }

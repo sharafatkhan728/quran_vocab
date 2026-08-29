@@ -10,6 +10,7 @@ import 'importers/word_importer.dart';
 import 'importers/vocab_root_importer.dart';
 import 'database_manager.dart';
 import 'asset_parser.dart';
+import '../services/crashlytics_service.dart';
 
 enum ImportStep {
   preparing,
@@ -73,8 +74,10 @@ class DatabaseImporter {
       debugPrint('needsImport: core=$core/$_vCore voc=$voc/$_vVocab '
           'mor=$mor/$_vMorphology tra=$tra/$_vTranslation → $need');
       return need;
-    } catch (e) {
+    } catch (e, stack) {
       debugPrint('needsImport: $e');
+      CrashlyticsService.recordError(e, stack,
+          context: 'DatabaseImporter.needsImport');
       return true;
     }
   }
@@ -132,9 +135,11 @@ class DatabaseImporter {
       late ParsedAssets parsed;
       try {
         parsed = await _loadAndParseVocabAssets();
-      } catch (e) {
+      } catch (e, stack) {
         yield ImportProgress(ImportStep.error, 0, 1, 'Asset load failed: $e',
             error: e.toString());
+        CrashlyticsService.recordError(e, stack,
+            context: 'DatabaseImporter._loadAndParseVocabAssets');
         return;
       }
       yield ImportProgress(ImportStep.preparing, 1, 1, 'Assets loaded ✓');
@@ -193,9 +198,11 @@ class DatabaseImporter {
             await AyahImporter(txn).run((_, __) {});
             await _setVer(txn, 'v_core', _vCore);
           });
-        } catch (e) {
+        } catch (e, stack) {
           anyError = true;
           errorMsg = 'Core import failed: $e';
+          CrashlyticsService.recordError(e, stack,
+              context: 'DatabaseImporter.core (with vocab/morph)');
         } finally {
           await db.execute('PRAGMA foreign_keys = ON');
         }
@@ -224,9 +231,11 @@ class DatabaseImporter {
             await _setVer(txn, 'v_vocab', _vVocab);
           });
           await _recreateVocabIndexes(db);
-        } catch (e) {
+        } catch (e, stack) {
           anyError = true;
           errorMsg = 'Vocab import failed: $e';
+          CrashlyticsService.recordError(e, stack,
+              context: 'DatabaseImporter.vocab');
           await _recreateVocabIndexes(db); // always restore indexes
         } finally {
           await db.execute('PRAGMA foreign_keys = ON');
@@ -265,9 +274,11 @@ class DatabaseImporter {
           await db.insert('db_meta',
               {'key': 'v_morphology', 'value': '$_vMorphology'},
               conflictAlgorithm: ConflictAlgorithm.replace);
-        } catch (e) {
+        } catch (e, stack) {
           anyError = true;
           errorMsg = 'Morphology import failed: $e';
+          CrashlyticsService.recordError(e, stack,
+              context: 'DatabaseImporter.morphology');
           await _recreateMorphIndexes(db);
         } finally {
           await db.execute('PRAGMA foreign_keys = ON');
@@ -350,9 +361,11 @@ class DatabaseImporter {
             await AyahImporter(txn).run((_, __) {});
             await _setVer(txn, 'v_core', _vCore);
           });
-        } catch (e) {
+        } catch (e, stack) {
           anyError = true;
           errorMsg = 'Core import failed: $e';
+          CrashlyticsService.recordError(e, stack,
+              context: 'DatabaseImporter.core (core-only path)');
         } finally {
           await db.execute('PRAGMA foreign_keys = ON');
         }
