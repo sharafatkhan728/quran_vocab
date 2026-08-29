@@ -33,29 +33,36 @@ dependencies:
   crypto: ^3.0.3
   flutter_local_notifications: ^18.0.0
   device_info_plus: ^13.2.0
-  # share_plus: ^13.1.0
   path_provider: ^2.0.0
+  flutter_launcher_icons: ^0.14.4
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
-  
 
 flutter:
   uses-material-design: true
+
   assets:
     - assets/fonts/
     - assets/data/
     - assets/images/
-    
+
   fonts:
     - family: JameelNoori
       fonts:
         - asset: assets/fonts/JameelNooriNastaleeq.ttf
+
     - family: IndoPak
       fonts:
         - asset: assets/fonts/NoorHira.ttf
+
     - family: NoorehudaFont
       fonts:
         - asset: assets/fonts/noorehuda.ttf
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/app_icon.png"
