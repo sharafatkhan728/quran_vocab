@@ -1,7 +1,11 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:sqflite/sqflite.dart';
 
+/// TranslationImporter — inserts ayah_translations for 3 languages.
+///
+/// Loads 3 JSON translation files and bulk-inserts into [ayah_translations].
 class TranslationImporter {
   final DatabaseExecutor db;
   TranslationImporter(this.db);
@@ -25,14 +29,34 @@ class TranslationImporter {
     );
   }
 
+  /// Static helper: parse a translation JSON string into a Map.
+  /// Returns empty map on any error (graceful fallback).
+  static Map<String, Map<String, String>> loadTranslations(String raw) {
+    try {
+      final data = json.decode(raw) as Map<String, dynamic>;
+      return data.map((k, v) {
+        String text = '';
+        if (v is Map) {
+          text = (v['t'] ?? '').toString();
+        } else {
+          text = v.toString();
+        }
+        return MapEntry(k, {'t': text});
+      });
+    } catch (_) {
+      return {};
+    }
+  }
+
   Future<void> _importFile({
     required String assetPath,
     required String language,
     required String scholarKey,
   }) async {
     try {
-      final raw = await rootBundle.loadString(assetPath);
-      final data = json.decode(raw) as Map<String, dynamic>;
+      // Use compute to parse the JSON on a background isolate
+      final rawData = await rootBundle.loadString(assetPath);
+      final data = await compute(TranslationImporter._parseJson, rawData);
 
       final ayahRows =
           await db.rawQuery('SELECT id, surah_id, ayah_number FROM ayahs');
@@ -86,6 +110,11 @@ class TranslationImporter {
     } catch (_) {
       // Skip if asset missing
     }
+  }
+
+  /// Parse JSON string — runs on isolate.
+  static Map<String, dynamic> _parseJson(String raw) {
+    return json.decode(raw) as Map<String, dynamic>;
   }
 
   /// Remove HTML tags, footnote superscripts, and clean whitespace

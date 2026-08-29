@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:sqflite/sqflite.dart';
 import 'importers/surah_importer.dart';
 import 'importers/ayah_importer.dart';
@@ -8,6 +9,7 @@ import 'importers/morphology_importer.dart';
 import 'importers/word_importer.dart';
 import 'importers/vocab_root_importer.dart';
 import 'database_manager.dart';
+import 'asset_parser.dart';
 
 enum ImportStep {
   preparing,
@@ -77,6 +79,40 @@ class DatabaseImporter {
     }
   }
 
+  // ── Asset loading (parallel, isolate-safe) ──────────────────────────────
+  // Loads raw strings from rootBundle, then dispatches JSON parsing and
+  // morphology splitting to a background isolate so the UI never stalls.
+
+  static Future<ParsedAssets> _loadAndParseVocabAssets() async {
+    // Load raw strings on main isolate (I/O is fast; parsing is CPU-heavy)
+    final futures = <Future<String>>[
+      rootBundle.loadString('assets/data/urud-wbw.json'),
+      rootBundle.loadString(
+          'assets/data/colored-english-wbw-translation.json'),
+      rootBundle.loadString('assets/data/hindi-wbw.json'),
+      rootBundle.loadString('assets/data/quran_morphology.txt'),
+    ];
+    final results = await Future.wait(futures);
+    final urduRaw      = results[0];
+    final englishRaw   = results[1];
+    final hindiRaw     = results[2];
+    final morphologyRaw = results[3];
+
+    // Parse JSON glossaries on the UI thread (they're small enough)
+    final urdu    = AssetParser.loadJson(urduRaw);
+    final english = AssetParser.loadJson(englishRaw);
+    final hindi   = AssetParser.loadJson(hindiRaw);
+
+    // Parse morphology on a background isolate (6.3 MB, CPU-heavy)
+    final parsed = await compute(
+        AssetParser.parseMorphology,
+        [morphologyRaw, urdu, english, hindi]);
+
+    return parsed;
+  }
+
+  // ── Main entry point ────────────────────────────────────────────────────
+
   static Stream<ImportProgress> runImport() async* {
     final db = await DatabaseManager.db;
 
@@ -90,196 +126,281 @@ class DatabaseImporter {
     final needMorph = storedMorph < _vMorphology || needVocab;
     final needTrans = storedTrans < _vTranslation || needCore;
 
-    // ── Phase 1: Load assets ───────────────────────────────────────────────
-    yield ImportProgress(ImportStep.preparing, 0, 1, 'Loading assets...');
-    late WordImporter wordImporter;
-    try {
-      wordImporter = WordImporter(db);
-      if (needVocab || needMorph) await wordImporter.loadAssets();
-    } catch (e) {
-      yield ImportProgress(ImportStep.error, 0, 1, 'Asset load failed: $e',
-          error: e.toString());
-      return;
-    }
-    yield ImportProgress(ImportStep.preparing, 1, 1, 'Assets loaded ✓');
-
-    // ── Phase 2: Save user progress keyed by stable identities ────────────
-    List<Map<String, Object?>> savedKnown = [];
-    List<Map<String, Object?>> savedSrs = [];
-    List<Map<String, Object?>> savedBookmarks = [];
-    List<Map<String, Object?>> savedReading = [];
-
-    if (needVocab) {
+    // ── Phase 1: Load & parse assets (parallel isolate) ───────────────────
+    if (needVocab || needMorph) {
+      yield ImportProgress(ImportStep.preparing, 0, 1, 'Loading assets...');
+      late ParsedAssets parsed;
       try {
-        savedKnown = await db.rawQuery('''
-          SELECT v.arabic_clean, k.marked_at
-          FROM known_words k
-          JOIN vocab_words v ON v.id = k.vocab_word_id
-        ''');
-        savedSrs = await db.rawQuery('''
-          SELECT v.arabic_clean, s.stage, s.next_review_session,
-                 s.ease_factor, s.fail_count, s.total_reviews,
-                 s.last_result, s.is_deleted, s.created_at, s.updated_at
-          FROM srs_cards s
-          JOIN vocab_words v ON v.id = s.vocab_word_id
-        ''');
+        parsed = await _loadAndParseVocabAssets();
       } catch (e) {
-        debugPrint('save vocab progress: $e');
-      }
-    }
-    if (needCore) {
-      try {
-        savedBookmarks = await db.rawQuery(
-            'SELECT surah_id, ayah_number, created_at FROM bookmarks');
-        savedReading = await db.rawQuery(
-            'SELECT surah_id, last_ayah, last_read_at FROM reading_progress');
-      } catch (e) {
-        debugPrint('save surah progress: $e');
-      }
-    }
-
-    // ── Phase 3: Run datasets in separate transactions ─────────────────────
-    // Each dataset is its own transaction so a failure in one does not
-    // roll back an already-committed dataset.
-
-    bool anyError = false;
-    String? errorMsg;
-
-    // ── Core ────────────────────────────────────────────────────────────────
-    if (needCore) {
-      yield ImportProgress(ImportStep.surahs, 0, 1, 'Importing Surahs...');
-      try {
-        await db.execute('PRAGMA foreign_keys = OFF');
-        await db.transaction((txn) async {
-          await txn.delete('ayahs');
-          await txn.delete('surahs');
-          await SurahImporter(txn).run();
-          await AyahImporter(txn).run((_, __) {});
-          await _setVer(txn, 'v_core', _vCore);
-        });
-      } catch (e) {
-        anyError = true;
-        errorMsg = 'Core import failed: $e';
-      } finally {
-        await db.execute('PRAGMA foreign_keys = ON');
-      }
-      if (anyError) {
-        yield ImportProgress(ImportStep.error, 0, 1, errorMsg!,
-            error: errorMsg);
+        yield ImportProgress(ImportStep.error, 0, 1, 'Asset load failed: $e',
+            error: e.toString());
         return;
       }
-      yield ImportProgress(ImportStep.surahs, 1, 1, 'Surahs ✓');
-    }
+      yield ImportProgress(ImportStep.preparing, 1, 1, 'Assets loaded ✓');
 
-    // ── Vocab ───────────────────────────────────────────────────────────────
-    if (needVocab) {
-      yield ImportProgress(ImportStep.words, 0, 1, 'Building Vocabulary...');
-      try {
-        await db.execute('PRAGMA foreign_keys = OFF');
-        // Drop secondary indexes before bulk insert — recreate after.
-        // This avoids updating B-tree indexes for every inserted row.
-        await _dropVocabIndexes(db);
-        await db.transaction((txn) async {
-          await txn.delete('word_translations');
-          await txn.delete('ayah_words');
-          await txn.delete('known_words');
-          await txn.delete('srs_cards');
-          await txn.delete('vocab_words');
-          await wordImporter.runWithTxn(txn, (_, __) {});
-          await _setVer(txn, 'v_vocab', _vVocab);
-        });
-        await _recreateVocabIndexes(db);
-      } catch (e) {
-        anyError = true;
-        errorMsg = 'Vocab import failed: $e';
-        await _recreateVocabIndexes(db); // always restore indexes
-      } finally {
-        await db.execute('PRAGMA foreign_keys = ON');
+      // Build WordImporter from pre-parsed data
+      final wordImporter = WordImporter.fromParsed(db, parsed);
+
+      // ── Phase 2: Save user progress keyed by stable identities ────────
+      List<Map<String, Object?>> savedKnown = [];
+      List<Map<String, Object?>> savedSrs = [];
+      List<Map<String, Object?>> savedBookmarks = [];
+      List<Map<String, Object?>> savedReading = [];
+
+      if (needVocab) {
+        try {
+          savedKnown = await db.rawQuery('''
+            SELECT v.arabic_clean, k.marked_at
+            FROM known_words k
+            JOIN vocab_words v ON v.id = k.vocab_word_id
+          ''');
+          savedSrs = await db.rawQuery('''
+            SELECT v.arabic_clean, s.stage, s.next_review_session,
+                   s.ease_factor, s.fail_count, s.total_reviews,
+                   s.last_result, s.is_deleted, s.created_at, s.updated_at
+            FROM srs_cards s
+            JOIN vocab_words v ON v.id = s.vocab_word_id
+          ''');
+        } catch (e) {
+          debugPrint('save vocab progress: $e');
+        }
       }
-      if (anyError) {
-        yield ImportProgress(ImportStep.error, 0, 1, errorMsg!,
-            error: errorMsg);
-        return;
+      if (needCore) {
+        try {
+          savedBookmarks = await db.rawQuery(
+              'SELECT surah_id, ayah_number, created_at FROM bookmarks');
+          savedReading = await db.rawQuery(
+              'SELECT surah_id, last_ayah, last_read_at FROM reading_progress');
+        } catch (e) {
+          debugPrint('save surah progress: $e');
+        }
       }
-      yield ImportProgress(ImportStep.words, 1, 1, 'Vocabulary ✓');
-    }
 
-    // ── Morphology ──────────────────────────────────────────────────────────
-    if (needMorph) {
-      yield ImportProgress(ImportStep.morphology, 0, 1,
-          'Importing Morphology...');
-      try {
-        await db.execute('PRAGMA foreign_keys = OFF');
-        await _dropMorphIndexes(db);
-        await db.transaction((txn) async {
-          await txn.delete('morphology_segments');
-          await txn.delete('roots');
-          await txn.delete('parts_of_speech');
-          await MorphologyImporter(txn)
-              .runWithLines(wordImporter.morphologyLines, (_, __) {});
-          await _setVer(txn, 'v_morphology', _vMorphology);
-        });
-        await _recreateMorphIndexes(db);
-        // VocabRootImporter runs AFTER indexes are restored so its
-        // JOIN queries use them efficiently
-        await VocabRootImporter(db).run();
-        await db.insert('db_meta',
-            {'key': 'v_morphology', 'value': '$_vMorphology'},
-            conflictAlgorithm: ConflictAlgorithm.replace);
-      } catch (e) {
-        anyError = true;
-        errorMsg = 'Morphology import failed: $e';
-        await _recreateMorphIndexes(db);
-      } finally {
-        await db.execute('PRAGMA foreign_keys = ON');
+      // ── Phase 3: Run datasets in separate transactions ────────────────
+      bool anyError = false;
+      String? errorMsg;
+
+      // ── Core ──────────────────────────────────────────────────────────
+      if (needCore) {
+        yield ImportProgress(ImportStep.surahs, 0, 1, 'Importing Surahs...');
+        try {
+          await db.execute('PRAGMA foreign_keys = OFF');
+          await db.transaction((txn) async {
+            await txn.delete('ayahs');
+            await txn.delete('surahs');
+            await SurahImporter(txn).run();
+            await AyahImporter(txn).run((_, __) {});
+            await _setVer(txn, 'v_core', _vCore);
+          });
+        } catch (e) {
+          anyError = true;
+          errorMsg = 'Core import failed: $e';
+        } finally {
+          await db.execute('PRAGMA foreign_keys = ON');
+        }
+        if (anyError) {
+          yield ImportProgress(ImportStep.error, 0, 1, errorMsg!,
+              error: errorMsg);
+          return;
+        }
+        yield ImportProgress(ImportStep.surahs, 1, 1, 'Surahs ✓');
       }
-      if (anyError) {
-        yield ImportProgress(ImportStep.error, 0, 1, errorMsg!,
-            error: errorMsg);
-        return;
+
+      // ── Vocab ─────────────────────────────────────────────────────────
+      if (needVocab) {
+        yield ImportProgress(ImportStep.words, 0, 1, 'Building Vocabulary...');
+        try {
+          await db.execute('PRAGMA foreign_keys = OFF');
+          // Drop secondary indexes before bulk insert — recreate after.
+          await _dropVocabIndexes(db);
+          await db.transaction((txn) async {
+            await txn.delete('word_translations');
+            await txn.delete('ayah_words');
+            await txn.delete('known_words');
+            await txn.delete('srs_cards');
+            await txn.delete('vocab_words');
+            await wordImporter.runWithTxn(txn, (_, __) {});
+            await _setVer(txn, 'v_vocab', _vVocab);
+          });
+          await _recreateVocabIndexes(db);
+        } catch (e) {
+          anyError = true;
+          errorMsg = 'Vocab import failed: $e';
+          await _recreateVocabIndexes(db); // always restore indexes
+        } finally {
+          await db.execute('PRAGMA foreign_keys = ON');
+        }
+        if (anyError) {
+          yield ImportProgress(ImportStep.error, 0, 1, errorMsg!,
+              error: errorMsg);
+          return;
+        }
+        yield ImportProgress(ImportStep.words, 1, 1, 'Vocabulary ✓');
       }
-      yield ImportProgress(ImportStep.morphology, 1, 1, 'Morphology ✓');
-    }
 
-    // ── Translations ────────────────────────────────────────────────────────
-    if (needTrans) {
-      yield ImportProgress(
-          ImportStep.translations, 0, 1, 'Importing Translations...');
-      try {
-        await db.transaction((txn) async {
-          await txn.delete('ayah_translations');
-          await TranslationImporter(txn).run();
-          await _setVer(txn, 'v_translation', _vTranslation);
-        });
-      } catch (e) {
-        // Translations are non-fatal — app works without them
-        debugPrint('Translation import warning: $e');
+      // ── Morphology ────────────────────────────────────────────────────
+      if (needMorph) {
+        yield ImportProgress(ImportStep.morphology, 0, 1,
+            'Importing Morphology...');
+        try {
+          await db.execute('PRAGMA foreign_keys = OFF');
+          await _dropMorphIndexes(db);
+          await db.transaction((txn) async {
+            await txn.delete('morphology_segments');
+            await txn.delete('roots');
+            await txn.delete('parts_of_speech');
+            await MorphologyImporter(txn).runWithLines(
+              wordImporter.morphologyLines,
+              (_, __) {},
+              morphWordText: parsed.morphWordText,
+              morphLemma: parsed.morphLemma,
+            );
+            await _setVer(txn, 'v_morphology', _vMorphology);
+          });
+          await _recreateMorphIndexes(db);
+          // VocabRootImporter runs AFTER indexes are restored so its
+          // JOIN queries use them efficiently
+          await VocabRootImporter(db).run();
+          await db.insert('db_meta',
+              {'key': 'v_morphology', 'value': '$_vMorphology'},
+              conflictAlgorithm: ConflictAlgorithm.replace);
+        } catch (e) {
+          anyError = true;
+          errorMsg = 'Morphology import failed: $e';
+          await _recreateMorphIndexes(db);
+        } finally {
+          await db.execute('PRAGMA foreign_keys = ON');
+        }
+        if (anyError) {
+          yield ImportProgress(ImportStep.error, 0, 1, errorMsg!,
+              error: errorMsg);
+          return;
+        }
+        yield ImportProgress(ImportStep.morphology, 1, 1, 'Morphology ✓');
       }
-      yield ImportProgress(ImportStep.translations, 1, 1, 'Translations ✓');
-    }
 
-    // Mark legacy key so old version checks also pass
-    await db.insert('db_meta', {'key': 'content_version', 'value': '$_vVocab'},
-        conflictAlgorithm: ConflictAlgorithm.replace);
-    await db.insert(
-        'db_meta',
-        {
-          'key': 'import_completed_at',
-          'value': DateTime.now().toIso8601String()
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace);
+      // ── Translations ──────────────────────────────────────────────────
+      if (needTrans) {
+        yield ImportProgress(
+            ImportStep.translations, 0, 1, 'Importing Translations...');
+        try {
+          await db.transaction((txn) async {
+            await txn.delete('ayah_translations');
+            await TranslationImporter(txn).run();
+            await _setVer(txn, 'v_translation', _vTranslation);
+          });
+        } catch (e) {
+          // Translations are non-fatal — app works without them
+          debugPrint('Translation import warning: $e');
+        }
+        yield ImportProgress(ImportStep.translations, 1, 1, 'Translations ✓');
+      }
 
-    // ── Phase 4: Restore user progress ────────────────────────────────────
-    if (needVocab && (savedKnown.isNotEmpty || savedSrs.isNotEmpty)) {
-      yield ImportProgress(ImportStep.preparing, 0, 1, 'Restoring progress...');
-      await _restoreVocab(db, savedKnown, savedSrs);
-      yield ImportProgress(ImportStep.preparing, 1, 1, 'Progress restored ✓');
-    }
-    if (needCore && (savedBookmarks.isNotEmpty || savedReading.isNotEmpty)) {
-      await _restoreSurah(db, savedBookmarks, savedReading);
-    }
+      // Mark legacy key so old version checks also pass
+      await db.insert('db_meta', {'key': 'content_version', 'value': '$_vVocab'},
+          conflictAlgorithm: ConflictAlgorithm.replace);
+      await db.insert(
+          'db_meta',
+          {
+            'key': 'import_completed_at',
+            'value': DateTime.now().toIso8601String()
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace);
 
-    yield ImportProgress(ImportStep.done, 1, 1, 'Setup Complete ✓');
+      // ── Phase 4: Restore user progress ────────────────────────────────
+      if (needVocab && (savedKnown.isNotEmpty || savedSrs.isNotEmpty)) {
+        yield ImportProgress(ImportStep.preparing, 0, 1, 'Restoring progress...');
+        await _restoreVocab(db, savedKnown, savedSrs);
+        yield ImportProgress(ImportStep.preparing, 1, 1, 'Progress restored ✓');
+      }
+      if (needCore && (savedBookmarks.isNotEmpty || savedReading.isNotEmpty)) {
+        await _restoreSurah(db, savedBookmarks, savedReading);
+      }
+
+      yield ImportProgress(ImportStep.done, 1, 1, 'Setup Complete ✓');
+    } else if (needCore) {
+      // No vocab/morph needed but core might be — short-circuit the asset load
+      // ── Phase 2: Save user progress ───────────────────────────────────
+      List<Map<String, Object?>> savedBookmarks = [];
+      List<Map<String, Object?>> savedReading = [];
+      if (needCore) {
+        try {
+          savedBookmarks = await db.rawQuery(
+              'SELECT surah_id, ayah_number, created_at FROM bookmarks');
+          savedReading = await db.rawQuery(
+              'SELECT surah_id, last_ayah, last_read_at FROM reading_progress');
+        } catch (e) {
+          debugPrint('save surah progress: $e');
+        }
+      }
+
+      bool anyError = false;
+      String? errorMsg;
+
+      // ── Core ──────────────────────────────────────────────────────────
+      if (needCore) {
+        yield ImportProgress(ImportStep.surahs, 0, 1, 'Importing Surahs...');
+        try {
+          await db.execute('PRAGMA foreign_keys = OFF');
+          await db.transaction((txn) async {
+            await txn.delete('ayahs');
+            await txn.delete('surahs');
+            await SurahImporter(txn).run();
+            await AyahImporter(txn).run((_, __) {});
+            await _setVer(txn, 'v_core', _vCore);
+          });
+        } catch (e) {
+          anyError = true;
+          errorMsg = 'Core import failed: $e';
+        } finally {
+          await db.execute('PRAGMA foreign_keys = ON');
+        }
+        if (anyError) {
+          yield ImportProgress(ImportStep.error, 0, 1, errorMsg!,
+              error: errorMsg);
+          return;
+        }
+        yield ImportProgress(ImportStep.surahs, 1, 1, 'Surahs ✓');
+      }
+
+      // ── Translations ──────────────────────────────────────────────────
+      if (needTrans) {
+        yield ImportProgress(
+            ImportStep.translations, 0, 1, 'Importing Translations...');
+        try {
+          await db.transaction((txn) async {
+            await txn.delete('ayah_translations');
+            await TranslationImporter(txn).run();
+            await _setVer(txn, 'v_translation', _vTranslation);
+          });
+        } catch (e) {
+          debugPrint('Translation import warning: $e');
+        }
+        yield ImportProgress(ImportStep.translations, 1, 1, 'Translations ✓');
+      }
+
+      await db.insert('db_meta', {'key': 'content_version', 'value': '$_vVocab'},
+          conflictAlgorithm: ConflictAlgorithm.replace);
+      await db.insert(
+          'db_meta',
+          {
+            'key': 'import_completed_at',
+            'value': DateTime.now().toIso8601String()
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace);
+
+      if (needCore && (savedBookmarks.isNotEmpty || savedReading.isNotEmpty)) {
+        await _restoreSurah(db, savedBookmarks, savedReading);
+      }
+
+      yield ImportProgress(ImportStep.done, 1, 1, 'Setup Complete ✓');
+    } else {
+      // Nothing to import — mark completion
+      await db.insert('db_meta', {'key': 'content_version', 'value': '$_vVocab'},
+          conflictAlgorithm: ConflictAlgorithm.replace);
+      yield ImportProgress(ImportStep.done, 1, 1, 'Already up to date ✓');
+    }
   }
 
   static Future<void> _restoreVocab(
@@ -365,8 +486,7 @@ class DatabaseImporter {
     }
   }
 
-
-    // ── Index helpers ──────────────────────────────────────────────────────────
+  // ── Index helpers ──────────────────────────────────────────────────────────
   // Dropping indexes before bulk inserts then recreating after is much
   // faster than maintaining B-tree indexes on every row insert.
 
@@ -419,5 +539,4 @@ class DatabaseImporter {
       ON morphology_segments(root_id)
     ''');
   }
-  
 }

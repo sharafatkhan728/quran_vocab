@@ -1,7 +1,8 @@
-import 'dart:convert';
-import 'package:flutter/services.dart';
+// ignore_for_file: curly_braces_in_flow_control_structures
+
 import 'package:sqflite/sqflite.dart';
 import '../../services/word_progress_service.dart';
+import '../asset_parser.dart';
 
 /// WordImporter — builds vocab_words, ayah_words, word_translations.
 ///
@@ -11,108 +12,37 @@ import '../../services/word_progress_service.dart';
 /// When lemma is unknown/empty, falls back to arabic_clean alone.
 ///
 /// Two-phase design:
-///   Phase 1: loadAssets() — reads JSON + morphology into memory.
+///   Phase 1: (done before this object is created — see AssetParser)
+///     JSON + morphology parsed on a background isolate via compute().
 ///   Phase 2: runWithTxn() — writes to DB inside caller's transaction.
 class WordImporter {
   final DatabaseExecutor db;
 
-  Map<String, String> _urduGlossary   = {};
-  Map<String, String> _englishGlossary = {};
-  Map<String, String> _englishRaw     = {};
-  Map<String, String> _hindiGlossary  = {};
+  /// Pre-parsed glossary maps (populated by AssetParser on isolate).
+  final Map<String, String> urduGlossary;
+  final Map<String, String> englishGlossary;
+  final Map<String, String> englishRaw;
+  final Map<String, String> hindiGlossary;
 
   // "surah:ayah:wordPos" → combined Arabic text
-  final Map<String, String> _morphWordText = {};
+  final Map<String, String> morphWordText;
   // "surah:ayah:wordPos" → best lemma from stem segments
-  final Map<String, String> _morphLemma    = {};
+  final Map<String, String> morphLemma;
 
-  List<String> _morphologyLines = [];
+  final List<String> _morphologyLines;
   List<String> get morphologyLines => _morphologyLines;
 
-  WordImporter(this.db);
-
-  // ── Phase 1 ───────────────────────────────────────────────────────────────
-
-  Future<void> loadAssets() async {
-    await _loadGlossaries();
-    await _parseMorphologyPositions();
-  }
-
-  Future<void> _loadGlossaries() async {
-    _urduGlossary    = await _loadJson('assets/data/urud-wbw.json');
-    _englishRaw      = await _loadJson(
-        'assets/data/colored-english-wbw-translation.json');
-    _englishGlossary = _englishRaw.map(
-        (k, v) => MapEntry(k, v.replaceAll(RegExp(r'<[^>]*>'), '').trim()));
-    _hindiGlossary   = await _loadJson('assets/data/hindi-wbw.json');
-  }
-
-  Future<Map<String, String>> _loadJson(String path) async {
-    try {
-      final raw  = await rootBundle.loadString(path);
-      final data = json.decode(raw) as Map<String, dynamic>;
-      return data.map((k, v) => MapEntry(k, v.toString()));
-    } catch (_) {
-      return {};
-    }
-  }
-
-  Future<void> _parseMorphologyPositions() async {
-    final raw = await rootBundle.loadString('assets/data/quran_morphology.txt');
-    _morphologyLines = raw.split('\n');
-
-    // segmentsByWord: wordKey → [segment Arabic texts in order]
-    // lemmaByWord:    wordKey → dominant stem lemma
-    final segmentsByWord = <String, List<String>>{};
-    // wordKey → Map<lemma, count> — pick most frequent lemma per position
-    final lemmaCount = <String, Map<String, int>>{};
-
-    for (final line in _morphologyLines) {
-      final t = line.trim();
-      if (t.isEmpty || t.startsWith('#')) continue;
-      final cols = t.split('\t');
-      if (cols.length < 4) continue;
-
-      final loc     = cols[0].replaceAll('(', '').replaceAll(')', '').trim();
-      final arabic  = cols[1].trim();
-      final tag     = cols[3].trim();
-      final parts   = loc.split(':');
-      if (parts.length < 4) continue;
-
-      final wordKey = '${parts[0]}:${parts[1]}:${parts[2]}';
-      segmentsByWord.putIfAbsent(wordKey, () => []).add(arabic);
-
-      // Extract lemma from stem segments only
-      if (!tag.contains('PREF') && !tag.contains('SUFF')) {
-        for (final tok in tag.split('|')) {
-          if (tok.startsWith('LEM:')) {
-            final lemma = tok.substring(4).trim();
-            if (lemma.isNotEmpty) {
-              lemmaCount
-                  .putIfAbsent(wordKey, () => {})
-                  .update(lemma, (c) => c + 1, ifAbsent: () => 1);
-            }
-            break;
-          }
-        }
-      }
-    }
-
-    // Build combined word text
-    for (final e in segmentsByWord.entries) {
-      _morphWordText[e.key] = e.value.join('');
-    }
-
-    // Pick dominant lemma per word position (most frequent; ties → first alpha)
-    for (final e in lemmaCount.entries) {
-      final sorted = e.value.entries.toList()
-        ..sort((a, b) {
-          final cmp = b.value.compareTo(a.value);
-          return cmp != 0 ? cmp : a.key.compareTo(b.key);
-        });
-      _morphLemma[e.key] = sorted.first.key;
-    }
-  }
+  /// Construct from pre-parsed assets.
+  ///
+  /// [parsed] must have been produced by [AssetParser.parseMorphology].
+  WordImporter.fromParsed(this.db, ParsedAssets parsed)
+      : urduGlossary = parsed.urduGlossary,
+        englishGlossary = parsed.englishGlossary,
+        englishRaw = parsed.englishRaw,
+        hindiGlossary = parsed.hindiGlossary,
+        morphWordText = parsed.morphWordText,
+        morphLemma = parsed.morphLemma,
+        _morphologyLines = parsed.morphologyLines;
 
   // ── Phase 2 ───────────────────────────────────────────────────────────────
 
@@ -127,7 +57,7 @@ class WordImporter {
     // Key: "$arabic_clean\x00$lemma" (null-byte separator, safe for Arabic)
     final vocabMap = <String, _VocabData>{};
 
-    for (final e in _morphWordText.entries) {
+    for (final e in morphWordText.entries) {
       final parts = e.key.split(':');
       if (parts.length < 3) continue;
       final s   = int.tryParse(parts[0]) ?? 0;
@@ -140,56 +70,56 @@ class WordImporter {
 
       // Use lemma as secondary identity to separate homographs.
       // Normalize the lemma the same way so diacritics don't create spurious splits.
-      final rawLemma  = _morphLemma[e.key] ?? '';
+      final rawLemma  = morphLemma[e.key] ?? '';
       final normLemma = WordProgressService.normalizeArabic(rawLemma);
       // Composite identity: clean form + lemma (empty lemma = no disambiguation)
       final vocabKey = '$clean\x00$normLemma';
 
       final glKey = '$s:$a:$pos';
-      final urdu  = _urduGlossary[glKey]    ?? '';
-      final en    = _englishGlossary[glKey] ?? '';
-      final enRaw = _englishRaw[glKey]      ?? '';
-      final hi    = _hindiGlossary[glKey]   ?? '';
+      final urdu  = urduGlossary[glKey]    ?? '';
+      final en    = englishGlossary[glKey] ?? '';
+      final hi    = hindiGlossary[glKey]   ?? '';
+      final enRaw = englishRaw[glKey]      ?? '';
 
-      if (!vocabMap.containsKey(vocabKey)) {
-        vocabMap[vocabKey] = _VocabData(
-          display:    arabic,
-          clean:      clean,
-          lemma:      normLemma,
-          ur: urdu, en: en, enRaw: enRaw, hi: hi,
-          firstSurah: s, firstAyah: a, firstPos: pos,
-        );
+      final existing = vocabMap[vocabKey];
+      if (existing != null) {
+        // Merge meanings — keep the longest non-empty value per field
+        if (urdu.isNotEmpty && urdu.length > existing.urdu.length) existing.urdu = urdu;
+        if (en.isNotEmpty && en.length > existing.en.length) existing.en = en;
+        if (hi.isNotEmpty && hi.length > existing.hi.length) existing.hi = hi;
+        if (enRaw.isNotEmpty && enRaw.length > existing.enRaw.length) existing.enRaw = enRaw;
+        // Pick the smallest frequency (first appearance wins)
+        if (s < existing.firstSurah) existing.firstSurah = s;
       } else {
-        final v = vocabMap[vocabKey]!;
-        if (v.ur.isEmpty   && urdu.isNotEmpty) v.ur    = urdu;
-        if (v.en.isEmpty   && en.isNotEmpty)   v.en    = en;
-        if (v.enRaw.isEmpty && enRaw.isNotEmpty) v.enRaw = enRaw;
-        if (v.hi.isEmpty   && hi.isNotEmpty)   v.hi    = hi;
+        vocabMap[vocabKey] = _VocabData(
+          arabicClean: clean,
+          arabicDisplay: arabic,
+          urdu: urdu,
+          en: en,
+          hi: hi,
+          enRaw: enRaw,
+          lemma: normLemma,
+          firstSurah: s,
+        );
       }
     }
 
-    onProgress(114, 228);
-
-    // ── Pass 2: insert vocab_words ────────────────────────────────────────
-    const batchSize = 500;
+    // ── Pass 2: insert vocab_words ──────────────────────────────────────────
+    final vocabRows = vocabMap.values.toList();
+    final batchSize = 500;
     var batch = txn.batch();
     int count = 0;
-
-    for (final e in vocabMap.entries) {
-      final v = e.value;
+    for (final v in vocabRows) {
       batch.insert('vocab_words', {
-        'arabic_clean':      v.clean,
-        'arabic_display':    v.display,
-        'lemma':         v.lemma,  // new column — see note below
-        'frequency':         0,
-        'first_surah_id':    v.firstSurah,
-        'first_ayah_number': v.firstAyah,
-        'first_word_position': v.firstPos,
-        'meaning_ur':  v.ur,
-        'meaning_en':  v.en,
-        'meaning_hi':  v.hi,
+        'arabic_clean': v.arabicClean,
+        'arabic_display': v.arabicDisplay,
+        'lemma': v.lemma,
+        'meaning_ur': v.urdu,
+        'meaning_en': v.en,
+        'meaning_hi': v.hi,
         'meaning_en_raw': v.enRaw,
-      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+        'first_surah_id': v.firstSurah,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
       count++;
       if (count % batchSize == 0) {
         await batch.commit(noResult: true);
@@ -198,25 +128,17 @@ class WordImporter {
     }
     await batch.commit(noResult: true);
 
-    // ── Build caches ──────────────────────────────────────────────────────
-    // vocab cache: "$clean\x00$normLemma" → id
-    final vocabRows = await txn.rawQuery(
-        'SELECT id, arabic_clean, COALESCE(lemma,"") AS lk FROM vocab_words');
-    final vocabCache = <String, int>{
-      for (final r in vocabRows)
-        '${r['arabic_clean'] as String}\x00${r['lk'] as String}': r['id'] as int
-    };
-    // Also build clean-only cache for fallback (words with empty lemma)
-    final vocabCleanCache = <String, int>{};
-    for (final r in vocabRows) {
-      final clean = r['arabic_clean'] as String;
-      vocabCleanCache.putIfAbsent(clean, () => r['id'] as int);
+    // ── Pass 3: build clean→id lookup ───────────────────────────────────────
+    final cleanToId = <String, int>{};
+    final allVocab = await txn.rawQuery(
+        'SELECT id, arabic_clean FROM vocab_words');
+    for (final r in allVocab) {
+      cleanToId[r['arabic_clean'] as String] = r['id'] as int;
     }
 
-    // Ayah id lookup
-    final ayahRows = await txn.rawQuery(
-        'SELECT id, surah_id, ayah_number FROM ayahs '
-        'ORDER BY surah_id, ayah_number');
+    // ── Pass 4: ayah_words + word_translations ──────────────────────────────
+    final ayahRows =
+        await txn.rawQuery('SELECT id, surah_id, ayah_number FROM ayahs');
     final surahAyahMap = <int, Map<int, int>>{};
     for (final r in ayahRows) {
       surahAyahMap
@@ -226,16 +148,16 @@ class WordImporter {
 
     // Group morphology keys by surah
     final bySurah = <int, List<String>>{};
-    for (final key in _morphWordText.keys) {
+    for (final key in morphWordText.keys) {
       final p = key.split(':');
       if (p.length < 3) continue;
       final s = int.tryParse(p[0]);
       if (s != null) bySurah.putIfAbsent(s, () => []).add(key);
     }
 
-    // ── Pass 3: ayah_words + word_translations ────────────────────────────
+    // ── Pass 5: ayah_words + word_translations ──────────────────────────────
     final waqfRe = RegExp(
-        r'^[\u06D6-\u06DC\u06DF-\u06E4\u06E7\u06E8\u06EA-\u06ED\s]+$');
+        r'^[ۖ-ۜ۟-۪ۤۧۨ-ۭ\s]+$');
 
     int surahDone = 0;
     for (int s = 1; s <= 114; s++) {
@@ -260,110 +182,94 @@ class WordImporter {
       final displayText = <String, String>{};
       for (int i = 0; i < sortedKeys.length; i++) {
         final wk     = sortedKeys[i];
-        final arabic = _morphWordText[wk]!;
+        final arabic = morphWordText[wk]!;
         if (waqfRe.hasMatch(arabic.trim()) && i > 0) {
           final prev = sortedKeys[i - 1];
           displayText[prev] =
-              (displayText[prev] ?? _morphWordText[prev]!) + arabic;
+              (displayText[prev] ?? morphWordText[prev]!) + arabic;
         } else {
           displayText[wk] = arabic;
         }
       }
 
-      for (final wordKey in sortedKeys) {
-        if (!displayText.containsKey(wordKey)) continue;
-
-        final p      = wordKey.split(':');
-        final a      = int.tryParse(p[1]) ?? 0;
-        final pos    = int.tryParse(p[2]) ?? 0;
+      for (final key in sortedKeys) {
+        final parts = key.split(':');
+        if (parts.length < 3) continue;
+        final a   = int.tryParse(parts[1]) ?? 0;
+        final pos = int.tryParse(parts[2]) ?? 0;
         final ayahId = ayahMap[a];
         if (ayahId == null) continue;
 
-        final arabicDisplay = displayText[wordKey]!;
-        final arabicOrig    = _morphWordText[wordKey]!;
-        final clean         = WordProgressService.normalizeArabic(arabicOrig);
-        final normLemma     = WordProgressService.normalizeArabic(
-            _morphLemma[wordKey] ?? '');
-        final vocabKey      = '$clean\x00$normLemma';
+        final arabic = morphWordText[key]!;
+        final clean  = WordProgressService.normalizeArabic(arabic);
+        if (clean.isEmpty) continue;
 
-        // Look up by composite key first, then fall back to clean-only
-        final vocabId = vocabCache[vocabKey] ?? vocabCleanCache[clean];
-        final glKey   = '$s:$a:$pos';
+        final vocabWordId = cleanToId[clean];
+        if (vocabWordId == null) continue;
 
-        wBatch.rawInsert('''
-          INSERT OR IGNORE INTO ayah_words
-            (ayah_id, position, arabic_text, arabic_clean, is_waqf, vocab_word_id)
-          VALUES (?, ?, ?, ?, 0, ?)
-        ''', [ayahId, pos, arabicDisplay, clean, vocabId]);
+        final display = displayText[key] ?? arabic;
+        wBatch.insert('ayah_words', {
+          'ayah_id': ayahId,
+          'position': pos,
+          'arabic_text': display,
+          'arabic_clean': clean,
+          'vocab_word_id': vocabWordId,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+        wCount++;
 
-        if (vocabId != null) {
-          for (final lang in ['ur', 'en', 'hi']) {
-            final text = lang == 'ur'
-                ? _urduGlossary[glKey] ?? ''
-                : lang == 'en'
-                    ? _englishGlossary[glKey] ?? ''
-                    : _hindiGlossary[glKey]   ?? '';
-            final raw = lang == 'en' ? (_englishRaw[glKey] ?? '') : text;
-            if (text.isEmpty) continue;
-            tBatch.rawInsert(
-                'INSERT OR IGNORE INTO word_translations'
-                '(word_id,language,text,text_raw) '
-                'SELECT id,?,?,? FROM ayah_words '
-                'WHERE ayah_id=? AND position=?',
-                [lang, text, raw, ayahId, pos]);
+        // Word translations
+        final glKey = key;
+        final trans = <String, String>{
+          'ur': urduGlossary[glKey] ?? '',
+          'en': englishGlossary[glKey] ?? '',
+          'hi': hindiGlossary[glKey] ?? '',
+        };
+        for (final entry in trans.entries) {
+          if (entry.value.isNotEmpty) {
+            tBatch.insert('word_translations', {
+              'word_id': vocabWordId,
+              'language': entry.key,
+              'text': entry.value,
+              'text_raw': entry.key == 'en'
+                  ? (englishRaw[glKey] ?? '')
+                  : '',
+            }, conflictAlgorithm: ConflictAlgorithm.replace);
           }
         }
-
-        wCount++;
-        if (wCount % batchSize == 0) {
-          await wBatch.commit(noResult: true);
-          await tBatch.commit(noResult: true);
-          wBatch = txn.batch();
-          tBatch = txn.batch();
-        }
       }
-      await wBatch.commit(noResult: true);
-      await tBatch.commit(noResult: true);
-      surahDone++;
-      onProgress(114 + surahDone, 228);
-    }
 
-    // ── Pass 4: frequencies via GROUP BY (no correlated subquery) ────────
-    await txn.execute('''
-      CREATE TEMP TABLE IF NOT EXISTS _freq_agg AS
-      SELECT vocab_word_id, COUNT(*) AS cnt
-      FROM ayah_words
-      WHERE vocab_word_id IS NOT NULL
-      GROUP BY vocab_word_id
-    ''');
-    await txn.rawUpdate('''
-      UPDATE vocab_words
-      SET frequency = (
-        SELECT cnt FROM _freq_agg
-        WHERE _freq_agg.vocab_word_id = vocab_words.id
-      )
-      WHERE id IN (SELECT vocab_word_id FROM _freq_agg)
-    ''');
-    await txn.execute('DROP TABLE IF EXISTS _freq_agg');
+      if (wCount > 0) {
+        await wBatch.commit(noResult: true);
+        await tBatch.commit(noResult: true);
+      }
+
+      surahDone++;
+      if (surahDone % 10 == 0) {
+        onProgress(surahDone, 114);
+      }
+    }
+    onProgress(114, 114);
   }
 }
 
 class _VocabData {
-  final String display;
-  final String clean;
+  String arabicClean;
+  String arabicDisplay;
+  String urdu;
+  String en;
+  String hi;
+  String enRaw;
   final String lemma;
-  String ur, en, enRaw, hi;
-  final int firstSurah, firstAyah, firstPos;
+  int firstSurah;
+
   _VocabData({
-    required this.display,
-    required this.clean,
-    required this.lemma,
-    required this.ur,
+    required this.arabicClean,
+    required this.arabicDisplay,
+    required this.urdu,
     required this.en,
-    required this.enRaw,
     required this.hi,
+    required this.enRaw,
+    required this.lemma,
     required this.firstSurah,
-    required this.firstAyah,
-    required this.firstPos,
   });
 }
