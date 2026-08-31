@@ -83,11 +83,11 @@ class WordImporter {
 
       final existing = vocabMap[vocabKey];
       if (existing != null) {
-        // Merge meanings — keep the longest non-empty value per field
-        if (urdu.isNotEmpty && urdu.length > existing.urdu.length) existing.urdu = urdu;
-        if (en.isNotEmpty && en.length > existing.en.length) existing.en = en;
-        if (hi.isNotEmpty && hi.length > existing.hi.length) existing.hi = hi;
-        if (enRaw.isNotEmpty && enRaw.length > existing.enRaw.length) existing.enRaw = enRaw;
+        // Merge meanings — keep the first non-empty value per field (original behaviour)
+        if (existing.urdu.isEmpty && urdu.isNotEmpty) existing.urdu = urdu;
+        if (existing.en.isEmpty && en.isNotEmpty) existing.en = en;
+        if (existing.hi.isEmpty && hi.isNotEmpty) existing.hi = hi;
+        if (existing.enRaw.isEmpty && enRaw.isNotEmpty) existing.enRaw = enRaw;
         // Pick the smallest frequency (first appearance wins)
         if (s < existing.firstSurah) {
           existing.firstSurah = s;

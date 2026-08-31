@@ -5,7 +5,6 @@ import '../repositories/srs_repository.dart';
 import '../database/database_manager.dart';
 import 'word_glossary_service.dart';
 
-
 class WordProgressService {
   static String normalizeArabic(String text) =>
       text.replaceAll(RegExp(r'[\u064B-\u065F\u0670\u0640]'), '').trim();
