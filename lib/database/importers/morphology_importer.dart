@@ -300,9 +300,9 @@ class MorphologyImporter {
 
   Future<void> _seedPartsOfSpeech() async {
     final seedData = [
-      {'code': 'N', 'name_en': 'Noun', 'name_ur': 'اسم', 'color_hex': '#4CAF50'},
-      {'code': 'V', 'name_en': 'Verb', 'name_ur': 'فعل', 'color_hex': '#2196F3'},
-      {'code': 'P', 'name_en': 'Pronoun', 'name_ur': 'ضمیر', 'color_hex': '#FF9800'},
+      {'code': 'N', 'name_en': 'Noun', 'name_ur': 'اسم', 'color_hex': '#2196F3'},
+      {'code': 'V', 'name_en': 'Verb', 'name_ur': 'فعل', 'color_hex': '#F44336'},
+      {'code': 'P', 'name_en': 'Particle', 'name_ur': 'حرف', 'color_hex': '#4CAF50'},
       {'code': 'PREP', 'name_en': 'Preposition', 'name_ur': 'حرف جار', 'color_hex': '#9C27B0'},
       {'code': 'CONN', 'name_en': 'Conjunction', 'name_ur': 'حرف ربط', 'color_hex': '#F44336'},
       {'code': 'ADV', 'name_en': 'Adverb', 'name_ur': 'قید', 'color_hex': '#00BCD4'},
@@ -331,11 +331,17 @@ class MorphologyImporter {
   }
 
   Future<Map<String, int>> _buildWordIdMap() async {
-    final rows = await db.rawQuery(
-        'SELECT arabic_clean, id FROM ayah_words');
+    // Map "surahId:ayahNumber:position" → ayah_word.id
+    // This must match the key format used by quran_morphology.txt lines.
+    final rows = await db.rawQuery('''
+      SELECT aw.id, a.surah_id, a.ayah_number, aw.position
+      FROM ayah_words aw
+      JOIN ayahs a ON a.id = aw.ayah_id
+    ''');
     final map = <String, int>{};
     for (final r in rows) {
-      map[r['arabic_clean'] as String] = r['id'] as int;
+      final key = '${r['surah_id']}:${r['ayah_number']}:${r['position']}';
+      map[key] = r['id'] as int;
     }
     return map;
   }

@@ -89,7 +89,19 @@ class WordImporter {
         if (hi.isNotEmpty && hi.length > existing.hi.length) existing.hi = hi;
         if (enRaw.isNotEmpty && enRaw.length > existing.enRaw.length) existing.enRaw = enRaw;
         // Pick the smallest frequency (first appearance wins)
-        if (s < existing.firstSurah) existing.firstSurah = s;
+        if (s < existing.firstSurah) {
+          existing.firstSurah = s;
+          existing.firstAyah = a;
+          existing.firstPos = pos;
+        } else if (s == existing.firstSurah) {
+          // Same surah — pick smallest ayah, then smallest position
+          if (a < existing.firstAyah) {
+            existing.firstAyah = a;
+            existing.firstPos = pos;
+          } else if (a == existing.firstAyah && pos < existing.firstPos) {
+            existing.firstPos = pos;
+          }
+        }
       } else {
         vocabMap[vocabKey] = _VocabData(
           arabicClean: clean,
@@ -100,6 +112,8 @@ class WordImporter {
           enRaw: enRaw,
           lemma: normLemma,
           firstSurah: s,
+          firstAyah: a,
+          firstPos: pos,
         );
       }
     }
@@ -119,6 +133,8 @@ class WordImporter {
         'meaning_hi': v.hi,
         'meaning_en_raw': v.enRaw,
         'first_surah_id': v.firstSurah,
+        'first_ayah_number': v.firstAyah,
+        'first_word_position': v.firstPos,
       }, conflictAlgorithm: ConflictAlgorithm.replace);
       count++;
       if (count % batchSize == 0) {
@@ -217,7 +233,8 @@ class WordImporter {
         }, conflictAlgorithm: ConflictAlgorithm.replace);
         wCount++;
 
-        // Word translations
+        // Word translations — use ayah_words.id (not vocab_word_id)
+        // as word_id, matching the schema: word_id REFERENCES ayah_words(id).
         final glKey = key;
         final trans = <String, String>{
           'ur': urduGlossary[glKey] ?? '',
@@ -226,14 +243,10 @@ class WordImporter {
         };
         for (final entry in trans.entries) {
           if (entry.value.isNotEmpty) {
-            tBatch.insert('word_translations', {
-              'word_id': vocabWordId,
-              'language': entry.key,
-              'text': entry.value,
-              'text_raw': entry.key == 'en'
-                  ? (englishRaw[glKey] ?? '')
-                  : '',
-            }, conflictAlgorithm: ConflictAlgorithm.replace);
+            tBatch.rawInsert(
+              'INSERT OR IGNORE INTO word_translations(word_id,language,text,text_raw) '
+              'SELECT id,?,?,? FROM ayah_words WHERE ayah_id=? AND position=?',
+              [entry.key, entry.value, entry.key == 'en' ? (englishRaw[glKey] ?? '') : '', ayahId, pos]);
           }
         }
       }
@@ -272,6 +285,8 @@ class _VocabData {
   String enRaw;
   final String lemma;
   int firstSurah;
+  int firstAyah;
+  int firstPos;
 
   _VocabData({
     required this.arabicClean,
@@ -282,5 +297,7 @@ class _VocabData {
     required this.enRaw,
     required this.lemma,
     required this.firstSurah,
+    required this.firstAyah,
+    required this.firstPos,
   });
 }

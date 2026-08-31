@@ -119,7 +119,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                 ),
               ),
               title: const Text('Profile & Settings',
-                  style: TextStyle(fontSize: 14)),
+                  style: TextStyle(fontSize: 14, color: Colors.white)),
             ),
           ),
           SliverToBoxAdapter(
