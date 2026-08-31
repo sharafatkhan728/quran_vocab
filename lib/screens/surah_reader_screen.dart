@@ -149,7 +149,7 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
     }
 
     _loadAllTranslations();
-    await _loadWordsAll(ayahRows);
+    await _loadWordsProgressively(ayahRows);
   }
 
   Future<void> _loadKnownWords() async {
@@ -182,58 +182,51 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
     });
   }
 
-  /// Loads words, translations, and morphology for every ayah in the surah
-  /// using three parallel batch queries (one per table) instead of ~3N
-  /// per-ayah queries. Results are grouped in Dart and set in a single setState.
-  Future<void> _loadWordsAll(List<AyahRow> ayahRows) async {
-    if (!mounted) return;
+  Future<void> _loadWordsProgressively(List<AyahRow> ayahRows) async {
+    const batchSize = 5;
+    for (int i = 0; i < ayahRows.length; i += batchSize) {
+      if (!mounted) return;
+      final end = (i + batchSize).clamp(0, ayahRows.length);
+      final batch = ayahRows.sublist(i, end);
 
-    final ayahIds = ayahRows.map((a) => a.id).toList();
-    if (ayahIds.isEmpty) return;
-
-    // Three independent batch queries — no per-ayah round-trips.
-    final results = await Future.wait([
-      ContentRepository.getWordsForSurah(widget.surah.id),
-      ContentRepository.getWordTranslationsForSurah(widget.surah.id, _selectedLang),
-      ContentRepository.getSegmentsForSurah(widget.surah.id),
-    ]);
-
-    if (!mounted) return;
-
-    final wordRowsByAyah = results[0] as Map<int, List<AyahWordRow>>;
-    final translationsByAyah = results[1] as Map<int, Map<int, WordTranslationRow>>;
-    final segmentsByAyah = results[2] as Map<int, Map<int, List<MorphSegmentRow>>>;
-
-    final learning = context.read<LearningStateProvider>();
-
-    // Build the full cache in one pass.
-    final built = <int, List<QuranWord>>{};
-    for (final ayah in ayahRows) {
-      final wordRows = wordRowsByAyah[ayah.id] ?? [];
-      final translations = translationsByAyah[ayah.id] ?? {};
-      final morphSegments = segmentsByAyah[ayah.id] ?? {};
-
-      final words = <QuranWord>[];
-      for (final wr in wordRows) {
-        final meaning = translations[wr.id]?.text ?? '';
-        final segRows = morphSegments[wr.id] ?? [];
-        final segments = segRows.map(WordSegment.fromRow).toList();
-        final normalized = WordProgressService.normalizeArabic(wr.arabicText);
-
-        words.add(QuranWord(
-          id: '${widget.surah.id}:${ayah.ayahNumber}:${wr.position}',
-          arabic: wr.arabicText,
-          urduMeaning: meaning,
-          isKnown: learning.isKnown(normalized),
-          isWaqf: wr.isWaqf == 1,
-          segments: segments,
-        ));
+      final Map<int, List<QuranWord>> built = {};
+      for (final ayah in batch) {
+        built[ayah.ayahNumber] = await _buildWordsForAyah(ayah);
       }
-      built[ayah.ayahNumber] = words;
-    }
 
-    if (!mounted) return;
-    setState(() => _ayahCache.addAll(built));
+      if (!mounted) return;
+      setState(() => _ayahCache.addAll(built));
+      await Future.delayed(Duration.zero);
+    }
+  }
+
+  /// Builds word list from SQLite ayah_words table.
+  /// Morphology positions match the glossary keys exactly — no split() mismatch.
+  Future<List<QuranWord>> _buildWordsForAyah(AyahRow ayah) async {
+    final wordRows = await ContentRepository.getWordsForAyah(ayah.id);
+    final translations = await ContentRepository.getWordTranslationsForAyah(
+        ayah.id, _selectedLang);
+    final morphSegments = await ContentRepository.getSegmentsForAyah(ayah.id);
+
+    final result = <QuranWord>[];
+    for (final wr in wordRows) {
+      final meaning = translations[wr.id]?[_selectedLang]?.text ?? '';
+      final segRows = morphSegments[wr.id] ?? [];
+      final segments = segRows.map(WordSegment.fromRow).toList();
+      final normalized = WordProgressService.normalizeArabic(wr.arabicText);
+
+      if (!mounted) break;
+      final learning = context.read<LearningStateProvider>();
+      result.add(QuranWord(
+        id: '${widget.surah.id}:${ayah.ayahNumber}:${wr.position}',
+        arabic: wr.arabicText,
+        urduMeaning: meaning,
+        isKnown: learning.isKnown(normalized),
+        isWaqf: wr.isWaqf == 1,
+        segments: segments,
+      ));
+    }
+    return result;
   }
 
   Future<void> _reloadWithNewLanguage() async {
@@ -261,7 +254,7 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
     setState(() => _totalAyahs = ayahRows.length);
 
     _loadAllTranslations();
-    await _loadWordsAll(ayahRows);
+    await _loadWordsProgressively(ayahRows);
 
     // Restore scroll position after words are loaded
     if (savedAyah > 0 && mounted) {
