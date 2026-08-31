@@ -248,6 +248,17 @@ class WordImporter {
         onProgress(surahDone, 114);
       }
     }
+    // Calculate frequency for every vocab word: count its non-waqf
+    // occurrences across ayah_words.  Without this the vocabulary screen
+    // shows "0×" for every word and overall progress is always 0.0%.
+    await txn.rawUpdate('''
+      UPDATE vocab_words
+      SET frequency = (
+        SELECT COUNT(*) FROM ayah_words
+        WHERE ayah_words.vocab_word_id = vocab_words.id
+          AND ayah_words.is_waqf = 0
+      )
+    ''');
     onProgress(114, 114);
   }
 }

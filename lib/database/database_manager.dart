@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
@@ -326,5 +329,33 @@ class DatabaseManager {
   static Future<void> close() async {
     await _db?.close();
     _db = null;
+  }
+
+  // ── DB corruption guard ──────────────────────────────────────────────────
+  // Emulators sometimes ship a SQLite without FTS5 / WAL support.
+  // If the DB file is corrupted we delete it so the importer rebuilds from
+  // assets on next launch, preserving known_words and srs_cards.
+
+  static Future<bool> isDbCorrupted() async {
+    final dbPath = join(await getDatabasesPath(), 'quran.db');
+    try {
+      final db = await openDatabase(dbPath);
+      final result = await db.rawQuery('PRAGMA integrity_check');
+      await db.close();
+      final check = (result.first['check'] as String?) ?? '';
+      return check.toLowerCase() != 'ok';
+    } catch (_) {
+      return true;
+    }
+  }
+
+  static Future<void> deleteCorruptedDb() async {
+    final dbPath = join(await getDatabasesPath(), 'quran.db');
+    for (final suffix in ['', '-wal', '-shm']) {
+      final f = File(dbPath + suffix);
+      if (await f.exists()) await f.delete();
+    }
+    _db = null;
+    debugPrint('deleteCorruptedDb: deleted $dbPath (+ sidecars)');
   }
 }
