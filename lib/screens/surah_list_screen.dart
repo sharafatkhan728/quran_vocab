@@ -134,8 +134,18 @@ class _SurahListScreenState extends State<SurahListScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.bug_report),
-            onPressed: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const DbDebugScreen())),
+            onPressed: () async {
+              final entered = await showDialog<String>(
+                context: context,
+                builder: (ctx) => _DbPinDialog(),
+              );
+              if (entered == '2525' && mounted) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const DbDebugScreen()),
+                );
+              }
+            },
           ),
           IconButton(
             icon: const Icon(Icons.bar_chart),
@@ -654,6 +664,62 @@ class _FlashcardEntryButtonState extends State<_FlashcardEntryButton>
           ),
         ),
       ),
+    );
+  }
+}
+
+// ── Simple PIN gate for the debug screen ──────────────────────────────────────
+class _DbPinDialog extends StatefulWidget {
+  const _DbPinDialog();
+  @override
+  State<_DbPinDialog> createState() => _DbPinDialogState();
+}
+
+class _DbPinDialogState extends State<_DbPinDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Debug Access'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('Enter the secret code to continue.'),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _controller,
+            keyboardType: const TextInputType.numberWithOptions(signed: true),
+            maxLength: 4,
+            autofocus: true,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 22, letterSpacing: 12),
+            decoration: const InputDecoration(
+              counterText: '',
+              border: OutlineInputBorder(),
+              labelText: '4-digit code',
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            Navigator.pop(context, _controller.text);
+          },
+          child: const Text('Unlock'),
+        ),
+      ],
     );
   }
 }

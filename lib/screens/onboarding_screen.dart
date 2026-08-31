@@ -114,12 +114,12 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     // WBW language
     await WordGlossaryService.setLanguage(_wbwLang);
 
-    // Translation language
+    // Translation language — keys must match TranslationService.scholars map
     final scholarKey = _translationLang == 'en'
-        ? 'khan'
+        ? 'en.sahihintl'
         : _translationLang == 'hi'
-            ? 'hindi'
-            : 'fateh';
+            ? 'hi.azizulhaque'
+            : 'ur.bayanulquran';
     await TranslationService.setScholar(scholarKey);
 
     // Daily goal

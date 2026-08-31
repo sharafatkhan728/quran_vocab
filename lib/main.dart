@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'providers/theme_provider.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'providers/user_provider.dart';
 import 'providers/display_provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -36,6 +37,12 @@ void _initNotifications() {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
+
+  // ── Firebase App Check — required because the project has it enabled ─
+  await FirebaseAppCheck.instance.activate(
+    androidProvider: AndroidProvider.playIntegrity,
+    // Web uses reCAPTCHA v3 by default; iOS uses DeviceCheck.
+  );
 
   // ── Crash reporting (must be first so all subsequent errors are captured) ─
   await CrashlyticsService.init();

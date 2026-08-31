@@ -3,6 +3,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:io';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -28,6 +32,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   static const _teal = Color(0xFF2D6A4F);
 
   String _appVersion = '';
+  bool _isUploadingPhoto = false;
 
   @override
   void initState() {
@@ -91,17 +96,30 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                                   )
                                 : null,
                           ),
-                          Positioned(
-                            bottom: 0,
-                            right: 0,
-                            child: Container(
-                              padding: const EdgeInsets.all(4),
-                              decoration: const BoxDecoration(
-                                  color: _gold, shape: BoxShape.circle),
-                              child: const Icon(Icons.edit,
-                                  size: 14, color: _green),
+                          if (_isUploadingPhoto)
+                            const Positioned(
+                              bottom: 0,
+                              right: 0,
+                              child: SizedBox(
+                                width: 28,
+                                height: 28,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.5,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            )
+                          else
+                            GestureDetector(
+                              onTap: () => _pickAndUploadPhoto(),
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: const BoxDecoration(
+                                    color: _gold, shape: BoxShape.circle),
+                                child: const Icon(Icons.edit,
+                                    size: 14, color: _green),
+                              ),
                             ),
-                          ),
                         ],
                       ),
                       const SizedBox(height: 10),
@@ -972,6 +990,95 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('instagram.com/qurankalima')));
       }
+    }
+  }
+
+  /// Picks a photo from camera or gallery, uploads to Firebase Storage,
+  /// then updates the user's photoURL in both Firebase Auth and Firestore.
+  Future<void> _pickAndUploadPhoto() async {
+    if (_isUploadingPhoto) return;
+
+    final source = await showDialog<ImageSource>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Choose Photo'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, ImageSource.camera),
+            child: const Row(
+              children: [Icon(Icons.camera_alt, color: Colors.blue), SizedBox(width: 12), Text('Camera')],
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, ImageSource.gallery),
+            child: const Row(
+              children: [Icon(Icons.photo_library, color: Colors.green), SizedBox(width: 12), Text('Gallery')],
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, null),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (source == null) return;
+
+    setState(() => _isUploadingPhoto = true);
+    try {
+      final picked = await ImagePicker().pickImage(
+        source: source,
+        maxWidth: 800,
+        maxHeight: 800,
+        imageQuality: 80,
+      );
+      if (picked == null) return;
+
+      final ext = picked.path.split('.').last.toLowerCase();
+      final safeExt = ext == 'jpeg' ? 'jpg' : ext;
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) throw Exception('Not logged in');
+
+      final ref = FirebaseStorage.instance
+          .ref()
+          .child('profile_photos')
+          .child('$uid.$safeExt');
+      await ref.putFile(
+        File(picked.path),
+        SettableMetadata(contentType: 'image/$safeExt'),
+      );
+      final downloadUrl = await ref.getDownloadURL();
+
+      // Update Firebase Auth profile
+      await FirebaseAuth.instance.currentUser?.updatePhotoURL(downloadUrl);
+
+      // Update Firestore profile
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .set({'photoUrl': downloadUrl}, SetOptions(merge: true));
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Profile photo updated'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        String msg = e.toString();
+        if (msg.contains('storage/not-allowed')) {
+          msg = 'Storage permission denied. Check Firebase Console.';
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUploadingPhoto = false);
     }
   }
 
