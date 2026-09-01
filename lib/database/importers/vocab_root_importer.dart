@@ -1,147 +1,156 @@
 import 'package:sqflite/sqflite.dart';
 
+/// VocabRootImporter — assigns root_id, pos_id, and lemma to vocab_words
+/// using a majority-vote across morphology segments.
+///
+/// Optimized approach: builds indexed temp tables with ROW_NUMBER() to pick
+/// the best root/pos/lemma per vocab word in a single set-based pass,
+/// then UPDATEs vocab_words via JOIN instead of correlated subqueries.
 class VocabRootImporter {
   final DatabaseExecutor db;
   VocabRootImporter(this.db);
 
   Future<void> run() async {
-    // ── Fix: use majority-vote root instead of LIMIT 1 (arbitrary) ──────────
-    //
-    // A vocab_word can appear in many ayahs. Each occurrence has morphology
-    // segments. The same normalized arabic_clean can theoretically have
-    // different roots across occurrences (rare but real — e.g. homographs).
-    // LIMIT 1 with no ORDER BY returns an arbitrary row.
-    //
-    // Fix: pick the root_id that appears MOST FREQUENTLY across all
-    // morphology segments for that vocab word. This is the statistically
-    // correct root for that word form.
-
-    // Step 1: build a frequency table of (vocab_word_id, root_id) pairs
+    // ── Step 1: Build indexed root frequency temp table ─────────────────────
+    // ROW_NUMBER() picks the root_id with highest frequency per vocab_word,
+    // ties broken by root_id DESC (deterministic, same as original).
     await db.execute('''
-      CREATE TEMP TABLE IF NOT EXISTS _root_freq AS
-      SELECT
-        aw.vocab_word_id,
-        ms.root_id,
-        COUNT(*) AS freq
-      FROM morphology_segments ms
-      JOIN ayah_words aw ON aw.id = ms.word_id
-      WHERE ms.segment_type = 'stem'
-        AND ms.root_id IS NOT NULL
-        AND aw.vocab_word_id IS NOT NULL
-      GROUP BY aw.vocab_word_id, ms.root_id
-    ''');
-
-    // Step 2: for each vocab_word, pick the root_id with highest frequency
-    // (ties broken by root_id DESC — deterministic)
-    await db.execute('''
-      CREATE TEMP TABLE IF NOT EXISTS _best_root AS
-      SELECT vocab_word_id, root_id
-      FROM _root_freq r1
-      WHERE freq = (
-        SELECT MAX(freq) FROM _root_freq r2
-        WHERE r2.vocab_word_id = r1.vocab_word_id
+      CREATE TEMP TABLE _root_best (
+        vocab_word_id INTEGER,
+        root_id       INTEGER,
+        rn            INTEGER
       )
-      GROUP BY vocab_word_id
-      HAVING MAX(root_id)
     ''');
+    await db.execute('''
+      INSERT INTO _root_best (vocab_word_id, root_id, rn)
+      SELECT vocab_word_id, root_id,
+             ROW_NUMBER() OVER (
+               PARTITION BY vocab_word_id
+               ORDER BY freq DESC, root_id DESC
+             ) AS rn
+      FROM (
+        SELECT
+          aw.vocab_word_id,
+          ms.root_id,
+          COUNT(*) AS freq
+        FROM morphology_segments ms
+        JOIN ayah_words aw ON aw.id = ms.word_id
+        WHERE ms.segment_type = 'stem'
+          AND ms.root_id IS NOT NULL
+          AND aw.vocab_word_id IS NOT NULL
+        GROUP BY aw.vocab_word_id, ms.root_id
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS _idx_root_best ON _root_best(vocab_word_id)');
 
-    // Step 3: apply best root to vocab_words
+    // ── Step 2: Apply root_id via JOIN UPDATE ───────────────────────────────
     await db.execute('''
       UPDATE vocab_words
       SET root_id = (
-        SELECT root_id FROM _best_root
-        WHERE _best_root.vocab_word_id = vocab_words.id
+        SELECT root_id FROM _root_best
+        WHERE _root_best.vocab_word_id = vocab_words.id
+          AND _root_best.rn = 1
       )
       WHERE EXISTS (
-        SELECT 1 FROM _best_root
-        WHERE _best_root.vocab_word_id = vocab_words.id
+        SELECT 1 FROM _root_best
+        WHERE _root_best.vocab_word_id = vocab_words.id
+          AND _root_best.rn = 1
       )
     ''');
 
+    // ── Step 3: Build indexed pos frequency temp table ──────────────────────
     await db.execute('''
-      UPDATE vocab_words
-      SET root_id = (
-      SELECT
-        aw.vocab_word_id,
-        ms.pos_id,
-        COUNT(*) AS freq
-      FROM morphology_segments ms
-      JOIN ayah_words aw ON aw.id = ms.word_id
-      WHERE ms.segment_type = 'stem'
-        AND ms.pos_id IS NOT NULL
-        AND aw.vocab_word_id IS NOT NULL
-      GROUP BY aw.vocab_word_id, ms.pos_id
-    ''');
-
-    await db.execute('''
-      CREATE TEMP TABLE IF NOT EXISTS _best_pos AS
-      SELECT vocab_word_id, pos_id
-      FROM _pos_freq p1
-      WHERE freq = (
-        SELECT MAX(freq) FROM _pos_freq p2
-        WHERE p2.vocab_word_id = p1.vocab_word_id
+      CREATE TEMP TABLE _pos_best (
+        vocab_word_id INTEGER,
+        pos_id        INTEGER,
+        rn            INTEGER
       )
-      GROUP BY vocab_word_id
-      HAVING MAX(pos_id)
     ''');
+    await db.execute('''
+      INSERT INTO _pos_best (vocab_word_id, pos_id, rn)
+      SELECT vocab_word_id, pos_id,
+             ROW_NUMBER() OVER (
+               PARTITION BY vocab_word_id
+               ORDER BY freq DESC, pos_id DESC
+             ) AS rn
+      FROM (
+        SELECT
+          aw.vocab_word_id,
+          ms.pos_id,
+          COUNT(*) AS freq
+        FROM morphology_segments ms
+        JOIN ayah_words aw ON aw.id = ms.word_id
+        WHERE ms.segment_type = 'stem'
+          AND ms.pos_id IS NOT NULL
+          AND aw.vocab_word_id IS NOT NULL
+        GROUP BY aw.vocab_word_id, ms.pos_id
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS _idx_pos_best ON _pos_best(vocab_word_id)');
 
+    // ── Step 4: Apply pos_id via JOIN UPDATE ────────────────────────────────
     await db.execute('''
       UPDATE vocab_words
       SET pos_id = (
-        SELECT pos_id FROM _best_pos
-        WHERE _best_pos.vocab_word_id = vocab_words.id
+        SELECT pos_id FROM _pos_best
+        WHERE _pos_best.vocab_word_id = vocab_words.id
+          AND _pos_best.rn = 1
       )
       WHERE EXISTS (
-        SELECT 1 FROM _best_pos
-        WHERE _best_pos.vocab_word_id = vocab_words.id
+        SELECT 1 FROM _pos_best
+        WHERE _pos_best.vocab_word_id = vocab_words.id
+          AND _pos_best.rn = 1
       )
     ''');
 
+    // ── Step 5: Build indexed lemma frequency temp table ────────────────────
     await db.execute('''
-      UPDATE vocab_words
-      SET pos_id = (
-      SELECT
-        aw.vocab_word_id,
-        ms.lemma,
-        COUNT(*) AS freq
-      FROM morphology_segments ms
-      JOIN ayah_words aw ON aw.id = ms.word_id
-      WHERE ms.segment_type = 'stem'
-        AND ms.lemma != ''
-        AND aw.vocab_word_id IS NOT NULL
-      GROUP BY aw.vocab_word_id, ms.lemma
-    ''');
-
-    await db.execute('''
-      CREATE TEMP TABLE IF NOT EXISTS _best_lemma AS
-      SELECT vocab_word_id, lemma
-      FROM _lemma_freq l1
-      WHERE freq = (
-        SELECT MAX(freq) FROM _lemma_freq l2
-        WHERE l2.vocab_word_id = l1.vocab_word_id
+      CREATE TEMP TABLE _lemma_best (
+        vocab_word_id INTEGER,
+        lemma         TEXT,
+        rn            INTEGER
       )
-      GROUP BY vocab_word_id
-      HAVING MAX(lemma)
     ''');
+    await db.execute('''
+      INSERT INTO _lemma_best (vocab_word_id, lemma, rn)
+      SELECT vocab_word_id, lemma,
+             ROW_NUMBER() OVER (
+               PARTITION BY vocab_word_id
+               ORDER BY freq DESC, lemma DESC
+             ) AS rn
+      FROM (
+        SELECT
+          aw.vocab_word_id,
+          ms.lemma,
+          COUNT(*) AS freq
+        FROM morphology_segments ms
+        JOIN ayah_words aw ON aw.id = ms.word_id
+        WHERE ms.segment_type = 'stem'
+          AND ms.lemma != ''
+          AND aw.vocab_word_id IS NOT NULL
+        GROUP BY aw.vocab_word_id, ms.lemma
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS _idx_lemma_best ON _lemma_best(vocab_word_id)');
 
+    // ── Step 6: Apply lemma via JOIN UPDATE ─────────────────────────────────
     await db.execute('''
       UPDATE vocab_words
       SET lemma = (
-        SELECT lemma FROM _best_lemma
-        WHERE _best_lemma.vocab_word_id = vocab_words.id
+        SELECT lemma FROM _lemma_best
+        WHERE _lemma_best.vocab_word_id = vocab_words.id
+          AND _lemma_best.rn = 1
       )
       WHERE EXISTS (
-        SELECT 1 FROM _best_lemma
-        WHERE _best_lemma.vocab_word_id = vocab_words.id
+        SELECT 1 FROM _lemma_best
+        WHERE _lemma_best.vocab_word_id = vocab_words.id
+          AND _lemma_best.rn = 1
       )
     ''');
 
-    // Step 6: clean up temp tables
-    await db.execute('DROP TABLE IF EXISTS _root_freq');
-    await db.execute('DROP TABLE IF EXISTS _best_root');
-    await db.execute('DROP TABLE IF EXISTS _pos_freq');
-    await db.execute('DROP TABLE IF EXISTS _best_pos');
-    await db.execute('DROP TABLE IF EXISTS _lemma_freq');
-    await db.execute('DROP TABLE IF EXISTS _best_lemma');
+    // ── Step 7: Clean up temp tables ────────────────────────────────────────
+    await db.execute('DROP TABLE IF EXISTS _root_best');
+    await db.execute('DROP TABLE IF EXISTS _pos_best');
+    await db.execute('DROP TABLE IF EXISTS _lemma_best');
   }
 }

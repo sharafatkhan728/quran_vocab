@@ -147,12 +147,22 @@ class WordImporter {
     await batch.commit(noResult: true);
 
 
-    // ── Pass 3: build clean→id lookup ───────────────────────────────────────
+    // ── Pass 3: build clean→id lookup + (ayah_id,position)→id lookup ────────
     final cleanToId = <String, int>{};
     final allVocab = await txn.rawQuery(
         'SELECT id, arabic_clean FROM vocab_words');
     for (final r in allVocab) {
       cleanToId[r['arabic_clean'] as String] = r['id'] as int;
+    }
+
+    // Build (ayah_id, position) → ayah_words.id map for fast Pass5 lookups.
+    // Replaces ~231K correlated subqueries with O(1) map lookups.
+    final wordIdMap = <String, int>{};
+    final ayahWordRows = await txn.rawQuery(
+        'SELECT id, ayah_id, position FROM ayah_words');
+    for (final r in ayahWordRows) {
+      final key = '${r['ayah_id']}:${r['position']}';
+      wordIdMap[key] = r['id'] as int;
     }
 
 
@@ -240,17 +250,23 @@ class WordImporter {
         // Word translations — use ayah_words.id (not vocab_word_id)
         // as word_id, matching the schema: word_id REFERENCES ayah_words(id).
         final glKey = key;
-        final trans = <String, String>{
-          'ur': urduGlossary[glKey] ?? '',
-          'en': englishGlossary[glKey] ?? '',
-          'hi': hindiGlossary[glKey] ?? '',
-        };
-        for (final entry in trans.entries) {
-          if (entry.value.isNotEmpty) {
-            tBatch.rawInsert(
-              'INSERT OR IGNORE INTO word_translations(word_id,language,text,text_raw) '
-              'SELECT id,?,?,? FROM ayah_words WHERE ayah_id=? AND position=?',
-              [entry.key, entry.value, entry.key == 'en' ? (englishRaw[glKey] ?? '') : '', ayahId, pos]);
+        final waKey = '$ayahId:$pos';
+        final awId = wordIdMap[waKey];
+        if (awId != null) {
+          final trans = <String, String>{
+            'ur': urduGlossary[glKey] ?? '',
+            'en': englishGlossary[glKey] ?? '',
+            'hi': hindiGlossary[glKey] ?? '',
+          };
+          for (final entry in trans.entries) {
+            if (entry.value.isNotEmpty) {
+              tBatch.insert('word_translations', {
+                'word_id': awId,
+                'language': entry.key,
+                'text': entry.value,
+                'text_raw': entry.key == 'en' ? (englishRaw[glKey] ?? '') : '',
+              }, conflictAlgorithm: ConflictAlgorithm.ignore);
+            }
           }
         }
       }

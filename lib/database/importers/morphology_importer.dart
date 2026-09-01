@@ -11,23 +11,23 @@ import 'package:sqflite/sqflite.dart';
 ///     the caller (database_importer) can skip re-reading the 6 MB file.
 class MorphologyImporter {
   final DatabaseExecutor db;
-  final Map<String, int> _posCache = {};
-  final Map<String, int> _rootCache = {};
+  // In-memory maps: key → id (built once before the main loop)
+  final Map<String, int> _rootMap = {};
+  final Map<String, int> _posMap = {};
 
   MorphologyImporter(this.db);
 
   Future<void> run(void Function(int done, int total) onProgress) async {
     await _seedPartsOfSpeech();
-
-    // Pre-load entire ayah_words table into memory
-    // Map: "surahId:ayahNumber:position" → ayah_word.id
     final wordIdMap = await _buildWordIdMap();
+    await _preloadMaps();
 
     final raw = await rootBundle.loadString('assets/data/quran_morphology.txt');
     final lines = raw.split('\n');
     final total = lines.length;
-    const batchSize = 1000;
-    var batch = db.batch();
+    final pendingRows = <Map<String, dynamic>>[];
+    final newRoots = <String>[];
+    final newPosCodes = <String>[];
     int count = 0;
 
     for (final line in lines) {
@@ -116,10 +116,26 @@ class MorphologyImporter {
       }
 
       int? rootId;
-      if (root.isNotEmpty) rootId = await _getOrCreateRoot(root);
-      final posId = await _getPosId(effectivePosCode);
+      if (root.isNotEmpty) {
+        rootId = _rootMap[root];
+        if (rootId == null) {
+          newRoots.add(root);
+          _rootMap[root] = -1;
+        }
+      }
+      int? posId;
+      if (effectivePosCode.isEmpty) {
+        posId = 1;
+      } else {
+        posId = _posMap[effectivePosCode];
+        if (posId == null) {
+          newPosCodes.add(effectivePosCode);
+          _posMap[effectivePosCode] = -1;
+          posId = 1; // temporary; corrected after bulk insert
+        }
+      }
 
-      batch.insert('morphology_segments', {
+      pendingRows.add({
         'word_id': wordId,
         'segment_number': segNum,
         'segment_type': segType,
@@ -136,29 +152,59 @@ class MorphologyImporter {
         'state': state,
         'verb_form': verbForm,
         'raw_tag': tag,
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      });
 
       count++;
-      if (count % batchSize == 0) {
-        await batch.commit(noResult: true);
-        batch = db.batch();
-      }
-
       if (count % 10000 == 0) {
         onProgress(count, total);
       }
     }
-    await batch.commit(noResult: true);
+
+    // Bulk-insert new roots and POS codes so IDs are real before segment inserts
+    if (newRoots.isNotEmpty) {
+      var rb = db.batch();
+      for (final r in newRoots) {
+        rb.insert('roots', {'arabic': r},
+            conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await rb.commit(noResult: true);
+      await _reloadRoots();
+    }
+    if (newPosCodes.isNotEmpty) {
+      var pb = db.batch();
+      for (final code in newPosCodes) {
+        pb.insert('parts_of_speech', {
+          'code': code,
+          'name_en': code,
+          'name_ur': code,
+          'color_hex': '#888888',
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await pb.commit(noResult: true);
+      await _reloadPos();
+    }
+
+    // Now insert all morphology segments with correct IDs, batched at 1000
+    const batchSize = 1000;
+    var batch = db.batch();
+    int batchCount = 0;
+    for (final row in pendingRows) {
+      batch.insert('morphology_segments', row,
+          conflictAlgorithm: ConflictAlgorithm.replace);
+      batchCount++;
+      if (batchCount >= batchSize) {
+        await batch.commit(noResult: true);
+        batch = db.batch();
+        batchCount = 0;
+      }
+    }
+    if (batchCount > 0) await batch.commit(noResult: true);
+
     onProgress(total, total);
   }
 
   /// Fast path: accepts pre-parsed morphology data so we skip re-reading the
   /// 6 MB [quran_morphology.txt] file.
-  ///
-  /// [morphWordText] maps "surah:ayah:pos" → combined Arabic text (from
-  /// [AssetParser.parseMorphology]).
-  /// [morphLemma] maps "surah:ayah:pos" → dominant lemma.
-  /// [morphologyLines] is the raw newline-split file content.
   Future<void> runWithLines(
     List<String> morphologyLines,
     void Function(int done, int total) onProgress, {
@@ -166,14 +212,13 @@ class MorphologyImporter {
     Map<String, String>? morphLemma,
   }) async {
     await _seedPartsOfSpeech();
-
-    // Pre-load entire ayah_words table into memory
-    // Map: "surahId:ayahNumber:position" → ayah_word.id
     final wordIdMap = await _buildWordIdMap();
+    await _preloadMaps();
 
     final total = morphologyLines.length;
-    const batchSize = 1000;
-    var batch = db.batch();
+    final pendingRows = <Map<String, dynamic>>[];
+    final newRoots = <String>[];
+    final newPosCodes = <String>[];
     int count = 0;
 
     for (final line in morphologyLines) {
@@ -262,10 +307,26 @@ class MorphologyImporter {
       }
 
       int? rootId;
-      if (root.isNotEmpty) rootId = await _getOrCreateRoot(root);
-      final posId = await _getPosId(effectivePosCode);
+      if (root.isNotEmpty) {
+        rootId = _rootMap[root];
+        if (rootId == null) {
+          newRoots.add(root);
+          _rootMap[root] = -1;
+        }
+      }
+      int? posId;
+      if (effectivePosCode.isEmpty) {
+        posId = 1;
+      } else {
+        posId = _posMap[effectivePosCode];
+        if (posId == null) {
+          newPosCodes.add(effectivePosCode);
+          _posMap[effectivePosCode] = -1;
+          posId = 1; // temporary; corrected after bulk insert
+        }
+      }
 
-      batch.insert('morphology_segments', {
+      pendingRows.add({
         'word_id': wordId,
         'segment_number': segNum,
         'segment_type': segType,
@@ -282,20 +343,86 @@ class MorphologyImporter {
         'state': state,
         'verb_form': verbForm,
         'raw_tag': tag,
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      });
 
       count++;
-      if (count % batchSize == 0) {
-        await batch.commit(noResult: true);
-        batch = db.batch();
-      }
-
       if (count % 10000 == 0) {
         onProgress(count, total);
       }
     }
-    await batch.commit(noResult: true);
+
+    // Bulk-insert new roots and POS codes so IDs are real before segment inserts
+    if (newRoots.isNotEmpty) {
+      var rb = db.batch();
+      for (final r in newRoots) {
+        rb.insert('roots', {'arabic': r},
+            conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await rb.commit(noResult: true);
+      await _reloadRoots();
+    }
+    if (newPosCodes.isNotEmpty) {
+      var pb = db.batch();
+      for (final code in newPosCodes) {
+        pb.insert('parts_of_speech', {
+          'code': code,
+          'name_en': code,
+          'name_ur': code,
+          'color_hex': '#888888',
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await pb.commit(noResult: true);
+      await _reloadPos();
+    }
+
+    // Now insert all morphology segments with correct IDs, batched at 1000
+    const batchSize = 1000;
+    var batch = db.batch();
+    int batchCount = 0;
+    for (final row in pendingRows) {
+      batch.insert('morphology_segments', row,
+          conflictAlgorithm: ConflictAlgorithm.replace);
+      batchCount++;
+      if (batchCount >= batchSize) {
+        await batch.commit(noResult: true);
+        batch = db.batch();
+        batchCount = 0;
+      }
+    }
+    if (batchCount > 0) await batch.commit(noResult: true);
+
     onProgress(total, total);
+  }
+
+  /// Pre-load all existing roots and parts_of_speech into in-memory maps.
+  /// One query each — replaces thousands of per-line async lookups.
+  Future<void> _preloadMaps() async {
+    final roots = await db.query('roots', columns: ['id', 'arabic']);
+    for (final r in roots) {
+      _rootMap[r['arabic'] as String] = r['id'] as int;
+    }
+    final pos = await db.query('parts_of_speech', columns: ['id', 'code']);
+    for (final r in pos) {
+      _posMap[r['code'] as String] = r['id'] as int;
+    }
+  }
+
+  /// After bulk-inserting new roots, reload the map with real IDs.
+  Future<void> _reloadRoots() async {
+    _rootMap.clear();
+    final roots = await db.query('roots', columns: ['id', 'arabic']);
+    for (final r in roots) {
+      _rootMap[r['arabic'] as String] = r['id'] as int;
+    }
+  }
+
+  /// After bulk-inserting new POS codes, reload the map with real IDs.
+  Future<void> _reloadPos() async {
+    _posMap.clear();
+    final pos = await db.query('parts_of_speech', columns: ['id', 'code']);
+    for (final r in pos) {
+      _posMap[r['code'] as String] = r['id'] as int;
+    }
   }
 
   Future<void> _seedPartsOfSpeech() async {
@@ -332,7 +459,6 @@ class MorphologyImporter {
 
   Future<Map<String, int>> _buildWordIdMap() async {
     // Map "surahId:ayahNumber:position" → ayah_word.id
-    // This must match the key format used by quran_morphology.txt lines.
     final rows = await db.rawQuery('''
       SELECT aw.id, a.surah_id, a.ayah_number, aw.position
       FROM ayah_words aw
@@ -344,42 +470,5 @@ class MorphologyImporter {
       map[key] = r['id'] as int;
     }
     return map;
-  }
-
-  Future<int?> _getOrCreateRoot(String rootArabic) async {
-    if (rootArabic.isEmpty) return null;
-    if (_rootCache.containsKey(rootArabic)) return _rootCache[rootArabic];
-    final existing = await db.query('roots',
-        where: 'arabic = ?', whereArgs: [rootArabic], limit: 1);
-    if (existing.isNotEmpty) {
-      final id = existing.first['id'] as int;
-      _rootCache[rootArabic] = id;
-      return id;
-    }
-    final id = await db.insert('roots', {'arabic': rootArabic},
-        conflictAlgorithm: ConflictAlgorithm.replace);
-    _rootCache[rootArabic] = id;
-    return id;
-  }
-
-  Future<int> _getPosId(String posCode) async {
-    if (posCode.isEmpty) return 1;
-    if (_posCache.containsKey(posCode)) return _posCache[posCode]!;
-    final existing = await db.query('parts_of_speech',
-        where: 'code = ?', whereArgs: [posCode], limit: 1);
-    if (existing.isNotEmpty) {
-      final id = existing.first['id'] as int;
-      _posCache[posCode] = id;
-      return id;
-    }
-    // Create a new POS entry with generic info
-    final id = await db.insert('parts_of_speech', {
-      'code': posCode,
-      'name_en': posCode,
-      'name_ur': posCode,
-      'color_hex': '#888888',
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
-    _posCache[posCode] = id;
-    return id;
   }
 }
