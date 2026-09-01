@@ -38,11 +38,18 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
 
-  // ── Firebase App Check — required because the project has it enabled ─
-  await FirebaseAppCheck.instance.activate(
-    androidProvider: AndroidProvider.playIntegrity,
-    // Web uses reCAPTCHA v3 by default; iOS uses DeviceCheck.
-  );
+  // ── Firebase App Check ────────────────────────────────────────────────────
+  // Wrap in try/catch: AndroidProvider.playIntegrity requires Google Play
+  // Integrity API which some devices (Chinese OEMs, custom ROMs) lack.
+  // If activation fails we continue without App Check rather than crashing
+  // before runApp() — which would produce a black screen in release mode.
+  try {
+    await FirebaseAppCheck.instance.activate(
+      androidProvider: AndroidProvider.playIntegrity,
+    );
+  } catch (e) {
+    debugPrint('FirebaseAppCheck activation skipped: $e');
+  }
 
   // ── Crash reporting (must be first so all subsequent errors are captured) ─
   await CrashlyticsService.init();

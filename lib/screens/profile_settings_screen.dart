@@ -981,17 +981,34 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     }
   }
 
+  // Future<void> _instagram() async {
+  //   final url = Uri.parse('https://www.instagram.com/qurankalima');
+  //   if (await canLaunchUrl(url)) {
+  //     await launchUrl(url, mode: LaunchMode.externalApplication);
+  //   } else {
+  //     if (mounted) {
+  //       ScaffoldMessenger.of(context).showSnackBar(
+  //           const SnackBar(content: Text('instagram.com/qurankalima')));
+  //     }
+  //   }
+  // }
+
   Future<void> _instagram() async {
-    final url = Uri.parse('https://instagram.com/qurankalima');
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('instagram.com/qurankalima')));
-      }
-    }
+  final Uri url = Uri.parse('https://www.instagram.com/qurankalima/');
+
+  final bool launched = await launchUrl(
+    url,
+    mode: LaunchMode.externalApplication,
+  );
+
+  if (!launched && mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Could not open Instagram'),
+      ),
+    );
   }
+}
 
   /// Picks a photo from camera or gallery, uploads to Firebase Storage,
   /// then updates the user's photoURL in both Firebase Auth and Firestore.
