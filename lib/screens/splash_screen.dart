@@ -72,9 +72,12 @@ class _SplashScreenState extends State<SplashScreen> {
     }
 
     if (mounted) {
-      final learning = context.read<LearningStateProvider>();
-      await learning.init();
+      // Defer LearningStateProvider.init() to MainNavigation so the splash
+      // screen doesn't block on a full vocab_words table scan on every launch.
+      // The vocab screen already has its own _initLoad() guard that calls it
+      // eagerly, and other screens safely treat !isLoaded as "unknown".
       SyncService.onSyncDownComplete = () async {
+        final learning = context.read<LearningStateProvider>();
         learning.reload();
       };
       final needsOnboarding = await OnboardingScreen.shouldShow();

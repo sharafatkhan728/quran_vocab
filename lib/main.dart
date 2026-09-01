@@ -16,7 +16,6 @@ import 'screens/main_navigation.dart';
 import 'providers/learning_state_provider.dart';
 import 'services/notification_service.dart';
 import 'services/crashlytics_service.dart';
-import 'database/database_manager.dart';
 
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -55,14 +54,6 @@ void main() async {
   await CrashlyticsService.init();
 
   await SharedPreferences.getInstance();
-
-  // ── Repair corrupted DB before anything else ──────────────────────────────
-  // On emulators with minimal SQLite the DB can become malformed.
-  // Deleting it lets the importer rebuild everything while preserving
-  // known_words and srs_cards.
-  if (await DatabaseManager.isDbCorrupted()) {
-    await DatabaseManager.deleteCorruptedDb();
-  }
 
   final themeProvider = ThemeProvider();
   await themeProvider.loadSettings();

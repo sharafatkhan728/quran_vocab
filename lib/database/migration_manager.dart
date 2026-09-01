@@ -6,18 +6,21 @@ class MigrationManager {
   static Future<void> migrateIfNeeded() async {
     final db = await DatabaseManager.db;
 
-    // Check if content import is complete — if not, skip user migration
-    // because vocab_words table may be empty and lookups would fail
+    // ── Fast path: migration already ran — return immediately ──────────────
+    // This check comes first so we skip all further DB reads and the
+    // SharedPreferences scan on every subsequent launch.
+    final metaRows = await db.query('user_meta',
+        where: 'key = ?', whereArgs: ['migration_v1_completed']);
+    if (metaRows.isNotEmpty) return;
+
+    // ── Guard: skip if content import hasn't run yet ────────────────────────
+    // If vocab_words is empty the lookup join below would fail silently;
+    // migration will run after import completes on the next launch.
     final contentRows = await db
         .query('db_meta', where: 'key = ?', whereArgs: ['content_version']);
     if (contentRows.isEmpty) {
-      // Content not imported yet — migration will run after import completes
       return;
     }
-
-    final metaRows = await db.query('user_meta',
-        where: 'key = ?', whereArgs: ['migration_v1_completed']);
-    if (metaRows.isNotEmpty) return; // already done
 
     final prefs = await SharedPreferences.getInstance();
     final now = DateTime.now().millisecondsSinceEpoch;

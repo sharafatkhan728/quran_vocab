@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'surah_list_screen.dart';
 import 'vocabulary_screen.dart';
 // import 'progress_screen.dart';
 import 'profile_settings_screen.dart';
+import '../providers/learning_state_provider.dart';
 
 class MainNavigation extends StatefulWidget {
   const MainNavigation({super.key});
@@ -13,6 +15,7 @@ class MainNavigation extends StatefulWidget {
 
 class _MainNavigationState extends State<MainNavigation> {
   int _currentIndex = 0;
+  bool _learningInitDone = false;
 
   final List<Widget> _screens = const [
     SurahListScreen(),
@@ -20,6 +23,22 @@ class _MainNavigationState extends State<MainNavigation> {
     // ProgressScreen(),
     ProfileSettingsScreen(),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    // Defer LearningStateProvider.init() until after the splash screen has
+    // completed, so the UI renders immediately instead of waiting for the
+    // full vocab_words table scan (~15 K rows) on every launch.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _deferredInit());
+  }
+
+  Future<void> _deferredInit() async {
+    if (!_learningInitDone && mounted) {
+      _learningInitDone = true;
+      await context.read<LearningStateProvider>().init();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

@@ -58,9 +58,9 @@ class VocabRootImporter {
       )
     ''');
 
-    // Step 4: build frequency table for pos_id similarly
     await db.execute('''
-      CREATE TEMP TABLE IF NOT EXISTS _pos_freq AS
+      UPDATE vocab_words
+      SET root_id = (
       SELECT
         aw.vocab_word_id,
         ms.pos_id,
@@ -97,9 +97,9 @@ class VocabRootImporter {
       )
     ''');
 
-    // Step 5: lemma — pick most frequent non-empty lemma for each vocab word
     await db.execute('''
-      CREATE TEMP TABLE IF NOT EXISTS _lemma_freq AS
+      UPDATE vocab_words
+      SET pos_id = (
       SELECT
         aw.vocab_word_id,
         ms.lemma,

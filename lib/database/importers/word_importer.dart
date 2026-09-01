@@ -53,6 +53,7 @@ class WordImporter {
     DatabaseExecutor txn,
     void Function(int, int) onProgress,
   ) async {
+
     // ── Pass 1: collect unique vocab words by (arabic_clean, lemma) ─────────
     // Key: "$arabic_clean\x00$lemma" (null-byte separator, safe for Arabic)
     final vocabMap = <String, _VocabData>{};
@@ -118,6 +119,7 @@ class WordImporter {
       }
     }
 
+
     // ── Pass 2: insert vocab_words ──────────────────────────────────────────
     final vocabRows = vocabMap.values.toList();
     final batchSize = 500;
@@ -144,6 +146,7 @@ class WordImporter {
     }
     await batch.commit(noResult: true);
 
+
     // ── Pass 3: build clean→id lookup ───────────────────────────────────────
     final cleanToId = <String, int>{};
     final allVocab = await txn.rawQuery(
@@ -151,6 +154,7 @@ class WordImporter {
     for (final r in allVocab) {
       cleanToId[r['arabic_clean'] as String] = r['id'] as int;
     }
+
 
     // ── Pass 4: ayah_words + word_translations ──────────────────────────────
     final ayahRows =
@@ -261,9 +265,7 @@ class WordImporter {
         onProgress(surahDone, 114);
       }
     }
-    // Calculate frequency for every vocab word: count its non-waqf
-    // occurrences across ayah_words.  Without this the vocabulary screen
-    // shows "0×" for every word and overall progress is always 0.0%.
+    // Calculate frequency
     await txn.rawUpdate('''
       UPDATE vocab_words
       SET frequency = (

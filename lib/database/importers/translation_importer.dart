@@ -54,7 +54,6 @@ class TranslationImporter {
     required String scholarKey,
   }) async {
     try {
-      // Use compute to parse the JSON on a background isolate
       final rawData = await rootBundle.loadString(assetPath);
       final data = await compute(TranslationImporter._parseJson, rawData);
 

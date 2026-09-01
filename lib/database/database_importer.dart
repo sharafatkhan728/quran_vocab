@@ -96,6 +96,7 @@ class DatabaseImporter {
       rootBundle.loadString('assets/data/quran_morphology.txt'),
     ];
     final results = await Future.wait(futures);
+
     final urduRaw      = results[0];
     final englishRaw   = results[1];
     final hindiRaw     = results[2];
