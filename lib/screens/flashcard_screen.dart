@@ -247,6 +247,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     });
     if (forceNew) {
       await SrsService.clearSession();
+      _sessionPoints = 0;
+      _sessionResult = null;
     }
     _totalPoints = await SrsService.getTotalPoints();
 
@@ -1355,6 +1357,19 @@ class _FlashcardScreenState extends State<FlashcardScreen>
               ),
               child: const Text('Back to Quran',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            ),
+            const SizedBox(height: 14),
+            OutlinedButton(
+              onPressed: () => _loadSession(forceNew: true),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _green,
+                side: BorderSide(color: _green.withValues(alpha: 0.6)),
+                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+              ),
+              child: const Text('Review More Cards',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
             ),
             const SizedBox(height: 32),
           ],
