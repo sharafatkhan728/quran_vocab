@@ -208,8 +208,11 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     );
     if (confirm == true && mounted) {
       setState(() => _loading = true);
-      final dailyGoal = context.read<UserProvider>().dailyGoal;
-      final extra = await SrsService.buildExtraSession(dailyGoal);
+      final freq = await WordProgressService.getWordFrequencies();
+      final knownCleans =
+          context.read<LearningStateProvider>().allKnownCleans;
+      final extra = await SrsService.buildExtraSession(
+          freq.keys.toList(), 10, knownCleans: knownCleans);
       if (extra.isEmpty) {
         setState(() => _loading = false);
         if (mounted) {
@@ -218,7 +221,6 @@ class _FlashcardScreenState extends State<FlashcardScreen>
         }
         return;
       }
-      final freq = await WordProgressService.getWordFrequencies();
       final cards = _buildCards(extra.words, freq);
       if (mounted) {
         setState(() {
@@ -275,7 +277,11 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     await SrsService.startNewSession();
     // Read dailyGoal here — after providers have fully loaded
     final dailyGoal = context.read<UserProvider>().dailyGoal;
-    final result = await SrsService.buildSession(dailyGoal);
+    final allWords = freq.keys.toList();
+    final knownCleans =
+        context.read<LearningStateProvider>().allKnownCleans;
+    final result =
+        await SrsService.buildSession(allWords, dailyGoal, knownCleans: knownCleans);
 
     if (result.isEmpty) {
       if (mounted) {
@@ -401,16 +407,41 @@ class _FlashcardScreenState extends State<FlashcardScreen>
   Future<void> _deleteCard() async {
     // Delete = remove from SRS only. Word stays Known in Quran/Vocabulary.
     // Mark as known in global state so it's hidden from Quran reader.
-    await SrsService.deleteCard(_current.normalizedForLookup);
+    final word = _current.normalizedForLookup;
+    final wasLastCard = _currentIndex == _cards.length - 1;
+
+    await SrsService.deleteCard(word);
     if (mounted) {
-      await context
-          .read<LearningStateProvider>()
-          .setKnownByClean(_current.normalizedForLookup);
+      await context.read<LearningStateProvider>().setKnownByClean(word);
+    }
+    // Clear saved session so the deleted card is not restored on reopen.
+    // A fresh session will be built next time, which will skip the deleted card.
+    if (mounted) {
+      await SrsService.clearSession();
     }
     if (!mounted) return;
     await _animateDismiss(toRight: true);
     if (!mounted) return;
-    _nextCard();
+
+    // Remove from in-memory list so the deleted card is never saved/restored.
+    setState(() {
+      _cards.removeAt(_currentIndex);
+      _lastCard = null;
+      _lastIndex = 0;
+      _canUndo = false;
+      _isFlipped = false;
+      _hasBeenFlipped = false;
+      _swipeHint = null;
+    });
+
+    if (wasLastCard || _cards.isEmpty) {
+      SrsService.clearSession();
+      setState(() => _sessionDone = true);
+    } else if (_currentIndex < _cards.length) {
+      _entryCtrl.reset();
+      _entryCtrl.forward();
+      _preloadCards(_currentIndex);
+    }
   }
 
   Future<void> _animateDismiss({required bool toRight}) async {

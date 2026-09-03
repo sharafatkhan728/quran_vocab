@@ -3,11 +3,8 @@ import '../repositories/srs_repository.dart';
 
 export '../repositories/srs_repository.dart' show SrsCardRow;
 
-const int kMaxReviewsPerSession = 30;
-const int kNewWordBuffer = 20;
-
 class SrsService {
-  static const List<int> _intervals = [1, 2, 3, 5, 8, 13, 21, 34];
+  static const List<int> _intervalSessions = [1, 2, 3, 5, 8, 13, 21, 34];
   static int _currentSession = 0;
 
   static Map<String, int>? _cleanToId;
@@ -57,15 +54,27 @@ class SrsService {
     await _ensureVocabCache();
     final id = _cleanToId![normalizedArabic];
     if (id == null) return 0;
-    final old = await SrsRepository.getCard(id) ?? _defaultCard(id);
-    final newStage = (old.stage + 1).clamp(0, _intervals.length - 1);
+    // Do not process deleted cards — they should not be re-added to SRS
+    if (await SrsRepository.isCardDeleted(id)) return 0;
+    final old = await SrsRepository.getCard(id) ??
+        SrsCardRow(
+          vocabWordId: id,
+          stage: 0,
+          nextReviewSession: 0,
+          easeFactor: 2.5,
+          failCount: 0,
+          totalReviews: 0,
+          lastResult: -1,
+          isDeleted: 0,
+        );
+    final newStage = (old.stage + 1).clamp(0, _intervalSessions.length - 1);
     final newEase = (old.easeFactor + 0.1).clamp(1.3, 2.5);
-    final pts = _points(newStage);
+    final pts = _pointsForStage(newStage);
     await SrsRepository.upsertCard(SrsCardRow(
       vocabWordId: id,
       stage: newStage,
       // Known: schedule for future session using interval
-      nextReviewSession: _currentSession + _intervals[newStage],
+      nextReviewSession: _currentSession + _intervalSessions[newStage],
       easeFactor: newEase,
       failCount: old.failCount,
       totalReviews: old.totalReviews + 1,
@@ -80,10 +89,22 @@ class SrsService {
     await _ensureVocabCache();
     final id = _cleanToId![normalizedArabic];
     if (id == null) return;
-    final old = await SrsRepository.getCard(id) ?? _defaultCard(id);
+    // Do not process deleted cards
+    if (await SrsRepository.isCardDeleted(id)) return;
+    final old = await SrsRepository.getCard(id) ??
+        SrsCardRow(
+          vocabWordId: id,
+          stage: 0,
+          nextReviewSession: 0,
+          easeFactor: 2.5,
+          failCount: 0,
+          totalReviews: 0,
+          lastResult: -1,
+          isDeleted: 0,
+        );
     await SrsRepository.upsertCard(SrsCardRow(
       vocabWordId: id,
-      stage: (old.stage - 1).clamp(0, _intervals.length - 1),
+      stage: (old.stage - 2).clamp(0, _intervalSessions.length - 1),
       // Unknown: schedule for NEXT session (not current) — not shown immediately
       nextReviewSession: _currentSession + 1,
       easeFactor: (old.easeFactor - 0.2).clamp(1.3, 2.5),
@@ -137,142 +158,160 @@ class SrsService {
 
   static Future<bool> isInitialized() async => true;
   static Future<void> setInitialized() async {}
-  static Future<void> initMissingCards(List<String> words) async {}
-  static Future<void> initAllCards(List<String> words) async {}
-  static Future<void> initCard(String word) async {}
+
+  // ── Card initialisation ───────────────────────────────────────────────────
+
+  static Future<void> initMissingCards(List<String> words) async {
+    final ids = await _wordsToIds(words);
+    await SrsRepository.initMissingCards(ids);
+  }
+
+  static Future<void> initAllCards(List<String> words) =>
+      initMissingCards(words);
 
   // ── Session building ──────────────────────────────────────────────────────
   //
-  // Order: NEW words → DUE reviews → FAILED cards
+  // Priority order: OVERDUE REVIEWS → FAILED cards → NEW words
   //
-  // New words are shown first so users always learn something new each session
-  // before tackling reviews. Reviews and failed cards follow.
-  //
-  // Unknown cards swiped during a session are reinserted randomly several
-  // positions ahead in the SAME session list by the flashcard screen.
-  // Their nextReviewSession is set to _currentSession + 1 so they appear
-  // at higher priority in the NEXT session.
+  // Overdue reviews take full priority so users never miss cards that are due.
+  // Failed cards (stage 0, failCount > 0, due) are shown next.
+  // New words fill remaining slots up to dailyGoal.
 
-  static Future<SessionBuildResult> buildSession(int dailyGoal) async {
+  static Future<SessionBuildResult> buildSession(
+    List<String> allWords,
+    int dailyGoal, {
+    Set<String> knownCleans = const {},
+  }) async {
     _currentSession = await getCurrentSession();
-    await _ensureVocabCache();
 
+    // Load vocab cache once — replaces N sequential getByArabicClean calls
+    await _ensureVocabCache();
+    final cleanToId = _cleanToId!;
+
+    // Map words → ids entirely in memory (zero DB queries)
+    final vocabIds = <int>[];
+    for (final w in allWords) {
+      final id = cleanToId[w];
+      if (id != null) vocabIds.add(id);
+    }
+
+    // One bulk query — insert any missing card rows
+    await SrsRepository.initMissingCards(vocabIds);
+
+    // One query — load all cards into memory
     final allCards = await SrsRepository.loadAllCards();
 
-    // Classify existing cards
-    final dueReviews = <_CP>[];
-    final failedCards = <_CP>[];
+    // One query — load deleted card ids so we never reconstruct them as "new"
+    final deletedIds = await SrsRepository.getDeletedCardIds();
 
-    for (final entry in allCards.entries) {
-      final card = entry.value;
-      if (card.totalReviews == 0) continue; // unseen — handled as new
+    final overdueReviews = <_CardWithPriority>[];
+    final failedCards = <_CardWithPriority>[];
+    final newCards = <_CardWithPriority>[];
 
-      if (card.stage > 0 && _currentSession >= card.nextReviewSession) {
-        final overdue = _currentSession - card.nextReviewSession;
-        dueReviews.add(_CP(entry.key, overdue * 10 + card.failCount));
+    for (int i = 0; i < allWords.length; i++) {
+      final word = allWords[i];
+      final id = cleanToId[word];
+      if (id == null || deletedIds.contains(id)) continue;
+
+      final card = allCards[id] ??
+          SrsCardRow(
+            vocabWordId: id,
+            stage: 0,
+            nextReviewSession: 0,
+            easeFactor: 2.5,
+            failCount: 0,
+            totalReviews: 0,
+            lastResult: -1,
+            isDeleted: 0,
+          );
+
+      if (card.stage > 0 && card.totalReviews > 0) {
+        if (_currentSession >= card.nextReviewSession) {
+          final overdue = _currentSession - card.nextReviewSession;
+          overdueReviews
+              .add(_CardWithPriority(word, overdue * 10 + card.failCount));
+        }
       } else if (card.stage == 0 &&
           card.failCount > 0 &&
           _currentSession >= card.nextReviewSession) {
-        failedCards.add(_CP(entry.key, card.failCount));
+        failedCards.add(_CardWithPriority(word, card.failCount));
+      } else if (card.totalReviews == 0 && !knownCleans.contains(word)) {
+        newCards.add(_CardWithPriority(word, -i));
       }
     }
 
-    dueReviews.sort((a, b) => b.priority.compareTo(a.priority));
+    overdueReviews.sort((a, b) => b.priority.compareTo(a.priority));
     failedCards.sort((a, b) => b.priority.compareTo(a.priority));
+    newCards.sort((a, b) => b.priority.compareTo(a.priority));
 
-    final cappedDue = dueReviews.take(kMaxReviewsPerSession).toList();
-    final cappedFailed = failedCards
-        .take((kMaxReviewsPerSession - cappedDue.length).clamp(0, kMaxReviewsPerSession))
-        .toList();
-
-    final reviewCount = cappedDue.length + cappedFailed.length;
-    final newSlots = (dailyGoal - reviewCount).clamp(0, dailyGoal);
-
-    // Fetch new words from SQLite — no Dart-side scan
-    List<String> newWords = [];
-    if (newSlots > 0) {
-      newWords = await SrsRepository.fetchNextUnseenWords(
-        limit: newSlots + kNewWordBuffer,
-      );
-      if (newWords.isNotEmpty) {
-        final newIds = newWords
-            .map((w) => _cleanToId![w])
-            .whereType<int>()
-            .toList();
-        await SrsRepository.initMissingCards(newIds);
-      }
-    }
-
-    final reviewWords = [
-      ...cappedDue.map((c) => _idToClean![c.id]).whereType<String>(),
-      ...cappedFailed.map((c) => _idToClean![c.id]).whereType<String>(),
-    ];
-
-    // Session order: NEW first, then reviews, then failed
-    final takenNew = newWords.take(newSlots).toList();
     final session = [
-      ...takenNew,
-      ...reviewWords,
+      ...overdueReviews.map((c) => c.word),
+      ...failedCards.map((c) => c.word),
+      ...newCards.take(dailyGoal).map((c) => c.word),
     ];
-
-    // Deduplicate while preserving order
-    final seen = <String>{};
-    final deduped = session.where((w) => seen.add(w)).toList();
 
     return SessionBuildResult(
-      words: deduped,
-      overdueCount: cappedDue.length,
-      failedCount: cappedFailed.length,
-      newCount: takenNew.length,
-      hasMoreNew: newWords.length > newSlots,
+      words: session,
+      overdueCount: overdueReviews.length,
+      failedCount: failedCards.length,
+      newCount: newCards.take(dailyGoal).length,
+      hasMoreNew: newCards.length > dailyGoal,
     );
   }
 
-  static Future<SessionBuildResult> buildExtraSession(int batchSize) async {
+  static Future<SessionBuildResult> buildExtraSession(
+      List<String> allWords, int batchSize,
+      {Set<String> knownCleans = const {}}) async {
     await _ensureVocabCache();
-    final newWords = await SrsRepository.fetchNextUnseenWords(
-      limit: batchSize + kNewWordBuffer,
-    );
-    if (newWords.isNotEmpty) {
-      final newIds = newWords
-          .map((w) => _cleanToId![w])
-          .whereType<int>()
-          .toList();
-      await SrsRepository.initMissingCards(newIds);
+    final cleanToId = _cleanToId!;
+    final allCards = await SrsRepository.loadAllCards();
+    final unseen = <String>[];
+    for (final word in allWords) {
+      final id = cleanToId[word];
+      if (id == null) continue;
+      final card = allCards[id];
+      if (card == null || card.totalReviews == 0) {
+        if (knownCleans.contains(word)) continue;
+        unseen.add(word);
+        if (unseen.length >= batchSize) break;
+      }
     }
-    final taken = newWords.take(batchSize).toList();
     return SessionBuildResult(
-      words: taken,
+      words: unseen,
       overdueCount: 0,
       failedCount: 0,
-      newCount: taken.length,
-      hasMoreNew: newWords.length > batchSize,
+      newCount: unseen.length,
+      hasMoreNew: false,
     );
   }
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
+  // ── Private helpers ───────────────────────────────────────────────────────
 
-  static SrsCardRow _defaultCard(int id) => SrsCardRow(
-        vocabWordId: id,
-        stage: 0,
-        nextReviewSession: 0,
-        easeFactor: 2.5,
-        failCount: 0,
-        totalReviews: 0,
-        lastResult: -1,
-        isDeleted: 0,
-      );
-
-  static int _points(int stage) {
+  static int _pointsForStage(int stage) {
     const pts = [5, 10, 20, 30, 50, 80, 100, 120];
     return pts[stage.clamp(0, pts.length - 1)];
   }
+
+  /// arabic_clean strings → vocab_word_ids using in-memory cache.
+  /// Zero DB queries after first call.
+  static Future<List<int>> _wordsToIds(List<String> words) async {
+    await _ensureVocabCache();
+    final ids = <int>[];
+    for (final w in words) {
+      final id = _cleanToId![w];
+      if (id != null) ids.add(id);
+    }
+    return ids;
+  }
+
 }
 
-class _CP {
-  final int id;
+// ── Supporting models ─────────────────────────────────────────────────────────
+
+class _CardWithPriority {
+  final String word;
   final int priority;
-  _CP(this.id, this.priority);
+  _CardWithPriority(this.word, this.priority);
 }
 
 class SrsSession {

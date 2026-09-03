@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../database/database_importer.dart';
+import '../database/database_manager.dart';
 import '../database/migration_manager.dart';
 import 'package:provider/provider.dart';
 import '../providers/learning_state_provider.dart';
@@ -80,6 +81,25 @@ class _SplashScreenState extends State<SplashScreen> {
         final learning = context.read<LearningStateProvider>();
         learning.reload();
       };
+
+      // Diagnostic: check word_translations after import
+      try {
+        final db = await DatabaseManager.db;
+        final wordCountRow = await db.rawQuery(
+            'SELECT COUNT(*) as cnt FROM word_translations');
+        final wtCount = (wordCountRow.first['cnt'] as int?) ?? 0;
+        final ayahWordCountRow = await db.rawQuery(
+            'SELECT COUNT(*) as cnt FROM ayah_words');
+        final awCount = (ayahWordCountRow.first['cnt'] as int?) ?? 0;
+        debugPrint(
+            'SPLASH_DIAG: word_translations=$wtCount ayah_words=$awCount');
+        if (mounted) {
+          setState(() {
+            _label = 'Data: $wtCount words / $awCount ayah_words';
+          });
+        }
+      } catch (_) {}
+
       final needsOnboarding = await OnboardingScreen.shouldShow();
       setState(() {
         _showOnboarding = needsOnboarding;

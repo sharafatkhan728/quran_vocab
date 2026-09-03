@@ -68,3 +68,11 @@
 -dontwarn com.google.android.play.core.tasks.OnFailureListener
 -dontwarn com.google.android.play.core.tasks.OnSuccessListener
 -dontwarn com.google.android.play.core.tasks.Task
+-dontwarn io.flutter.embedding.engine.deferredcomponents.PlayStoreDeferredComponentManager
+-dontwarn com.google.android.play.core.tasks.Task
+# ── UCrop (image_cropper plugin) ─────────────────────────────────────────────
+# UCropActivity is not referenced from Dart code directly — R8 strips it.
+# Without these rules the crop editor throws ActivityNotFoundException at runtime.
+-keep class com.yalantis.ucrop.UCropActivity { *; }
+-keep class com.yalantis.ucrop.** { *; }
+-dontwarn com.yalantis.ucrop.**

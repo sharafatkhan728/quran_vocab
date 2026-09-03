@@ -211,6 +211,9 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
     final result = <QuranWord>[];
     for (final wr in wordRows) {
       final meaning = translations[wr.id]?[_selectedLang]?.text ?? '';
+      if (result.isEmpty) {
+        debugPrint('DEBUG surah=${widget.surah.id} ayah=${ayah.ayahNumber} _selectedLang=$_selectedLang wordRows=${wordRows.length} translations=${translations.length} firstMeaning="$meaning"');
+      }
       final segRows = morphSegments[wr.id] ?? [];
       final segments = segRows.map(WordSegment.fromRow).toList();
       final normalized = WordProgressService.normalizeArabic(wr.arabicText);

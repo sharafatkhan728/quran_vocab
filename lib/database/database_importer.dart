@@ -11,6 +11,7 @@ import 'importers/vocab_root_importer.dart';
 import 'database_manager.dart';
 import 'asset_parser.dart';
 import '../services/crashlytics_service.dart';
+import '../services/word_progress_service.dart';
 
 enum ImportStep {
   preparing,
@@ -131,7 +132,10 @@ class DatabaseImporter {
     final needTrans = storedTrans < _vTranslation || needCore;
 
     // ── Phase 1: Load & parse assets (parallel isolate) ───────────────────
-    if (needVocab || needMorph) {
+    // Assets are needed not only for vocab/morph, but also for word translations.
+    // When v_vocab is current but v_translation is not, the short-circuit path
+    // must still load assets so word_translations can be repopulated.
+    if (needVocab || needMorph || needTrans) {
       yield ImportProgress(ImportStep.preparing, 0, 1, 'Loading assets...');
       late ParsedAssets parsed;
       try {
@@ -292,7 +296,7 @@ class DatabaseImporter {
         yield ImportProgress(ImportStep.morphology, 1, 1, 'Morphology ✓');
       }
 
-      // ── Translations ──────────────────────────────────────────────────
+      // ── Translations (ayah + word) ────────────────────────────────────
       if (needTrans) {
         yield ImportProgress(
             ImportStep.translations, 0, 1, 'Importing Translations...');
@@ -306,7 +310,31 @@ class DatabaseImporter {
           // Translations are non-fatal — app works without them
           debugPrint('Translation import warning: $e');
         }
-        yield ImportProgress(ImportStep.translations, 1, 1, 'Translations ✓');
+        yield ImportProgress(
+            ImportStep.translations, 1, 1, 'Translations ✓');
+
+        // Always ensure word_translations is populated when translations step
+        // runs. If vocab was already current (needVocab=false) we still need
+        // word translations from the freshly loaded glossaries.
+        if (!needVocab) {
+          yield ImportProgress(ImportStep.words, 0, 1, 'Building Word Meanings...');
+          try {
+            await db.execute('PRAGMA foreign_keys = OFF');
+            await db.transaction((txn) async {
+              await txn.delete('word_translations');
+              await importWordTranslations(txn, parsed);
+              // Re-set vocab version so needsImport() stays false
+              await _setVer(txn, 'v_vocab', _vVocab);
+            });
+          } catch (e, stack) {
+            debugPrint('Word translations import warning: $e');
+            CrashlyticsService.recordError(e, stack,
+                context: 'DatabaseImporter.wordTranslations');
+          } finally {
+            await db.execute('PRAGMA foreign_keys = ON');
+          }
+          yield ImportProgress(ImportStep.words, 1, 1, 'Word Meanings ✓');
+        }
       }
 
       // Mark legacy key so old version checks also pass
@@ -326,84 +354,6 @@ class DatabaseImporter {
         await _restoreVocab(db, savedKnown, savedSrs);
         yield ImportProgress(ImportStep.preparing, 1, 1, 'Progress restored ✓');
       }
-      if (needCore && (savedBookmarks.isNotEmpty || savedReading.isNotEmpty)) {
-        await _restoreSurah(db, savedBookmarks, savedReading);
-      }
-
-      yield ImportProgress(ImportStep.done, 1, 1, 'Setup Complete ✓');
-    } else if (needCore) {
-      // No vocab/morph needed but core might be — short-circuit the asset load
-      // ── Phase 2: Save user progress ───────────────────────────────────
-      List<Map<String, Object?>> savedBookmarks = [];
-      List<Map<String, Object?>> savedReading = [];
-      if (needCore) {
-        try {
-          savedBookmarks = await db.rawQuery(
-              'SELECT surah_id, ayah_number, created_at FROM bookmarks');
-          savedReading = await db.rawQuery(
-              'SELECT surah_id, last_ayah, last_read_at FROM reading_progress');
-        } catch (e) {
-          debugPrint('save surah progress: $e');
-        }
-      }
-
-      bool anyError = false;
-      String? errorMsg;
-
-      // ── Core ──────────────────────────────────────────────────────────
-      if (needCore) {
-        yield ImportProgress(ImportStep.surahs, 0, 1, 'Importing Surahs...');
-        try {
-          await db.execute('PRAGMA foreign_keys = OFF');
-          await db.transaction((txn) async {
-            await txn.delete('ayahs');
-            await txn.delete('surahs');
-            await SurahImporter(txn).run();
-            await AyahImporter(txn).run((_, __) {});
-            await _setVer(txn, 'v_core', _vCore);
-          });
-        } catch (e, stack) {
-          anyError = true;
-          errorMsg = 'Core import failed: $e';
-          CrashlyticsService.recordError(e, stack,
-              context: 'DatabaseImporter.core (core-only path)');
-        } finally {
-          await db.execute('PRAGMA foreign_keys = ON');
-        }
-        if (anyError) {
-          yield ImportProgress(ImportStep.error, 0, 1, errorMsg!,
-              error: errorMsg);
-          return;
-        }
-        yield ImportProgress(ImportStep.surahs, 1, 1, 'Surahs ✓');
-      }
-
-      // ── Translations ──────────────────────────────────────────────────
-      if (needTrans) {
-        yield ImportProgress(
-            ImportStep.translations, 0, 1, 'Importing Translations...');
-        try {
-          await db.transaction((txn) async {
-            await txn.delete('ayah_translations');
-            await TranslationImporter(txn).run();
-            await _setVer(txn, 'v_translation', _vTranslation);
-          });
-        } catch (e) {
-          debugPrint('Translation import warning: $e');
-        }
-        yield ImportProgress(ImportStep.translations, 1, 1, 'Translations ✓');
-      }
-
-      await db.insert('db_meta', {'key': 'content_version', 'value': '$_vVocab'},
-          conflictAlgorithm: ConflictAlgorithm.replace);
-      await db.insert(
-          'db_meta',
-          {
-            'key': 'import_completed_at',
-            'value': DateTime.now().toIso8601String()
-          },
-          conflictAlgorithm: ConflictAlgorithm.replace);
-
       if (needCore && (savedBookmarks.isNotEmpty || savedReading.isNotEmpty)) {
         await _restoreSurah(db, savedBookmarks, savedReading);
       }
@@ -498,6 +448,138 @@ class DatabaseImporter {
     } catch (e) {
       debugPrint('restoreSurah: $e');
     }
+  }
+
+  /// Re-populate word_translations from glossary assets.
+  ///
+  /// Used in the short-circuit import path when v_vocab is current but
+  /// v_translation is not — the main vocab path imports both together, but
+  /// this method ensures word meanings are populated independently too.
+  /// [parsed] must contain urduGlossary, englishGlossary, hindiGlossary,
+  /// englishRaw, and morphWordText populated from [_loadAndParseVocabAssets].
+  static Future<void> importWordTranslations(
+      DatabaseExecutor txn, ParsedAssets parsed) async {
+    // ── Debug: check ayah_words exists and has data ─────────────────────
+    final ayahWordCount = await txn.rawQuery(
+        'SELECT COUNT(*) as cnt FROM ayah_words');
+    debugPrint(
+        'importWordTranslations: ayah_words count=${ayahWordCount.first['cnt']}');
+
+    final wordIdMap = <String, int>{};
+    final ayahWordRows = await txn.rawQuery(
+        'SELECT id, ayah_id, position FROM ayah_words');
+    for (final r in ayahWordRows) {
+      final key = '${r['ayah_id']}:${r['position']}';
+      wordIdMap[key] = r['id'] as int;
+    }
+    debugPrint('importWordTranslations: wordIdMap size=${wordIdMap.length} '
+        'first5=${wordIdMap.keys.take(5).toList()}');
+
+    // Group morphology keys by surah for ordered processing
+    final bySurah = <int, List<String>>{};
+    for (final key in parsed.morphWordText.keys) {
+      final p = key.split(':');
+      if (p.length < 3) continue;
+      final s = int.tryParse(p[0]);
+      if (s != null) bySurah.putIfAbsent(s, () => []).add(key);
+    }
+    debugPrint('importWordTranslations: morphWordText size=${parsed.morphWordText.length} '
+        'bySurah[1]=${(bySurah[1] ?? []).length} '
+        'urduGloss[1:1:1]=${parsed.urduGlossary['1:1:1']}');
+
+    final waqfRe = RegExp(r'^[ۖ-ۜ۟-۪ۤۧۨ-ۭ\s]+$');
+    final batchSize = 500;
+    var tBatch = txn.batch();
+    int tCount = 0;
+    int matchedCount = 0;
+
+    for (int s = 1; s <= 114; s++) {
+      final keys = bySurah[s] ?? [];
+      final ayahRows = await txn.rawQuery(
+          'SELECT id, ayah_number FROM ayahs WHERE surah_id = ?', [s]);
+      final ayahMap = <int, int>{};
+      for (final r in ayahRows) {
+        ayahMap[r['ayah_number'] as int] = r['id'] as int;
+      }
+
+      // Sort keys by ayah then position
+      final sortedKeys = List<String>.from(keys)
+        ..sort((a, b) {
+          final ap = a.split(':');
+          final bp = b.split(':');
+          final aA = int.tryParse(ap[1]) ?? 0;
+          final bA = int.tryParse(bp[1]) ?? 0;
+          if (aA != bA) return aA.compareTo(bA);
+          return (int.tryParse(ap[2]) ?? 0).compareTo(int.tryParse(bp[2]) ?? 0);
+        });
+
+      // Pre-pass: merge Waqf signs into preceding word display text
+      final displayText = <String, String>{};
+      for (int i = 0; i < sortedKeys.length; i++) {
+        final wk = sortedKeys[i];
+        final arabic = parsed.morphWordText[wk]!;
+        if (waqfRe.hasMatch(arabic.trim()) && i > 0) {
+          final prev = sortedKeys[i - 1];
+          displayText[prev] =
+              (displayText[prev] ?? parsed.morphWordText[prev]!) + arabic;
+        } else {
+          displayText[wk] = arabic;
+        }
+      }
+
+      for (final key in sortedKeys) {
+        final parts = key.split(':');
+        if (parts.length < 3) continue;
+        final a = int.tryParse(parts[1]) ?? 0;
+        final pos = int.tryParse(parts[2]) ?? 0;
+        final ayahId = ayahMap[a];
+        if (ayahId == null) continue;
+
+        final arabic = parsed.morphWordText[key]!;
+        final clean = WordProgressService.normalizeArabic(arabic);
+        if (clean.isEmpty) continue;
+
+        final waKey = '$ayahId:$pos';
+        final awId = wordIdMap[waKey];
+        if (awId == null) {
+          debugPrint('importWordTranslations: NO awId for waKey=$waKey '
+              '(key=$key, ayahId=$ayahId, pos=$pos)');
+          continue;
+        }
+        matchedCount++;
+
+        final urdu = parsed.urduGlossary[key] ?? '';
+        final en = parsed.englishGlossary[key] ?? '';
+        final hi = parsed.hindiGlossary[key] ?? '';
+        debugPrint('importWordTranslations: key=$key awId=$awId '
+            'ur=$urdu en=$en hi=$hi');
+
+        if (urdu.isEmpty && en.isEmpty && hi.isEmpty) continue;
+
+        final trans = <String, String>{
+          'ur': urdu,
+          'en': en,
+          'hi': hi,
+        };
+        for (final entry in trans.entries) {
+          if (entry.value.isNotEmpty) {
+            tBatch.insert('word_translations', {
+              'word_id': awId,
+              'language': entry.key,
+              'text': entry.value,
+              'text_raw': entry.key == 'en' ? (parsed.englishRaw[key] ?? '') : '',
+            }, conflictAlgorithm: ConflictAlgorithm.ignore);
+            tCount++;
+          }
+        }
+        if (tCount % batchSize == 0) {
+          await tBatch.commit(noResult: true);
+          tBatch = txn.batch();
+        }
+      }
+    }
+    await tBatch.commit(noResult: true);
+    debugPrint('importWordTranslations: totalInserted=$tCount matchedWords=$matchedCount');
   }
 
   // ── Index helpers ──────────────────────────────────────────────────────────

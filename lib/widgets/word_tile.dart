@@ -93,7 +93,16 @@ class WordTile extends StatelessWidget {
                 ? _buildSegmentedWord(segments, display, isDark, arabicFontSize)
                 : _buildSingleWord(word, display, isDark, arabicFontSize),
             const SizedBox(height: 2),
-            if (word.urduMeaning.isNotEmpty)
+            if (word.urduMeaning.isEmpty)
+              Container(
+                width: 50,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              )
+            else
               SizedBox(
                 width: 50,
                 child: Visibility(

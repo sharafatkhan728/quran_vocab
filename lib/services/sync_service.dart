@@ -175,6 +175,9 @@ class SyncService {
 
   /// Restore all data from Firestore into local SQLite.
   /// Called on login. Will NOT overwrite local if local is newer.
+  ///
+  /// Wrapped in a timeout so the app doesn't hang indefinitely when the
+  /// device has no internet (e.g. emulator without DNS, airplane mode).
   static Future<RestoreResult> syncDown() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return RestoreResult.noUser;
@@ -184,7 +187,11 @@ class SyncService {
       final db = await DatabaseManager.db;
 
       // Check if cloud has any data at all
-      final metaDoc = await ref.doc('meta').get();
+      final metaDoc = await _withTimeout(
+        () => ref.doc('meta').get(),
+        const Duration(seconds: 15),
+        'syncDown meta.get',
+      );
       if (!metaDoc.exists) {
         _emit(SyncStatus.idle);
         await syncUp();
@@ -221,7 +228,11 @@ class SyncService {
       final now = DateTime.now().millisecondsSinceEpoch;
 
       // ── Restore known words ───────────────────────────────────────────────
-      final knownDoc = await ref.doc('known_words').get();
+      final knownDoc = await _withTimeout(
+        () => ref.doc('known_words').get(),
+        const Duration(seconds: 15),
+        'syncDown known_words.get',
+      );
       if (knownDoc.exists) {
         final vocabRows =
             await db.query('vocab_words', columns: ['id', 'arabic_clean']);
@@ -240,7 +251,11 @@ class SyncService {
       }
 
       // ── Restore SRS cards (chunked, keyed by arabic_clean) ──────────────
-      final srsMetaDoc = await ref.doc('srs_cards_meta').get();
+      final srsMetaDoc = await _withTimeout(
+        () => ref.doc('srs_cards_meta').get(),
+        const Duration(seconds: 15),
+        'syncDown srs_cards_meta.get',
+      );
       final chunkCount =
           srsMetaDoc.exists ? (srsMetaDoc.data()!['chunks'] as int? ?? 1) : 1;
       final cloudSchemaVersion =
@@ -253,7 +268,11 @@ class SyncService {
       if (cloudSchemaVersion == null) {
         debugPrint('SyncService: migrating old SRS docs to arabic_clean keys');
         for (int i = 0; i < chunkCount; i++) {
-          final oldDoc = await ref.doc('srs_cards_$i').get();
+          final oldDoc = await _withTimeout(
+            () => ref.doc('srs_cards_$i').get(),
+            const Duration(seconds: 15),
+            'syncDown srs_cards_$i.get',
+          );
           if (!oldDoc.exists) continue;
           final migration = <String, String>{};
           for (final entry in oldDoc.data()!.entries) {
@@ -274,7 +293,11 @@ class SyncService {
           }
         }
         // Also handle old single-doc format (srs_cards without _N suffix)
-        final legacyDoc = await ref.doc('srs_cards').get();
+        final legacyDoc = await _withTimeout(
+          () => ref.doc('srs_cards').get(),
+          const Duration(seconds: 15),
+          'syncDown srs_cards.get',
+        );
         if (legacyDoc.exists && chunkCount == 1) {
           final migration = <String, String>{};
           for (final entry in legacyDoc.data()!.entries) {
@@ -295,15 +318,23 @@ class SyncService {
           }
         }
         // Mark schema so we don't re-migrate
-        await ref.doc('srs_cards_meta').set(
-            {'chunks': chunkCount, 'schemaVersion': '1'},
-            SetOptions(merge: true));
+        await _withTimeout(
+          () => ref.doc('srs_cards_meta').set(
+              {'chunks': chunkCount, 'schemaVersion': '1'},
+              SetOptions(merge: true)),
+          const Duration(seconds: 15),
+          'syncDown srs_cards_meta.set',
+        );
         debugPrint('SyncService: old SRS migration complete');
       }
 
       // ── Restore SRS using new clean-keyed docs ────────────────────────────
       for (int i = 0; i < chunkCount; i++) {
-        final srsDoc = await ref.doc('srs_cards_$i').get();
+        final srsDoc = await _withTimeout(
+          () => ref.doc('srs_cards_$i').get(),
+          const Duration(seconds: 15),
+          'syncDown srs_cards_$i.get (new)',
+        );
         if (!srsDoc.exists) continue;
         for (final entry in srsDoc.data()!.entries) {
           final clean = entry.key;
@@ -333,7 +364,11 @@ class SyncService {
       }
 
       // Also read old single-doc format (for new schemaVersion installs)
-      final oldSrsDoc = await ref.doc('srs_cards').get();
+      final oldSrsDoc = await _withTimeout(
+        () => ref.doc('srs_cards').get(),
+        const Duration(seconds: 15),
+        'syncDown srs_cards.get (legacy)',
+      );
       if (oldSrsDoc.exists && chunkCount == 1) {
         for (final entry in oldSrsDoc.data()!.entries) {
           final clean = entry.key;
@@ -363,7 +398,11 @@ class SyncService {
       }
 
       // ── Restore daily stats ───────────────────────────────────────────────
-      final dailyDoc = await ref.doc('daily_stats').get();
+      final dailyDoc = await _withTimeout(
+        () => ref.doc('daily_stats').get(),
+        const Duration(seconds: 15),
+        'syncDown daily_stats.get',
+      );
       if (dailyDoc.exists) {
         for (final entry in dailyDoc.data()!.entries) {
           await db.insert(
@@ -380,7 +419,11 @@ class SyncService {
       }
 
       // ── Restore reading progress ──────────────────────────────────────────
-      final progressDoc = await ref.doc('reading_progress').get();
+      final progressDoc = await _withTimeout(
+        () => ref.doc('reading_progress').get(),
+        const Duration(seconds: 15),
+        'syncDown reading_progress.get',
+      );
       if (progressDoc.exists) {
         for (final entry in progressDoc.data()!.entries) {
           final surahId = int.tryParse(entry.key);
@@ -399,7 +442,11 @@ class SyncService {
       }
 
       // ── Restore bookmarks ─────────────────────────────────────────────────
-      final bookmarkDoc = await ref.doc('bookmarks').get();
+      final bookmarkDoc = await _withTimeout(
+        () => ref.doc('bookmarks').get(),
+        const Duration(seconds: 15),
+        'syncDown bookmarks.get',
+      );
       if (bookmarkDoc.exists) {
         final list = bookmarkDoc.data()!['list'] as List? ?? [];
         for (final b in list) {
@@ -467,6 +514,29 @@ class SyncService {
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
+
+  /// Runs [future] with a [timeout]. If the timeout fires, logs and returns
+  /// the error result instead of hanging forever (e.g. when the device has
+  /// no internet and Firestore keeps retrying in the background).
+  static Future<T> _withTimeout<T>(
+    Future<T> Function() future,
+    Duration timeout,
+    String label,
+  ) async {
+    try {
+      return await future().timeout(timeout, onTimeout: () async {
+        debugPrint(
+            'SyncService: $label timed out after ${timeout.inSeconds}s — continuing offline');
+        throw TimeoutException(
+            '$label timed out after ${timeout.inSeconds}s', timeout);
+      });
+    } on TimeoutException {
+      rethrow;
+    } catch (e) {
+      // Non-timeout errors (network, auth, etc.) pass through normally
+      rethrow;
+    }
+  }
 
   static int _metaInt(List<Map<String, Object?>> rows, String key) {
     final row = rows.where((r) => r['key'] == key).firstOrNull;

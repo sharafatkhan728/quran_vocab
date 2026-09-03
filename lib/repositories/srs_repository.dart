@@ -162,6 +162,31 @@ class SrsRepository {
     );
   }
 
+  /// Returns true if the card exists and is soft-deleted.
+  static Future<bool> isCardDeleted(int vocabWordId) async {
+    final db = await DatabaseManager.db;
+    final rows = await db.query(
+      'srs_cards',
+      columns: ['is_deleted'],
+      where: 'vocab_word_id = ?',
+      whereArgs: [vocabWordId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return false;
+    return (rows.first['is_deleted'] as int? ?? 0) == 1;
+  }
+
+  /// Returns all vocab_word_ids that are soft-deleted.
+  static Future<Set<int>> getDeletedCardIds() async {
+    final db = await DatabaseManager.db;
+    final rows = await db.query(
+      'srs_cards',
+      columns: ['vocab_word_id'],
+      where: 'is_deleted = 1',
+    );
+    return rows.map((r) => r['vocab_word_id'] as int).toSet();
+  }
+
   static Future<void> saveSavedSession(
       List<int> vocabWordIds, int index) async {
     final db = await DatabaseManager.db;

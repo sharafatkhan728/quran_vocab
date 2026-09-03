@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:io';
+import 'dart:async';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -992,6 +994,8 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   // ═══════════════════════════════════════════════════════════════════════════
 
   /// Opens source picker, then crops, then uploads.
+  /// Copies the picked image to a temp file first so image_cropper can
+  /// access it reliably on Android 10+ (scoped storage).
   Future<void> _pickAndUploadPhoto() async {
     if (_isUploadingPhoto) return;
 
@@ -1031,36 +1035,71 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     // User cancelled the image picker
     if (picked == null) return;
 
-    // ── Crop step ──────────────────────────────────────────────────────────
-    final cropped = await ImageCropper().cropImage(
-      sourcePath: picked.path,
-      aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
-      uiSettings: [
-        AndroidUiSettings(
-          toolbarTitle: 'Crop Profile Photo',
-          toolbarColor: _green,
-          toolbarWidgetColor: Colors.white,
-          aspectRatioPresets: [
-            CropAspectRatioPreset.square,
-            CropAspectRatioPreset.original,
-          ],
-          initAspectRatio: CropAspectRatioPreset.square,
-          lockAspectRatio: false,
-        ),
-        IOSUiSettings(
-          title: 'Crop Profile Photo',
-          aspectRatioPresets: [
-            CropAspectRatioPreset.square,
-            CropAspectRatioPreset.original,
-          ],
-        ),
-      ],
-    );
-    // User cancelled the crop screen
-    if (cropped == null) return;
+    // Copy to a temp file so image_cropper can read it on Android 10+
+    final tempDir = await getTemporaryDirectory();
+    final tempFile = File('${tempDir.path}/profile_pic_${DateTime.now().millisecondsSinceEpoch}.jpg');
+    await File(picked.path).copy(tempFile.path);
+    final sourcePath = tempFile.path;
 
-    // ── Upload cropped image ───────────────────────────────────────────────
-    await _uploadCroppedImage(cropped.path);
+    // ── Crop step (with timeout fallback) ──────────────────────────────────
+    late String cropPath;
+    try {
+      final cropped = await ImageCropper().cropImage(
+        sourcePath: sourcePath,
+        aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: 'Crop Profile Photo',
+            toolbarColor: _green,
+            toolbarWidgetColor: Colors.white,
+            aspectRatioPresets: [
+              CropAspectRatioPreset.square,
+              CropAspectRatioPreset.original,
+            ],
+            initAspectRatio: CropAspectRatioPreset.square,
+            lockAspectRatio: false,
+          ),
+          IOSUiSettings(
+            title: 'Crop Profile Photo',
+            aspectRatioPresets: [
+              CropAspectRatioPreset.square,
+              CropAspectRatioPreset.original,
+            ],
+          ),
+        ],
+      ).timeout(const Duration(seconds: 30));
+      if (cropped != null) {
+        cropPath = cropped.path;
+      } else {
+        // User cancelled crop — fall back to the copied temp file
+        cropPath = sourcePath;
+      }
+    } on TimeoutException {
+      // Crop activity hung (known on some Android 13+ devices) — use original
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Crop timed out — uploading original photo'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      cropPath = sourcePath;
+    } catch (e) {
+      // Crop failed for any reason — fall back to original image
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not open crop editor: $e'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+      cropPath = sourcePath;
+    }
+
+    // ── Upload ─────────────────────────────────────────────────────────────
+    await _uploadCroppedImage(cropPath);
   }
 
   /// Uploads a cropped image file to Firebase Storage and updates profile.
@@ -1077,16 +1116,39 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       }
 
       final ext = filePath.split('.').last.toLowerCase();
+      // Correct MIME types — 'image/jpg' is not valid; use 'image/jpeg'
+      final mimeType = ext == 'png'
+          ? 'image/png'
+          : ext == 'webp'
+              ? 'image/webp'
+              : 'image/jpeg';
       final safeExt = ext == 'jpeg' ? 'jpg' : ext;
       final ref = FirebaseStorage.instance
           .ref()
           .child('profile_photos')
           .child('$uid.$safeExt');
 
-      await ref.putFile(
+      final task = ref.putFile(
         File(filePath),
-        SettableMetadata(contentType: 'image/$safeExt'),
+        SettableMetadata(contentType: mimeType),
       );
+      // Show upload progress in a snackbar
+      task.snapshotEvents.listen((event) {
+        if (!mounted) return;
+        final bytes = event.bytesTransferred;
+        final total = event.totalBytes;
+        if (total > 0) {
+          final pct = (bytes / total * 100).toStringAsFixed(0);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Uploading… $pct%'),
+              duration: const Duration(seconds: 1),
+              backgroundColor: _green,
+            ),
+          );
+        }
+      });
+      await task;
       final downloadUrl = await ref.getDownloadURL();
 
       // Update Firebase Auth profile photoURL
