@@ -198,12 +198,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                         title: 'Donate',
                         subtitle: 'Support this app',
                         onTap: () => _showDonateDialog()),
-                    _buildTile(isDark,
-                        icon: Icons.shopping_bag,
-                        iconColor: Colors.purple,
-                        title: 'Purchase Premium',
-                        subtitle: 'Coming Soon',
-                        onTap: null),
                   ]),
                   const SizedBox(height: 5),
                   _buildSection(isDark, title: 'Support & Info', items: [
