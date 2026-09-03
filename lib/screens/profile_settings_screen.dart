@@ -875,22 +875,192 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text("What's New"),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('• Word-by-word Urdu translation'),
-            Text('• Long press to mark words as known'),
-            Text('• Vocabulary screen with swipe gestures'),
-            Text('• Progress dashboard with heatmap'),
-            Text('• Font customization'),
-            Text('• Cloud sync across devices'),
-          ],
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _wtnHeading('🕌', 'Purpose'),
+                _wtnPara(
+                    'Quran Kalima is designed to help you read the Quran with understanding. '
+                    'It combines Quran reading with Arabic vocabulary learning so you can '
+                    'gradually recognize and remember the words you encounter in the Book of Allah.'),
+                const SizedBox(height: 14),
+
+                _wtnHeading('📖', 'The Best Way to Use This App'),
+                _wtnItem('Open any Surah and read naturally — you will see Arabic words with Urdu, English, or Hindi meanings below each word.'),
+                _wtnItem('Tap any unfamiliar word to see its meaning, root, and grammatical information in detail.'),
+                _wtnItem('Long press a word to mark it as "Known" — known words fade so you can focus on new ones.'),
+                _wtnItem('Visit the Vocabulary screen to explore all Quranic words, sorted by frequency or alphabet.'),
+                _wtnItem('Use Flash Cards daily to actively recall meanings instead of only passively reading them.'),
+                _wtnItem('Complete your Daily Goal in Settings — even a small number of words every day builds lasting knowledge.'),
+                const SizedBox(height: 14),
+
+                _wtnHeading('📚', 'Quran Reader & Word-by-Word Meaning'),
+                _wtnPara(
+                    'Every Surah is displayed with word-by-word translation. '
+                    'You can switch between Urdu, English, and Hindi meanings using the language selector. '
+                    'Each word carries its own color based on its grammatical type — red for verbs, '
+                    'blue for nouns, green for prepositions, and more — helping you visually distinguish word types as you read.'),
+                const SizedBox(height: 10),
+                _wtnItem('Tap a word → see its full meaning, root letters, and grammar segments.'),
+                _wtnItem('Long press a word → toggle Known / Unknown instantly.'),
+                _wtnItem('Bookmark any Ayah for quick return later.'),
+                const SizedBox(height: 14),
+
+                _wtnHeading('🔍', 'Explore Every Word'),
+                _wtnPara(
+                    'When you tap a word, you see its meaning, root letters, and grammatical segments. '
+                    'Tap "Learn More About This Word" to explore deeper — find other words that share the same root, '
+                    'see how the word appears across the entire Quran, and understand its morphology (prefixes, suffixes, verb form).'),
+                const SizedBox(height: 10),
+                _wtnItem('Root letters reveal the family of related words in the Quran.'),
+                _wtnItem('Grammar segments show prefixes, suffixes, and part of speech with color coding.'),
+                _wtnItem('Word occurrences show every place the same root appears in the Quran.'),
+                const SizedBox(height: 14),
+
+                _wtnHeading('🃏', 'Flash Cards — Active Recall'),
+                _wtnPara(
+                    'Reading a meaning is recognition. Trying to remember the meaning before you flip the card is active recall — '
+                    'and active recall is how words stick in your long-term memory.'),
+                const SizedBox(height: 10),
+                _wtnItem('Look at the Arabic word first. Try to remember its meaning before tapping to flip.'),
+                _wtnItem('Swipe right (or tap Known) when you remembered it confidently.'),
+                _wtnItem('Swipe left (or tap Unknown) when you could not recall it.'),
+                _wtnItem('After finishing a session, tap "Review More Cards" to continue without leaving the Flash Card screen.'),
+                const SizedBox(height: 14),
+
+                _wtnHeading('🔄', 'Spaced Repetition — Smart Review'),
+                _wtnPara(
+                    'The app does not show words randomly. Words you remember well appear less often. '
+                    'Words you find difficult appear more frequently. This is called Spaced Repetition — '
+                    'a scientifically proven method that helps you retain vocabulary over the long term.'),
+                const SizedBox(height: 10),
+                _wtnItem('Review cards (overdue or failed) are shown first before new vocabulary.'),
+                _wtnItem('New cards fill the remaining slots in your Daily Goal.'),
+                _wtnItem('The goal is lasting retention, not just seeing many words once.'),
+                const SizedBox(height: 14),
+
+                _wtnHeading('✅', 'Known vs Unknown — Be Honest'),
+                _wtnPara(
+                    'Marking "Known" only when you genuinely remembered the word helps the review system work correctly. '
+                    'If you guess correctly but did not truly know the word, the app will show it to you again soon — '
+                    'and that is a good thing. It means you are learning.'),
+                const SizedBox(height: 10),
+                _wtnItem('Known = You recalled the meaning confidently without looking.'),
+                _wtnItem('Unknown = You did not know it, or had to guess.'),
+                const SizedBox(height: 14),
+
+                _wtnHeading('📊', 'Your Progress'),
+                _wtnPara(
+                    'The Progress screen shows your learning journey at a glance — how many words you have learned, '
+                    'your current streak, your longest streak, and a heatmap of your activity over the past 12 weeks. '
+                    'Points are earned each time you complete a Flash Card session.'),
+                const SizedBox(height: 10),
+                _wtnItem('Known Words — total words you have marked as learned.'),
+                _wtnItem('Streak — consecutive days you have reviewed.'),
+                _wtnItem('Heatmap — visual pattern of your daily activity.'),
+                _wtnItem('Points — earned through consistent Flash Card practice.'),
+                const SizedBox(height: 14),
+
+                _wtnHeading('🔑', 'Key Features'),
+                _wtnItem('Quran Reader — 114 Surahs with word-by-word translation.'),
+                _wtnItem('Three Languages — Urdu, English, and Hindi meanings.'),
+                _wtnItem('Morphology & Roots — explore word origins and grammar for every word.'),
+                _wtnItem('Vocabulary Screen — browse all Quranic words with frequency and status.'),
+                _wtnItem('Flash Cards — spaced repetition with Known / Unknown tracking.'),
+                _wtnItem('Bookmarks — save your favourite Ayahs for quick access.'),
+                _wtnItem('Reading Progress — the app remembers where you left off in each Surah.'),
+                _wtnItem('Search — find Surahs or words quickly.'),
+                _wtnItem('Font Customisation — choose IndoPak, Noorehuda, or Amiri Quran script.'),
+                _wtnItem('Dark & Light Theme — easy on the eyes day and night.'),
+                _wtnItem('Cloud Sync — your progress follows you across devices when you sign in.'),
+                const SizedBox(height: 14),
+
+                _wtnHeading('🌟', 'A Simple Daily Routine'),
+                _wtnPara('Here is a practical way to use Quran Kalima every day:'),
+                _wtnItem('Open the Quran Reader and read a few Ayahs of any Surah.'),
+                _wtnItem('Tap any word you do not know to read its meaning and root.'),
+                _wtnItem('Go to Flash Cards and complete your Daily Goal — review first, then learn new words.'),
+                _wtnItem('If a word feels difficult, mark it Unknown — the app will bring it back sooner.'),
+                _wtnItem('Check your Progress screen to see your streak and consistency.'),
+                const SizedBox(height: 14),
+
+                _wtnHeading('💡', 'A Note on Consistency'),
+                _wtnPara(
+                    'Learning 5 words a day with honest review is far more powerful than rushing through 50 words and forgetting them all. '
+                    'The app is built for steady, consistent progress. Set a Daily Goal you can actually keep — '
+                    'even a small number — and trust the spaced repetition system to help those words stay with you for life.'),
+                const SizedBox(height: 8),
+                Text(
+                  'بارک اللہ فیک — May Allah bless your efforts.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.amiriQuran(
+                      fontSize: 16, color: _gold, height: 1.6),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
         ),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Got it'))
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: _green,
+                foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _wtnHeading(String emoji, String title) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 6),
+      child: Row(
+        children: [
+          Text(emoji, style: const TextStyle(fontSize: 18)),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: _green),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _wtnPara(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(
+        text,
+        style: const TextStyle(fontSize: 12.5, height: 1.6, color: Colors.black87),
+      ),
+    );
+  }
+
+  Widget _wtnItem(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 10, bottom: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('•  ',
+              style: TextStyle(fontSize: 14, color: Colors.black87)),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 12.5, height: 1.5, color: Colors.black87),
+            ),
+          ),
         ],
       ),
     );
