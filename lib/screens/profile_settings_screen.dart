@@ -9,7 +9,6 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -23,6 +22,7 @@ import '../screens/auth_screen.dart';
 import '../services/word_glossary_service.dart';
 import 'notification_settings_screen.dart';
 import 'feedback_screen.dart';
+import 'app_tour_screen.dart';
 import '../services/translation_service.dart';
 
 class ProfileSettingsScreen extends StatefulWidget {
@@ -219,16 +219,11 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                         title: 'FAQ',
                         subtitle: 'Frequently Asked Questions',
                         onTap: () => _showFAQ()),
-                    _buildTile(isDark,
-                        icon: Icons.support_agent,
-                        iconColor: Colors.green,
-                        title: 'Support',
-                        subtitle: 'support@qurankalima.com',
-                        onTap: () => _email()),
+
                     _buildTile(isDark,
                         icon: Icons.feedback,
                         iconColor: Colors.blue,
-                        title: 'Feedback & Bug Report',
+                        title: 'Support, Feedback & Bug Report',
                         subtitle: 'Send screenshots, suggestions or bugs',
                         onTap: () => Navigator.push(
                               context,
@@ -1368,14 +1363,13 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 3. APP TOUR — lightweight multi-step overlay
+  // 3. APP TOUR
   // ═══════════════════════════════════════════════════════════════════════════
 
   void _startAppTour() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => const _AppTourDialog(),
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AppTourScreen()),
     );
   }
 
@@ -1751,154 +1745,3 @@ class _DonateDialogState extends State<_DonateDialog> {
   }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-// App Tour — lightweight multi-step overlay with skip/next
-// ═════════════════════════════════════════════════════════════════════════════
-class _AppTourDialog extends StatefulWidget {
-  const _AppTourDialog();
-  @override
-  State<_AppTourDialog> createState() => _AppTourDialogState();
-}
-
-class _AppTourDialogState extends State<_AppTourDialog> {
-  static const _green = Color(0xFF1B4332);
-  static const _gold = Color(0xFFD4AF37);
-
-  int _step = 0;
-  final List<Map<String, String>> _steps = [
-    {
-      'emoji': '🕌',
-      'title': 'Welcome to the Tour!',
-      'body': 'Let\'s take a quick look at the key features of Quran Kalima.',
-    },
-    {
-      'emoji': '📖',
-      'title': 'Surah Reader',
-      'body':
-          'Read the Quran with word-by-word translation, audio, and morphology breakdown on long press.',
-    },
-    {
-      'emoji': '🃏',
-      'title': 'Flashcards',
-      'body':
-          'Learn vocabulary using Spaced Repetition (SRS). Swipe right for Known, left for Unknown.',
-    },
-    {
-      'emoji': '📊',
-      'title': 'Progress',
-      'body': 'Track your daily streak, words learned, and consistency with a heatmap.',
-    },
-    {
-      'emoji': '⚙️',
-      'title': 'Settings',
-      'body':
-          'Customize fonts, themes, daily goals, and sync your progress to the cloud.',
-    },
-  ];
-
-  void _next() {
-    if (_step < _steps.length - 1) {
-      setState(() => _step++);
-    } else {
-      _finish();
-    }
-  }
-
-  void _skip() => _finish();
-
-  void _finish() {
-    // Persist that the in-app tour has been shown
-    SharedPreferences.getInstance().then((prefs) {
-      prefs.setBool('app_tour_seen', true);
-    });
-    if (mounted) Navigator.pop(context);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final step = _steps[_step];
-
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1A2E1F) : Colors.white,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: _gold.withValues(alpha: 0.4), width: 2),
-          boxShadow: [
-            BoxShadow(
-                color: _green.withValues(alpha: 0.2),
-                blurRadius: 20,
-                offset: const Offset(0, 8))
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(step['emoji']!, style: const TextStyle(fontSize: 48)),
-            const SizedBox(height: 12),
-            Text(step['title']!,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white : _green)),
-            const SizedBox(height: 8),
-            Text(step['body']!,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    fontSize: 14,
-                    color: isDark ? Colors.white70 : Colors.grey.shade700,
-                    height: 1.5)),
-            const SizedBox(height: 16),
-            // Progress dots
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(_steps.length, (i) {
-                return Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 3),
-                  width: i == _step ? 20 : 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: i == _step
-                        ? _gold
-                        : (isDark ? Colors.white24 : Colors.grey.shade300),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                );
-              }),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                if (_step > 0)
-                  TextButton(
-                    onPressed: () => setState(() => _step--),
-                    child: const Text('Back'),
-                  ),
-                const Spacer(),
-                TextButton(
-                  onPressed: _skip,
-                  child: Text(_step == _steps.length - 1
-                      ? 'Finish'
-                      : 'Skip'),
-                ),
-                const SizedBox(width: 8),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: _green),
-                  onPressed: _next,
-                  child: Text(
-                    _step == _steps.length - 1 ? 'Start' : 'Next',
-                    style: const TextStyle(color: Colors.white),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

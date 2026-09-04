@@ -67,23 +67,15 @@ void main() async {
 
   _initNotifications();
 
-  // Wrap runApp in runZonedGuarded to catch unhandled async / zone errors
-  // that FlutterError.onError and PlatformDispatcher.instance.onError miss.
-  runZonedGuarded(
-    () => runApp(
-      MultiProvider(
-        providers: [
-          ChangeNotifierProvider.value(value: themeProvider),
-          ChangeNotifierProvider(create: (_) => UserProvider()),
-          ChangeNotifierProvider(create: (_) => DisplayProvider()),
-          ChangeNotifierProvider(create: (_) => LearningStateProvider()),
-        ],
-        child: const QuranAppRoot(),
-      ),
-    ),
-    (error, stack) => CrashlyticsService.recordError(
-      error, stack,
-      context: 'runZonedGuarded (unhandled app error)',
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: themeProvider),
+        ChangeNotifierProvider(create: (_) => UserProvider()),
+        ChangeNotifierProvider(create: (_) => DisplayProvider()),
+        ChangeNotifierProvider(create: (_) => LearningStateProvider()),
+      ],
+      child: const QuranAppRoot(),
     ),
   );
 }
