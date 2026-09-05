@@ -368,7 +368,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
               isDark: isDark,
             ),
             _slider(
-              label: 'Urdu Size',
+              label: 'Word-by-Word Meanings Size',
               value: display.urduFontSize,
               min: 10,
               max: 40,
@@ -536,12 +536,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                 title: 'Daily Goal',
                 subtitle: '${user.dailyGoal} words/day',
                 onTap: () => _setDailyGoal(user)),
-            _buildTile(isDark,
-                icon: Icons.email,
-                iconColor: Colors.red,
-                title: 'Email',
-                subtitle: user.email,
-                onTap: null),
+
           ],
         ));
   }
