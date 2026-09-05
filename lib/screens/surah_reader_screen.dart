@@ -566,7 +566,31 @@ onKnownToggled: (nowKnown) {
           IconButton(
             icon: Icon(
                 _mushafMode ? Icons.view_agenda_outlined : Icons.menu_book),
-            onPressed: () => setState(() => _mushafMode = !_mushafMode),
+            onPressed: () {
+              // Save current scroll position before mode switch
+              int savedAyah = _lastReadAyah;
+              final positions = _itemPositionsListener.itemPositions.value;
+              if (positions.isNotEmpty) {
+                final visible =
+                    positions.where((p) => p.itemLeadingEdge >= 0);
+                if (visible.isNotEmpty) {
+                  savedAyah = visible
+                      .reduce((a, b) =>
+                          a.itemLeadingEdge < b.itemLeadingEdge ? a : b)
+                      .index;
+                }
+              }
+              setState(() => _mushafMode = !_mushafMode);
+              // Restore scroll position after list rebuilds
+              if (savedAyah > 0 && mounted) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (_itemScrollController.isAttached) {
+                    _itemScrollController.jumpTo(
+                        index: savedAyah, alignment: 0.0);
+                  }
+                });
+              }
+            },
           ),
           Consumer<ThemeProvider>(
             builder: (_, theme, __) => IconButton(
