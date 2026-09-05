@@ -23,8 +23,9 @@ import '../widgets/ayah_share_card.dart';
 class SurahReaderScreen extends StatefulWidget {
   final Surah surah;
   final int? jumpToAyah;
+  final int? jumpToAyahRequested;
 
-  const SurahReaderScreen({super.key, required this.surah, this.jumpToAyah});
+  const SurahReaderScreen({super.key, required this.surah, this.jumpToAyah, this.jumpToAyahRequested});
 
   @override
   State<SurahReaderScreen> createState() => _SurahReaderScreenState();
@@ -34,6 +35,7 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
   // ── State ─────────────────────────────────────────────────────────────────
   bool _mushafMode = false;
   int _lastReadAyah = 0;
+  bool _shouldJumpToTop = false;
 
   // ayahNumber → list of words — populated progressively
   final Map<int, List<QuranWord>> _ayahCache = {};
@@ -139,11 +141,11 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
       _isLoading = false;
     });
 
-    if (widget.jumpToAyah != null) {
+    if (widget.jumpToAyahRequested != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_itemScrollController.isAttached) {
           _itemScrollController.jumpTo(
-              index: widget.jumpToAyah!, alignment: 0.0);
+              index: widget.jumpToAyahRequested!, alignment: 0.0);
         }
       });
     }
@@ -582,6 +584,17 @@ onKnownToggled: (nowKnown) {
                 setState(() => _showTranslation = !_showTranslation),
           ),
           IconButton(
+              icon: const Icon(Icons.arrow_upward),
+              onPressed: _shouldJumpToTop
+                  ? null
+                  : () {
+                      if (_itemScrollController.isAttached) {
+                        _itemScrollController.jumpTo(
+                            index: 1, alignment: 0.0);
+                      }
+                    },
+            ),
+          IconButton(
               icon: const Icon(Icons.text_fields), onPressed: _showSettings),
         ],
       ),
@@ -591,7 +604,7 @@ onKnownToggled: (nowKnown) {
           : Column(
               children: [
                 // Resume banner
-                if (_lastReadAyah > 1)
+                if (!_shouldJumpToTop && _lastReadAyah > 1)
                   GestureDetector(
                     onTap: () {
                       if (_itemScrollController.isAttached) {
