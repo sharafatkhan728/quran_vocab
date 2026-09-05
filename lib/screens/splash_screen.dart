@@ -68,8 +68,8 @@ class _SplashScreenState extends State<SplashScreen> {
         await Future.delayed(const Duration(seconds: 4));
       }
       // Report even if the widget was disposed (e.g. user navigated away)
-      if (!mounted) CrashlyticsService.recordError(e, stack,
-          context: 'SplashScreen._run');
+      if (!mounted) { CrashlyticsService.recordError(e, stack,
+          context: 'SplashScreen._run'); }
     }
 
     if (mounted) {

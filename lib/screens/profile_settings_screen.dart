@@ -1123,18 +1123,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     );
   }
 
-  Future<void> _email() async {
-    final url = Uri.parse('mailto:support@qurankalima.com');
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url);
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('support@qurankalima.com')));
-      }
-    }
-  }
-
   Future<void> _instagram() async {
     final Uri url = Uri.parse('https://www.instagram.com/qurankalima/');
     final bool launched = await launchUrl(
