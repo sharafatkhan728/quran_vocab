@@ -721,7 +721,10 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
               ],
             ),
           ),
-          Padding(padding: const EdgeInsets.all(16), child: child),
+          Padding(padding: const EdgeInsets.all(16), child: Material(
+            color: Colors.transparent,
+            child: child,
+          )),
         ],
       ),
     );
@@ -1324,6 +1327,9 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
           msg = 'Storage permission denied. Check Firebase Console rules.';
         } else if (msg.contains('network') || msg.contains('connection')) {
           msg = 'Network error. Please check your connection and try again.';
+        } else if (msg.contains('object-not-found') ||
+            msg.contains('No object exists at the desired reference')) {
+          msg = 'Could not access photo storage. Please check Firebase Storage rules or try again.';
         }
         _showError(msg);
       }

@@ -513,7 +513,10 @@ class _NotificationSettingsScreenState
                       color: isDark ? Colors.white : _green)),
             ]),
           ),
-          Padding(padding: const EdgeInsets.all(16), child: child),
+          Padding(padding: const EdgeInsets.all(16), child: Material(
+            color: Colors.transparent,
+            child: child,
+          )),
         ],
       ),
     );

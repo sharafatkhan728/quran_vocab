@@ -205,7 +205,6 @@ class _AppTourScreenState extends State<AppTourScreen> with TickerProviderStateM
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final step = _allSteps[_currentPage];
     final isLast = _currentPage == _allSteps.length - 1;
     final isFirst = _currentPage == 0;
     return PopScope(
@@ -236,7 +235,7 @@ class _AppTourScreenState extends State<AppTourScreen> with TickerProviderStateM
                     if (i != _currentPage)
                       setState(() => _currentPage = i);
                   },
-                  itemBuilder: (_, __) => step.demo,
+                  itemBuilder: (_, i) => _buildStepPage(_allSteps[i], isDark),
                 ),
               ),
               const SizedBox(height: 4),
@@ -246,6 +245,47 @@ class _AppTourScreenState extends State<AppTourScreen> with TickerProviderStateM
           ),
         ),
       ),
+    );
+  }
+  Widget _buildStepPage(_TourStep step, bool isDark) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    step.title,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : kGreen,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    step.body,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14.5,
+                      height: 1.55,
+                      color: isDark ? Colors.white70 : Colors.grey.shade700,
+                    ),
+                  ),
+                  const SizedBox(height: 30),
+                  step.demo,
+                  const SizedBox(height: 12),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
   Widget _buildProgressBar(bool isDark) {
