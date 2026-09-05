@@ -3,13 +3,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'dart:io';
-import 'dart:async';
-import 'package:firebase_storage/firebase_storage.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:image_cropper/image_cropper.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -37,7 +30,20 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   static const _teal = Color(0xFF2D6A4F);
 
   String _appVersion = '';
-  bool _isUploadingPhoto = false;
+
+  // ── Gender-based default avatar ───────────────────────────────────────────
+  // If user has no custom photo, show a gender-appropriate default avatar.
+  // Male: green background with cap icon, Female: blue hijab icon.
+  Widget _buildDefaultAvatar(String gender) {
+    final String asset;
+    if (gender.toLowerCase() == 'female') {
+      asset = 'assets/images/avatar_female.png';
+    } else {
+      // Default to male avatar if gender not set
+      asset = 'assets/images/avatar_male.png';
+    }
+    return Image.asset(asset, width: 88, height: 88, fit: BoxFit.cover);
+  }
 
   @override
   void initState() {
@@ -52,10 +58,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
 
   @override
   void dispose() {
-    // Safety net: clear loading state if widget is disposed mid-upload
-    if (_isUploadingPhoto && mounted) {
-      setState(() => _isUploadingPhoto = false);
-    }
     super.dispose();
   }
 
@@ -99,41 +101,9 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                                 ? NetworkImage(user.photoUrl)
                                 : null,
                             child: user.photoUrl.isEmpty
-                                ? Text(
-                                    user.displayName.isNotEmpty
-                                        ? user.displayName[0].toUpperCase()
-                                        : 'Q',
-                                    style: const TextStyle(
-                                        fontSize: 36,
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold),
-                                  )
+                                ? _buildDefaultAvatar(user.gender)
                                 : null,
                           ),
-                          if (_isUploadingPhoto)
-                            const Positioned(
-                              bottom: 0,
-                              right: 0,
-                              child: SizedBox(
-                                width: 28,
-                                height: 28,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.5,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            )
-                          else
-                            GestureDetector(
-                              onTap: () => _pickAndUploadPhoto(),
-                              child: Container(
-                                padding: const EdgeInsets.all(4),
-                                decoration: const BoxDecoration(
-                                    color: _gold, shape: BoxShape.circle),
-                                child: const Icon(Icons.edit,
-                                    size: 14, color: _green),
-                              ),
-                            ),
                         ],
                       ),
                       const SizedBox(height: 10),
@@ -1140,205 +1110,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 1. PROFILE IMAGE UPLOAD — with cropping
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  /// Opens source picker, then crops, then uploads.
-  /// Copies the picked image to a temp file first so image_cropper can
-  /// access it reliably on Android 10+ (scoped storage).
-  Future<void> _pickAndUploadPhoto() async {
-    if (_isUploadingPhoto) return;
-
-    final source = await showDialog<ImageSource>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('Choose Photo'),
-        children: [
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx, ImageSource.camera),
-            child: const Row(
-              children: [Icon(Icons.camera_alt, color: Colors.blue), SizedBox(width: 12), Text('Camera')],
-            ),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx, ImageSource.gallery),
-            child: const Row(
-              children: [Icon(Icons.photo_library, color: Colors.green), SizedBox(width: 12), Text('Gallery')],
-            ),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx, null),
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
-    );
-    // User cancelled the source dialog
-    if (source == null) return;
-
-    final picked = await ImagePicker().pickImage(
-      source: source,
-      maxWidth: 1200,
-      maxHeight: 1200,
-      imageQuality: 90,
-    );
-    // User cancelled the image picker
-    if (picked == null) return;
-
-    // Copy to a temp file so image_cropper can read it on Android 10+
-    final tempDir = await getTemporaryDirectory();
-    final tempFile = File('${tempDir.path}/profile_pic_${DateTime.now().millisecondsSinceEpoch}.jpg');
-    await File(picked.path).copy(tempFile.path);
-    final sourcePath = tempFile.path;
-
-    // ── Crop step (with timeout fallback) ──────────────────────────────────
-    late String cropPath;
-    try {
-      final cropped = await ImageCropper().cropImage(
-        sourcePath: sourcePath,
-        aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
-        uiSettings: [
-          AndroidUiSettings(
-            toolbarTitle: 'Crop Profile Photo',
-            toolbarColor: _green,
-            toolbarWidgetColor: Colors.white,
-            aspectRatioPresets: [
-              CropAspectRatioPreset.square,
-              CropAspectRatioPreset.original,
-            ],
-            initAspectRatio: CropAspectRatioPreset.square,
-            lockAspectRatio: false,
-          ),
-          IOSUiSettings(
-            title: 'Crop Profile Photo',
-            aspectRatioPresets: [
-              CropAspectRatioPreset.square,
-              CropAspectRatioPreset.original,
-            ],
-          ),
-        ],
-      ).timeout(const Duration(seconds: 30));
-      if (cropped != null) {
-        cropPath = cropped.path;
-      } else {
-        // User cancelled crop — fall back to the copied temp file
-        cropPath = sourcePath;
-      }
-    } on TimeoutException {
-      // Crop activity hung (known on some Android 13+ devices) — use original
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Crop timed out — uploading original photo'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-      cropPath = sourcePath;
-    } catch (e) {
-      // Crop failed for any reason — fall back to original image
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Could not open crop editor: $e'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
-      cropPath = sourcePath;
-    }
-
-    // ── Upload ─────────────────────────────────────────────────────────────
-    await _uploadCroppedImage(cropPath);
-  }
-
-  /// Uploads a cropped image file to Firebase Storage and updates profile.
-  Future<void> _uploadCroppedImage(String filePath) async {
-    // Re-check mounted before starting async work
-    if (!mounted) return;
-    setState(() => _isUploadingPhoto = true);
-
-    try {
-      final uid = FirebaseAuth.instance.currentUser?.uid;
-      if (uid == null) {
-        if (mounted) _showError('Not logged in');
-        return;
-      }
-
-      final ext = filePath.split('.').last.toLowerCase();
-      // Correct MIME types — 'image/jpg' is not valid; use 'image/jpeg'
-      final mimeType = ext == 'png'
-          ? 'image/png'
-          : ext == 'webp'
-              ? 'image/webp'
-              : 'image/jpeg';
-      final safeExt = ext == 'jpeg' ? 'jpg' : ext;
-      final ref = FirebaseStorage.instance
-          .ref()
-          .child('profile_photos')
-          .child('$uid.$safeExt');
-
-      final task = ref.putFile(
-        File(filePath),
-        SettableMetadata(contentType: mimeType),
-      );
-      // Show upload progress in a snackbar
-      task.snapshotEvents.listen((event) {
-        if (!mounted) return;
-        final bytes = event.bytesTransferred;
-        final total = event.totalBytes;
-        if (total > 0) {
-          final pct = (bytes / total * 100).toStringAsFixed(0);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Uploading… $pct%'),
-              duration: const Duration(seconds: 1),
-              backgroundColor: _green,
-            ),
-          );
-        }
-      });
-      await task;
-      final downloadUrl = await ref.getDownloadURL();
-
-      // Update Firebase Auth profile photoURL
-      await FirebaseAuth.instance.currentUser?.updatePhotoURL(downloadUrl);
-
-      // Update Firestore profile document
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .set({'photoUrl': downloadUrl}, SetOptions(merge: true));
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Profile photo updated'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        String msg = e.toString();
-        if (msg.contains('storage/not-allowed') ||
-            msg.contains('permission_denied')) {
-          msg = 'Storage permission denied. Check Firebase Console rules.';
-        } else if (msg.contains('network') || msg.contains('connection')) {
-          msg = 'Network error. Please check your connection and try again.';
-        } else if (msg.contains('object-not-found') ||
-            msg.contains('No object exists at the desired reference')) {
-          msg = 'Could not access photo storage. Please check Firebase Storage rules or try again.';
-        }
-        _showError(msg);
-      }
-    } finally {
-      // Always clear loading state — use mounted guard to avoid setState after dispose
-      if (mounted) setState(() => _isUploadingPhoto = false);
-    }
-  }
-
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.red.shade700),
