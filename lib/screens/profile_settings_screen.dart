@@ -314,7 +314,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
           height: 1.8,
         );
       default:
-        return GoogleFonts.amiriQuran(
+        return GoogleFonts.amiri(
           fontSize: display.arabicFontSize,
           height: 1.8,
         );
@@ -954,7 +954,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                 Text(
                   'بارک اللہ فیک — May Allah bless your efforts.',
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.amiriQuran(
+                  style: GoogleFonts.amiri(
                       fontSize: 16, color: _gold, height: 1.6),
                 ),
                 const SizedBox(height: 8),
