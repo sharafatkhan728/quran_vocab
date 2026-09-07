@@ -1,5 +1,6 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -59,6 +60,16 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
   final ItemPositionsListener _itemPositionsListener =
       ItemPositionsListener.create();
 
+  // ── Continuous Mushaf mode: separate scroll controller (not index-based) ──
+  final ScrollController _mushafScrollController = ScrollController();
+  // ayahNumber → GlobalKey anchored to that ayah's first word, used to
+  // locate/scroll to a specific ayah inside the single continuous Wrap.
+  final Map<int, GlobalKey> _ayahAnchorKeys = {};
+  Timer? _mushafScrollDebounce;
+  // Anchors the actual scroll viewport (not the whole screen/AppBar) so
+  // _computeCurrentMushafAyah measures anchor positions from the right origin.
+  final GlobalKey _mushafViewportKey = GlobalKey();
+
   bool get _showBismillahHeader => widget.surah.id != 9 && widget.surah.id != 1;
 
   LearningStateProvider? _learning;
@@ -70,6 +81,7 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
     _loadReadingPrefs();
     _initData();
     _itemPositionsListener.itemPositions.addListener(_onScroll);
+    _mushafScrollController.addListener(_onMushafScroll);
     TranslationLangService.langNotifier.addListener(_onTranslationLangChanged);
   }
 
@@ -109,6 +121,9 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
   void dispose() {
     _learning?.removeListener(_onLearningStateChanged);
     _itemPositionsListener.itemPositions.removeListener(_onScroll);
+    _mushafScrollController.removeListener(_onMushafScroll);
+    _mushafScrollController.dispose();
+    _mushafScrollDebounce?.cancel();
     TranslationLangService.langNotifier.removeListener(_onTranslationLangChanged);
     super.dispose();
   }
@@ -122,6 +137,90 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
         visible.reduce((a, b) => a.itemLeadingEdge < b.itemLeadingEdge ? a : b);
     if (first.index > 0 && first.index <= _totalAyahs) {
       ContentRepository.saveLastReadAyah(widget.surah.id, first.index);
+    }
+  }
+
+  // ── Continuous Mushaf mode: position tracking ─────────────────────────────
+
+  GlobalKey _keyForAyah(int ayahNum) {
+    return _ayahAnchorKeys.putIfAbsent(
+        ayahNum, () => GlobalKey(debugLabel: 'ayah_anchor_$ayahNum'));
+  }
+
+  /// Finds the ayah whose anchor (first word) sits closest to the top of the
+  /// Mushaf viewport, using each anchor's live render position. This is the
+  /// continuous-flow equivalent of ItemPositionsListener for Card mode.
+  int? _computeCurrentMushafAyah() {
+    final viewportBox =
+        _mushafViewportKey.currentContext?.findRenderObject();
+    if (viewportBox is! RenderBox || !viewportBox.attached) return null;
+    final viewportTop = viewportBox.localToGlobal(Offset.zero).dy;
+
+    int? best;
+    double bestDy = double.infinity;
+    for (final entry in _ayahAnchorKeys.entries) {
+      final ctx = entry.value.currentContext;
+      if (ctx == null) continue;
+      final renderBox = ctx.findRenderObject();
+      if (renderBox is! RenderBox || !renderBox.attached) continue;
+      final relativeDy = renderBox.localToGlobal(Offset.zero).dy - viewportTop;
+      // Prefer the topmost anchor that is at or just above the viewport top
+      // (small negative tolerance so an ayah that just scrolled past still counts).
+      if (relativeDy >= -40 && relativeDy < bestDy) {
+        bestDy = relativeDy;
+        best = entry.key;
+      }
+    }
+    return best;
+  }
+
+  void _onMushafScroll() {
+    _mushafScrollDebounce?.cancel();
+    _mushafScrollDebounce = Timer(const Duration(milliseconds: 200), () {
+      if (!mounted || !_mushafMode) return;
+      final current = _computeCurrentMushafAyah();
+      if (current != null && current > 0 && current <= _totalAyahs) {
+        ContentRepository.saveLastReadAyah(widget.surah.id, current);
+      }
+    });
+  }
+
+  /// Waits until a specific ayah's words have loaded into the cache (needed
+  /// before its GlobalKey anchor exists in the widget tree in Mushaf mode).
+  Future<void> _waitForAyahLoaded(int ayahNum,
+      {Duration timeout = const Duration(seconds: 5)}) async {
+    final start = DateTime.now();
+    while (!_ayahCache.containsKey(ayahNum)) {
+      if (!mounted) return;
+      if (DateTime.now().difference(start) > timeout) return;
+      await Future.delayed(const Duration(milliseconds: 40));
+    }
+  }
+
+  /// Unified ayah navigation — works in both Card mode (index-based jump)
+  /// and Mushaf mode (GlobalKey anchor + ensureVisible), so callers don't
+  /// need to know which mode is active.
+  Future<void> _scrollToAyah(int ayahNum, {bool animate = false}) async {
+    if (ayahNum <= 0 || !mounted) return;
+    if (_mushafMode) {
+      final ctx = _ayahAnchorKeys[ayahNum]?.currentContext;
+      if (ctx != null) {
+        await Scrollable.ensureVisible(
+          ctx,
+          alignment: 0.05,
+          duration: animate ? const Duration(milliseconds: 300) : Duration.zero,
+          curve: Curves.easeInOut,
+        );
+      }
+    } else {
+      if (_itemScrollController.isAttached) {
+        if (animate) {
+          _itemScrollController.scrollTo(
+              index: ayahNum, duration: const Duration(milliseconds: 300));
+        } else {
+          _itemScrollController.jumpTo(index: ayahNum, alignment: 0.0);
+        }
+      }
     }
   }
 
@@ -142,12 +241,23 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
     });
 
     if (widget.jumpToAyahRequested != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_itemScrollController.isAttached) {
-          _itemScrollController.jumpTo(
-              index: widget.jumpToAyahRequested!, alignment: 0.0);
-        }
-      });
+      final target = widget.jumpToAyahRequested!;
+      if (_mushafMode) {
+        // Mushaf anchors only exist once that ayah's words are built, so
+        // wait for its specific batch to load rather than the whole surah.
+        _waitForAyahLoaded(target).then((_) {
+          if (mounted) {
+            WidgetsBinding.instance
+                .addPostFrameCallback((_) => _scrollToAyah(target));
+          }
+        });
+      } else {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_itemScrollController.isAttached) {
+            _itemScrollController.jumpTo(index: target, alignment: 0.0);
+          }
+        });
+      }
     }
 
     _loadAllTranslations();
@@ -567,24 +677,32 @@ onKnownToggled: (nowKnown) {
             icon: Icon(
                 _mushafMode ? Icons.view_agenda_outlined : Icons.menu_book),
             onPressed: () {
-              // Save current scroll position before mode switch
+              // Save current scroll position before mode switch, using
+              // whichever position-tracking mechanism the CURRENT mode uses.
               int savedAyah = _lastReadAyah;
-              final positions = _itemPositionsListener.itemPositions.value;
-              if (positions.isNotEmpty) {
-                final visible =
-                    positions.where((p) => p.itemLeadingEdge >= 0);
-                if (visible.isNotEmpty) {
-                  savedAyah = visible
-                      .reduce((a, b) =>
-                          a.itemLeadingEdge < b.itemLeadingEdge ? a : b)
-                      .index;
+              if (_mushafMode) {
+                savedAyah = _computeCurrentMushafAyah() ?? _lastReadAyah;
+              } else {
+                final positions = _itemPositionsListener.itemPositions.value;
+                if (positions.isNotEmpty) {
+                  final visible =
+                      positions.where((p) => p.itemLeadingEdge >= 0);
+                  if (visible.isNotEmpty) {
+                    savedAyah = visible
+                        .reduce((a, b) =>
+                            a.itemLeadingEdge < b.itemLeadingEdge ? a : b)
+                        .index;
+                  }
                 }
               }
               setState(() => _mushafMode = !_mushafMode);
-              // Restore scroll position after list rebuilds
+              // Restore scroll position in the NEW mode after it rebuilds.
               if (savedAyah > 0 && mounted) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (_itemScrollController.isAttached) {
+                WidgetsBinding.instance.addPostFrameCallback((_) async {
+                  if (_mushafMode) {
+                    await _waitForAyahLoaded(savedAyah);
+                    if (mounted) _scrollToAyah(savedAyah);
+                  } else if (_itemScrollController.isAttached) {
                     _itemScrollController.jumpTo(
                         index: savedAyah, alignment: 0.0);
                   }
@@ -612,7 +730,9 @@ onKnownToggled: (nowKnown) {
               onPressed: _shouldJumpToTop
                   ? null
                   : () {
-                      if (_itemScrollController.isAttached) {
+                      if (_mushafMode) {
+                        _mushafScrollController.jumpTo(0);
+                      } else if (_itemScrollController.isAttached) {
                         _itemScrollController.jumpTo(
                             index: 1, alignment: 0.0);
                       }
@@ -630,12 +750,13 @@ onKnownToggled: (nowKnown) {
                 // Resume banner
                 if (!_shouldJumpToTop && _lastReadAyah > 1)
                   GestureDetector(
-                    onTap: () {
-                      if (_itemScrollController.isAttached) {
-                        _itemScrollController.jumpTo(
-                            index: _lastReadAyah, alignment: 0.0);
-                      }
+                    onTap: () async {
+                      final target = _lastReadAyah;
                       setState(() => _lastReadAyah = 0);
+                      if (_mushafMode) {
+                        await _waitForAyahLoaded(target);
+                      }
+                      if (mounted) _scrollToAyah(target);
                     },
                     child: Container(
                       width: double.infinity,
@@ -667,7 +788,7 @@ onKnownToggled: (nowKnown) {
                       });
                     },
                   child: _mushafMode
-                      ? _buildMushafList(isDark)
+                      ? _buildMushafContinuous(isDark)
                       : _buildCardList(isDark),
                   ),
                 ),
@@ -854,100 +975,107 @@ onKnownToggled: (nowKnown) {
     );
   }
 
-  // ── Mushaf mode ───────────────────────────────────────────────────────────
+  // ── Mushaf mode (continuous paragraph flow) ───────────────────────────────
 
-  Widget _buildMushafList(bool isDark) {
+  Widget _buildMushafContinuous(bool isDark) {
     return Container(
       margin: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF0A1E11) : const Color.fromARGB(255, 255, 255, 255), // 
+        color: isDark ? const Color(0xFF0A1E11) : Colors.white,
         border: Border.all(
             color: const Color(0xFFD4AF37).withValues(alpha: 0.5), width: 1.5),
         borderRadius: BorderRadius.circular(4),
       ),
-      child: ScrollablePositionedList.builder(
-        itemScrollController: _itemScrollController,
-        itemPositionsListener: _itemPositionsListener,
+      child: SingleChildScrollView(
+        key: _mushafViewportKey,
+        controller: _mushafScrollController,
         padding: const EdgeInsets.all(12),
-        itemCount: _totalAyahs + 2,
-        itemBuilder: (context, index) {
-          if (index == 0) {
-            return _showBismillahHeader
-                ? _BismillahHeader()
-                : const SizedBox.shrink();
-          }
-          if (index == _totalAyahs + 1) return _buildNavigation();
-          return _buildMushafAyah(index, _ayahCache[index], isDark);
-        },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_showBismillahHeader) _BismillahHeader(),
+            Directionality(
+              textDirection: TextDirection.rtl,
+              child: Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                textDirection: TextDirection.rtl,
+                children: _buildContinuousWords(isDark),
+              ),
+            ),
+            const SizedBox(height: 12),
+            _buildNavigation(),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildMushafAyah(int ayahNum, List<QuranWord>? words, bool isDark) {
-    if (words == null) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 8),
-        child: Center(
-            child: SizedBox(
-          width: 16,
-          height: 16,
-          child: CircularProgressIndicator(
-              strokeWidth: 2, color: Color(0xFF1B4332)),
-        )),
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Directionality(
-        textDirection: TextDirection.rtl,
-        child: SizedBox(
-          width: double.infinity,
-          child: Wrap(
-            alignment: WrapAlignment.start,
-            crossAxisAlignment: WrapCrossAlignment.start,
-            textDirection: TextDirection.rtl,
-            children: [
-              ...words.map<Widget>((word) {
-                    final normalized = WordProgressService
-                        .normalizeArabic(word.arabic);
-                    final isKnown = context
-                        .read<LearningStateProvider>()
-                        .isKnown(normalized);
-                    return GestureDetector(
-                      onTap: () => _showWordDetail(word),
-                      onLongPress: () => _onWordLongPress(word),
-                      child: Padding(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 2),
-                        child: AnimatedOpacity(
-                          opacity: isKnown ? 0.35 : 1.0,
-                          duration: const Duration(milliseconds: 80),
-                          child: Text(
-                            word.arabic,
-                            textDirection: TextDirection.rtl,
-                            style: _mushafStyle(isDark),
-                          ),
-                        ),
-                      ),
-                    );
-                  }),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Text(
-                  ' ﴿${_toArabicNumeral(ayahNum)}﴾ ',
-                  textDirection: TextDirection.rtl,
-                  style: TextStyle(
-                    fontFamily: 'AmiriQuran',
-                    fontSize: _arabicFontSize - 4,
-                    color: const Color(0xFFD4AF37),
-                  ),
+  /// Flattens every loaded ayah's words into ONE list of inline widgets, so
+  /// they render as a single continuous Wrap — ayah 2 can start on the same
+  /// visual line where ayah 1 ends, exactly like a printed Mushaf. Each
+  /// ayah's first word carries a GlobalKey anchor (via _keyForAyah) so we can
+  /// later locate/scroll to that ayah with Scrollable.ensureVisible, since
+  /// there is no per-ayah list index to jump to anymore.
+  List<Widget> _buildContinuousWords(bool isDark) {
+    final children = <Widget>[];
+    for (int ayahNum = 1; ayahNum <= _totalAyahs; ayahNum++) {
+      final words = _ayahCache[ayahNum];
+      // Words load progressively in ayah order, so the first gap means
+      // everything after it isn't ready yet.
+      if (words == null) break;
+
+      for (int i = 0; i < words.length; i++) {
+        final word = words[i];
+        final normalized = WordProgressService.normalizeArabic(word.arabic);
+        final isKnown =
+            context.read<LearningStateProvider>().isKnown(normalized);
+        Widget wordWidget = GestureDetector(
+          onTap: () => _showWordDetail(word),
+          onLongPress: () => _onWordLongPress(word),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: 
+              Text(
+                word.arabic,
+                textDirection: TextDirection.rtl,
+                style: _mushafStyle(isDark).copyWith(
+                  decoration: isKnown
+                      ? TextDecoration.underline
+                      : TextDecoration.none,
+                  decorationColor: isDark
+                      ? Colors.white.withValues(alpha: 0.35)
+                      : Colors.black.withValues(alpha: 0.25),
+                  decorationThickness: 1.0,
                 ),
               ),
-            ],
+          ),
+        );
+        if (i == 0) {
+          // Anchor the ayah's first word so _scrollToAyah can find it later.
+          wordWidget =
+              KeyedSubtree(key: _keyForAyah(ayahNum), child: wordWidget);
+        }
+        children.add(wordWidget);
+      }
+
+      // Ayah-end marker — plain English numeral in parentheses.
+      children.add(Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Directionality(
+          textDirection: TextDirection.ltr,
+          child: Text(
+            '($ayahNum)',
+            style: TextStyle(
+              fontSize: (_arabicFontSize * 0.42).clamp(11, 18),
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFFD4AF37),
+            ),
           ),
         ),
-      ),
-    );
+      ));
+    }
+    return children;
   }
 
   TextStyle _mushafStyle(bool isDark) {
