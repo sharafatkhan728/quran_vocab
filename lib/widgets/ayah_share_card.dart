@@ -335,7 +335,7 @@ class _AyahCard extends StatelessWidget {
               color: color,
               height: 2.0);
         default:
-          return GoogleFonts.amiriQuran(fontSize: size, color: color, height: 2.0);
+          return GoogleFonts.amiri(fontSize: size, color: color, height: 2.0);
       }
     }
 
@@ -439,7 +439,7 @@ class _AyahCard extends StatelessWidget {
                     Text(
                       surahNameArabic,
                       textDirection: TextDirection.rtl,
-                      style: GoogleFonts.amiriQuran(
+                      style: GoogleFonts.amiri(
                           fontSize: 16, color: theme.accent),
                     ),
                     const SizedBox(width: 8),

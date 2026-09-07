@@ -44,7 +44,7 @@ class _WordOccurrencesScreenState extends State<WordOccurrencesScreen> {
             color: color,
             height: 1.8);
       default:
-        return GoogleFonts.amiriQuran(
+        return GoogleFonts.amiri(
             fontSize: size, color: color, height: 1.8);
     }
   }

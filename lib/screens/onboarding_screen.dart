@@ -421,7 +421,7 @@ class _WelcomePage extends StatelessWidget {
                   'بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ',
                   textDirection: TextDirection.rtl,
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.amiriQuran(
+                  style: GoogleFonts.amiri(
                     fontSize: 22,
                     color: isDark ? Colors.white : const Color(0xFF1B4332),
                     height: 2.0,
@@ -627,7 +627,7 @@ class _FontPage extends StatelessWidget {
           color: isDarkLocal ? Colors.white : const Color(0xFF1B4332),
           height: 2.0);
     } else {
-      arabicStyle = GoogleFonts.amiriQuran(
+      arabicStyle = GoogleFonts.amiri(
           fontSize: 22,
           color: isDarkLocal ? Colors.white : const Color(0xFF1B4332),
           height: 2.0);

@@ -1094,7 +1094,7 @@ class _MorphologySheetState extends State<MorphologySheet>
             color: color,
             height: 1.8);
       default:
-        return GoogleFonts.amiriQuran(fontSize: sz, color: color, height: 1.8);
+        return GoogleFonts.amiri(fontSize: sz, color: color, height: 1.8);
     }
   }
 }

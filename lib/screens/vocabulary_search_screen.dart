@@ -348,7 +348,7 @@ class _SurahResultCard extends StatelessWidget {
             Text(
               result.arabic,
               textDirection: TextDirection.rtl,
-              style: GoogleFonts.amiriQuran(
+              style: GoogleFonts.amiri(
                   fontSize: 20,
                   color: isDark ? Colors.white : const Color(0xFF1B4332)),
             ),
@@ -467,7 +467,7 @@ class _WordResultCard extends StatelessWidget {
             color: color,
             height: 1.6);
       default:
-        return GoogleFonts.amiriQuran(
+        return GoogleFonts.amiri(
             fontSize: size, color: color, height: 1.6);
     }
   }
@@ -515,7 +515,7 @@ class _RootResultCard extends StatelessWidget {
             child: Text(
               result.arabic,
               textDirection: TextDirection.rtl,
-              style: GoogleFonts.amiriQuran(
+              style: GoogleFonts.amiri(
                   fontSize: 22, color: const Color(0xFFD4AF37)),
             ),
           ),

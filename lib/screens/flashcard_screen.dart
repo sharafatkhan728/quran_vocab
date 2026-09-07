@@ -1303,7 +1303,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                     color: isDark ? Colors.white : _green)),
             const SizedBox(height: 8),
             Text('بارک اللہ فیک',
-                style: GoogleFonts.amiriQuran(fontSize: 28, color: _gold)),
+                style: GoogleFonts.amiri(fontSize: 28, color: _gold)),
             const SizedBox(height: 28),
             Container(
               padding: const EdgeInsets.all(20),
@@ -1574,7 +1574,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
             color: color,
             height: 1.4);
       default:
-        return GoogleFonts.amiriQuran(
+        return GoogleFonts.amiri(
             fontSize: size, color: color, height: 1.4);
     }
   }

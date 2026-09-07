@@ -1242,7 +1242,7 @@ class _AppTourScreenState extends State<AppTourScreen> with TickerProviderStateM
               ),
               const SizedBox(height: 9),
               Text('Baraka Allahu Feek',
-                  style: GoogleFonts.amiriQuran(
+                  style: GoogleFonts.amiri(
                       fontSize: 17,
                       color: kGold,
                       height: 1.6)),

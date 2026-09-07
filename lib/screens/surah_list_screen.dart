@@ -528,7 +528,7 @@ class _SurahCardState extends State<_SurahCard>
                                 Text(
                                   quran.getSurahNameArabic(widget.id),
                                   textDirection: TextDirection.rtl,
-                                  style: GoogleFonts.amiriQuran(
+                                  style: GoogleFonts.amiri(
                                     fontSize: 22,
                                     color: isDark ? Colors.white : _green,
                                     height: 1.4,

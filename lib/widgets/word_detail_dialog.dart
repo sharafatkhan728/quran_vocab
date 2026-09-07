@@ -417,7 +417,7 @@ class _WordDetailDialogState extends State<WordDetailDialog> {
             color: color,
             height: 1.6);
       default:
-        return GoogleFonts.amiriQuran(
+        return GoogleFonts.amiri(
             fontSize: size, color: color, height: 1.6);
     }
   }

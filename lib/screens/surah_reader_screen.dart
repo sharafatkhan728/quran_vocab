@@ -967,7 +967,7 @@ onKnownToggled: (nowKnown) {
             color: color,
             height: 2.2);
       default:
-        return GoogleFonts.amiriQuran(
+        return GoogleFonts.amiri(
             fontSize: _arabicFontSize, color: color, height: 2.2);
     }
   }
@@ -1021,7 +1021,7 @@ onKnownToggled: (nowKnown) {
                     fontWeight: FontWeight.bold, color: Color(0xFF1B4332))),
             Text(quran.getSurahNameArabic(surahId),
                 textDirection: TextDirection.rtl,
-                style: GoogleFonts.amiriQuran(fontSize: 16)),
+                style: GoogleFonts.amiri(fontSize: 16)),
           ],
         ),
       ),
@@ -1055,7 +1055,7 @@ class _BismillahHeader extends StatelessWidget {
             height: 2.0);
         break;
       default:
-        arabicStyle = GoogleFonts.amiriQuran(
+        arabicStyle = GoogleFonts.amiri(
             fontSize: display.arabicFontSize.clamp(22, 36),
             color: isDark ? const Color(0xFFD4AF37) : const Color(0xFF1B4332),
             height: 2.0);

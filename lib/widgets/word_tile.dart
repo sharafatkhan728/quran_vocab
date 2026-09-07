@@ -275,7 +275,7 @@ class WordTile extends StatelessWidget {
             color: color,
             height: 1.8);
       default:
-        return GoogleFonts.amiriQuran(
+        return GoogleFonts.amiri(
             fontSize: size, color: color, height: 1.8);
     }
   }
