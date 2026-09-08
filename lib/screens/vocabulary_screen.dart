@@ -41,12 +41,13 @@ class _VocabularyScreenState extends State<VocabularyScreen>
   }
 
   Future<void> _initLoad() async {
+    if (!mounted) return;
     // Wait for LearningStateProvider to finish loading from SQLite
     final learning = context.read<LearningStateProvider>();
     if (!learning.isLoaded) {
       await learning.init();
     }
-    await _loadWords();
+    if (mounted) await _loadWords();
   }
 
   @override

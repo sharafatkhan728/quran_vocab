@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:video_player/video_player.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../database/database_importer.dart';
 import '../database/database_manager.dart';
 import '../database/migration_manager.dart';
@@ -7,7 +9,6 @@ import '../providers/learning_state_provider.dart';
 import '../services/crashlytics_service.dart';
 import '../services/sync_service.dart';
 import 'onboarding_screen.dart';
-
 
 class SplashScreen extends StatefulWidget {
   final Widget child;
@@ -18,17 +19,105 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  // ── Data loading state ────────────────────────────────────────────────────
   String _label = 'Starting...';
   double _progress = 0;
   bool _done = false;
   bool _hasError = false;
   bool _showOnboarding = false;
 
+  // ── Intro video state ─────────────────────────────────────────────────────
+  // _videoDone starts true (assume no video needed) and is only flipped to
+  // false once we confirm the intro hasn't been seen yet. The final
+  // transition to the app requires BOTH _done AND _videoDone — this is what
+  // stops a fast database check from skipping the video entirely.
+  bool _showIntroVideo = false;
+  bool _videoDone = true;
+  bool _videoInitialized = false;
+  VideoPlayerController? _videoController;
+
+  static const String _introVideoAsset = 'assets/video/Logo_quran_kalima.mp4';
+
   @override
   void initState() {
     super.initState();
+    _checkIntroVideo();
     _run();
   }
+
+  // ── Intro video ────────────────────────────────────────────────────────────
+
+  Future<void> _checkIntroVideo() async {
+    final prefs = await SharedPreferences.getInstance();
+    final hasSeenIntro = prefs.getBool('intro_video_seen') ?? false;
+    if (hasSeenIntro || !mounted) return;
+
+    setState(() {
+      _showIntroVideo = true;
+      _videoDone = false; // block the app transition until the video finishes
+    });
+    await _initVideo();
+  }
+
+  Future<void> _initVideo() async {
+    final controller = VideoPlayerController.asset(_introVideoAsset);
+    _videoController = controller;
+    try {
+      await controller.initialize().timeout(const Duration(seconds: 8));
+      if (!mounted) return;
+      setState(() => _videoInitialized = true);
+
+      controller.addListener(_onVideoTick);
+      await controller.play();
+
+      // Safety net: if the completion listener never fires for some reason
+      // (platform quirk, corrupt asset that still "initializes"), force the
+      // splash to proceed once the known video duration has elapsed instead
+      // of hanging forever.
+      final duration = controller.value.duration;
+      if (duration > Duration.zero) {
+        Future.delayed(duration + const Duration(seconds: 1), () {
+          if (mounted && !_videoDone) _finishIntroVideo();
+        });
+      }
+    } catch (e, stack) {
+      debugPrint('SplashScreen: intro video failed to load — $e');
+      CrashlyticsService.recordError(e, stack,
+          context: 'SplashScreen._initVideo');
+      // Never let a broken video block the app from opening.
+      await _finishIntroVideo();
+    }
+  }
+
+  void _onVideoTick() {
+    final value = _videoController?.value;
+    if (value == null) return;
+    if (value.isCompleted) {
+      _finishIntroVideo();
+    }
+  }
+
+  Future<void> _finishIntroVideo() async {
+    if (_videoDone) return; // guard against double-invocation
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('intro_video_seen', true);
+    _videoController?.removeListener(_onVideoTick);
+    if (mounted) {
+      setState(() {
+        _videoDone = true;
+        _videoInitialized = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _videoController?.removeListener(_onVideoTick);
+    _videoController?.dispose();
+    super.dispose();
+  }
+
+  // ── Data loading ───────────────────────────────────────────────────────────
 
   Future<void> _run() async {
     try {
@@ -108,15 +197,49 @@ class _SplashScreenState extends State<SplashScreen> {
     }
   }
 
+  // ── Build ─────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
-    if (_done) {
+    // Only proceed to the app once BOTH the database is ready AND the intro
+    // video (if any) has finished — this is the fix for the video being
+    // skipped whenever data loading finished first.
+    if (_done && _videoDone) {
       if (_showOnboarding) {
         return OnboardingScreen(child: widget.child);
       }
       return widget.child;
     }
 
+    if (_showIntroVideo && !_videoDone) {
+      return _buildVideoSplash();
+    }
+
+    return _buildProgressSplash();
+  }
+
+  Widget _buildVideoSplash() {
+    final controller = _videoController;
+    final ready = _videoInitialized && controller != null;
+    final aspectRatio =
+        ready && controller.value.aspectRatio > 0
+            ? controller.value.aspectRatio
+            : 16 / 9;
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Center(
+        child: ready
+            ? AspectRatio(
+                aspectRatio: aspectRatio,
+                child: VideoPlayer(controller),
+              )
+            : const CircularProgressIndicator(color: Color(0xFFD4AF37)),
+      ),
+    );
+  }
+
+  Widget _buildProgressSplash() {
     return Scaffold(
       backgroundColor: const Color(0xFF1B4332),
       body: Center(

@@ -38,6 +38,7 @@ dependencies:
   path_provider: ^2.0.0
   flutter_launcher_icons: ^0.14.4
   image_cropper: ^12.2.1
+  video_player: ^2.9.1
 
 dev_dependencies:
   flutter_test:
@@ -51,6 +52,7 @@ flutter:
     - assets/fonts/
     - assets/data/
     - assets/images/
+    - assets/video/
 
   fonts:
     - family: JameelNoori

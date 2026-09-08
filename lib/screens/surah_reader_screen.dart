@@ -646,13 +646,6 @@ onKnownToggled: (nowKnown) {
     );
   }
 
-  // ── Arabic numeral helper ─────────────────────────────────────────────────
-
-  String _toArabicNumeral(int n) {
-    const d = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
-    return n.toString().split('').map((c) => d[int.parse(c)]).join();
-  }
-
   // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
