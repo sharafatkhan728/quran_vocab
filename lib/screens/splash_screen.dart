@@ -19,94 +19,92 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
-  // ── Data loading state ────────────────────────────────────────────────────
-  String _label = 'Starting...';
-  double _progress = 0;
-  bool _done = false;
-  bool _hasError = false;
-  bool _showOnboarding = false;
-
-  // ── Intro video state ─────────────────────────────────────────────────────
-  // _videoDone starts true (assume no video needed) and is only flipped to
-  // false once we confirm the intro hasn't been seen yet. The final
-  // transition to the app requires BOTH _done AND _videoDone — this is what
-  // stops a fast database check from skipping the video entirely.
-  bool _showIntroVideo = false;
-  bool _videoDone = true;
-  bool _videoInitialized = false;
   VideoPlayerController? _videoController;
+  bool _videoInitialized = false;
+  bool _videoFinished = false;
+  bool _showOnboarding = false;
+  bool _appReady = false;
 
   static const String _introVideoAsset = 'assets/video/Logo_quran_kalima.mp4';
 
   @override
   void initState() {
     super.initState();
-    _checkIntroVideo();
-    _run();
-  }
-
-  // ── Intro video ────────────────────────────────────────────────────────────
-
-  Future<void> _checkIntroVideo() async {
-    final prefs = await SharedPreferences.getInstance();
-    final hasSeenIntro = prefs.getBool('intro_video_seen') ?? false;
-    if (hasSeenIntro || !mounted) return;
-
-    setState(() {
-      _showIntroVideo = true;
-      _videoDone = false; // block the app transition until the video finishes
-    });
-    await _initVideo();
+    _initVideo();
+    _loadInBackground();
   }
 
   Future<void> _initVideo() async {
-    final controller = VideoPlayerController.asset(_introVideoAsset);
-    _videoController = controller;
+    _videoController = VideoPlayerController.asset(_introVideoAsset);
     try {
-      await controller.initialize().timeout(const Duration(seconds: 8));
+      await _videoController!.initialize();
       if (!mounted) return;
       setState(() => _videoInitialized = true);
-
-      controller.addListener(_onVideoTick);
-      await controller.play();
-
-      // Safety net: if the completion listener never fires for some reason
-      // (platform quirk, corrupt asset that still "initializes"), force the
-      // splash to proceed once the known video duration has elapsed instead
-      // of hanging forever.
-      final duration = controller.value.duration;
-      if (duration > Duration.zero) {
-        Future.delayed(duration + const Duration(seconds: 1), () {
-          if (mounted && !_videoDone) _finishIntroVideo();
+      _videoController!.play();
+      _videoController!.addListener(_onVideoTick);
+    } catch (e, stack) {
+      debugPrint('SplashScreen: video failed — $e');
+      CrashlyticsService.recordError(e, stack, context: 'SplashScreen._initVideo');
+      if (mounted) {
+        setState(() {
+          _videoFinished = true;
+          _videoInitialized = false;
         });
       }
-    } catch (e, stack) {
-      debugPrint('SplashScreen: intro video failed to load — $e');
-      CrashlyticsService.recordError(e, stack,
-          context: 'SplashScreen._initVideo');
-      // Never let a broken video block the app from opening.
-      await _finishIntroVideo();
     }
   }
 
   void _onVideoTick() {
-    final value = _videoController?.value;
-    if (value == null) return;
-    if (value.isCompleted) {
-      _finishIntroVideo();
+    if (_videoController?.value.isCompleted == true && !_videoFinished) {
+      _finishVideo();
     }
   }
 
-  Future<void> _finishIntroVideo() async {
-    if (_videoDone) return; // guard against double-invocation
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('intro_video_seen', true);
+  Future<void> _finishVideo() async {
+    if (_videoFinished) return;
     _videoController?.removeListener(_onVideoTick);
     if (mounted) {
-      setState(() {
-        _videoDone = true;
-        _videoInitialized = false;
-      });
+      setState(() => _videoFinished = true);
+    }
+    // Start onboarding check after video finishes
+    _checkOnboarding();
+  }
+
+  Future<void> _checkOnboarding() async {
+    final needsOnboarding = await OnboardingScreen.shouldShow();
+    if (mounted) {
+      setState(() => _showOnboarding = needsOnboarding);
+    }
+  }
+
+  void _loadInBackground() async {
+    try {
+      await MigrationManager.migrateIfNeeded();
+      final needs = await DatabaseImporter.needsImport();
+      if (!needs && mounted) {
+        setState(() => _appReady = true);
+        return;
+      }
+      await for (final p in DatabaseImporter.runImport()) {
+        if (!mounted) return;
+        if (p.step == ImportStep.error) {
+          debugPrint('SplashScreen: import error ${p.label}');
+          break;
+        }
+        if (p.step == ImportStep.done) break;
+      }
+    } catch (e) {
+      debugPrint('SplashScreen: background load error — $e');
+      CrashlyticsService.recordError(e, StackTrace.current, context: 'SplashScreen._loadInBackground');
+    }
+    if (mounted) {
+      setState(() => _appReady = true);
+      SyncService.onSyncDownComplete = () async {
+        if (mounted) {
+          final learning = context.read<LearningStateProvider>();
+          learning.reload();
+        }
+      };
     }
   }
 
@@ -117,170 +115,21 @@ class _SplashScreenState extends State<SplashScreen> {
     super.dispose();
   }
 
-  // ── Data loading ───────────────────────────────────────────────────────────
-
-  Future<void> _run() async {
-    try {
-      await MigrationManager.migrateIfNeeded();
-
-      final needs = await DatabaseImporter.needsImport();
-      if (!needs) {
-        if (mounted) setState(() => _done = true);
-        return;
-      }
-
-      await for (final p in DatabaseImporter.runImport()) {
-        if (!mounted) return;
-        if (p.step == ImportStep.error) {
-          setState(() {
-            _label = p.label;
-            _progress = 0;
-            _hasError = true;
-          });
-          // Wait so user can read the error, then continue with old data
-          await Future.delayed(const Duration(seconds: 4));
-          break;
-        }
-        setState(() {
-          _label = p.label;
-          _progress = p.fraction;
-        });
-        if (p.step == ImportStep.done) break;
-      }
-    } catch (e, stack) {
-      if (mounted) {
-        setState(() {
-          _label = 'Startup error: $e';
-          _progress = 0;
-          _hasError = true;
-        });
-        await Future.delayed(const Duration(seconds: 4));
-      }
-      // Report even if the widget was disposed (e.g. user navigated away)
-      if (!mounted) { CrashlyticsService.recordError(e, stack,
-          context: 'SplashScreen._run'); }
-    }
-
-    if (mounted) {
-      // Defer LearningStateProvider.init() to MainNavigation so the splash
-      // screen doesn't block on a full vocab_words table scan on every launch.
-      // The vocab screen already has its own _initLoad() guard that calls it
-      // eagerly, and other screens safely treat !isLoaded as "unknown".
-      SyncService.onSyncDownComplete = () async {
-        final learning = context.read<LearningStateProvider>();
-        learning.reload();
-      };
-
-      // Diagnostic: check word_translations after import
-      try {
-        final db = await DatabaseManager.db;
-        final wordCountRow = await db.rawQuery(
-            'SELECT COUNT(*) as cnt FROM word_translations');
-        final wtCount = (wordCountRow.first['cnt'] as int?) ?? 0;
-        final ayahWordCountRow = await db.rawQuery(
-            'SELECT COUNT(*) as cnt FROM ayah_words');
-        final awCount = (ayahWordCountRow.first['cnt'] as int?) ?? 0;
-        debugPrint(
-            'SPLASH_DIAG: word_translations=$wtCount ayah_words=$awCount');
-        if (mounted) {
-          setState(() {
-            _label = 'Data: $wtCount words / $awCount ayah_words';
-          });
-        }
-      } catch (_) {}
-
-      final needsOnboarding = await OnboardingScreen.shouldShow();
-      setState(() {
-        _showOnboarding = needsOnboarding;
-        _done = true;
-      });
-    }
-  }
-
-  // ── Build ─────────────────────────────────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
-    // Only proceed to the app once BOTH the database is ready AND the intro
-    // video (if any) has finished — this is the fix for the video being
-    // skipped whenever data loading finished first.
-    if (_done && _videoDone) {
-      if (_showOnboarding) {
-        return OnboardingScreen(child: widget.child);
-      }
-      return widget.child;
-    }
-
-    if (_showIntroVideo && !_videoDone) {
-      return _buildVideoSplash();
-    }
-
-    return _buildProgressSplash();
-  }
-
-  Widget _buildVideoSplash() {
-    final controller = _videoController;
-    final ready = _videoInitialized && controller != null;
-    final aspectRatio =
-        ready && controller.value.aspectRatio > 0
-            ? controller.value.aspectRatio
-            : 16 / 9;
-
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Center(
-        child: ready
-            ? AspectRatio(
-                aspectRatio: aspectRatio,
-                child: VideoPlayer(controller),
-              )
-            : const CircularProgressIndicator(color: Color(0xFFD4AF37)),
-      ),
-    );
-  }
-
-  Widget _buildProgressSplash() {
-    return Scaffold(
-      backgroundColor: const Color(0xFF1B4332),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(48),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Text('﷽',
-                  style: TextStyle(fontSize: 42, color: Color(0xFFD4AF37))),
-              const SizedBox(height: 32),
-              const Text('Quran Kalima',
-                  style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white)),
-              const Text('کلمۂ قرآن',
-                  style: TextStyle(fontSize: 16, color: Color(0xFFD4AF37))),
-              const SizedBox(height: 48),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: LinearProgressIndicator(
-                  value: _progress > 0 ? _progress : null,
-                  backgroundColor: Colors.white24,
-                  valueColor: AlwaysStoppedAnimation(
-                      _hasError ? Colors.red : const Color(0xFFD4AF37)),
-                  minHeight: 8,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                _label,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    color: _hasError ? Colors.red.shade300 : Colors.white70,
-                    fontSize: 13),
-              ),
-            ],
-          ),
+    // Show video until it finishes, then show app
+    if (_videoInitialized && !_videoFinished) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(
+          child: VideoPlayer(_videoController!),
         ),
-      ),
-    );
+      );
+    }
+    // Video finished — show onboarding or app
+    if (_showOnboarding) {
+      return OnboardingScreen(child: widget.child);
+    }
+    return widget.child;
   }
 }
