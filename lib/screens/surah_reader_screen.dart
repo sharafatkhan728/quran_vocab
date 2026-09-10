@@ -657,7 +657,7 @@ onKnownToggled: (nowKnown) {
           isDark ? const Color(0xFF0A1628) : const Color(0xFFFDF8F0),
       appBar: AppBar(
         title: Column(children: [
-          Text(widget.surah.arabicName, style: const TextStyle(fontSize: 20)),
+          Text('${widget.surah.id}. ${widget.surah.arabicName}', style: const TextStyle(fontSize: 18)),
           Text(
               '${widget.surah.englishName} • ${widget.surah.verseCount} verses',
               style: const TextStyle(fontSize: 11, color: Colors.white70)),
