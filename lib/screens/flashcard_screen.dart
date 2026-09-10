@@ -744,6 +744,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                   return Transform(
                     alignment: Alignment.center,
                     transform: Matrix4.identity()
+                     // ignore: deprecated_member_use
                      ..translate(tx, 0.0)        
                       ..rotateZ(rot),
                     child: ScaleTransition(

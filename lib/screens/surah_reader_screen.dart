@@ -36,7 +36,7 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
   // ── State ─────────────────────────────────────────────────────────────────
   bool _mushafMode = false;
   int _lastReadAyah = 0;
-  bool _shouldJumpToTop = false;
+  final bool _shouldJumpToTop = false;
 
   // ayahNumber → list of words — populated progressively
   final Map<int, List<QuranWord>> _ayahCache = {};
