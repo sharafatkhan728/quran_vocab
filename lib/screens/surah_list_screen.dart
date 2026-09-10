@@ -177,7 +177,7 @@ IconButton(
                                     MaterialPageRoute(
                                         builder: (_) => SurahReaderScreen(
                                               surah: surah,
-                                              jumpToAyah: b['ayahId'],
+                                              jumpToAyahRequested: b['ayahId'],
                                             )));
                                 _loadProgress();
                               },
