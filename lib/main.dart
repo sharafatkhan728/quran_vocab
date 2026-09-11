@@ -129,47 +129,15 @@ class _AppGate extends StatelessWidget {
           );
         }
         if (snapshot.hasData) {
-          return Consumer<UserProvider>(
-            builder: (context, userProvider, child) {
-              if (userProvider.isRestoring) {
-                return const _RestoringScreen();
-              }
-              return const MainNavigation();
-            },
-          );
+          // Go straight to the app. Cloud restore (if any) runs quietly in
+          // the background via UserProvider/SyncService — no blocking
+          // "Restoring your progress..." screen. LearningStateProvider and
+          // any relevant UI simply refresh themselves via notifyListeners()
+          // once the restore finishes, through SyncService.onSyncDownComplete.
+          return const MainNavigation();
         }
         return const AuthScreen();
       },
-    );
-  }
-}
-
-class _RestoringScreen extends StatelessWidget {
-  const _RestoringScreen();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: Color(0xFF1B4332),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text('﷽', style: TextStyle(fontSize: 36, color: Color(0xFFD4AF37))),
-            SizedBox(height: 32),
-            CircularProgressIndicator(color: Color(0xFFD4AF37)),
-            SizedBox(height: 20),
-            Text('Restoring your progress...',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500)),
-            SizedBox(height: 8),
-            Text('آپ کی پیشرفت بحال ہو رہی ہے',
-                style: TextStyle(color: Color(0xFFD4AF37), fontSize: 14)),
-          ],
-        ),
-      ),
     );
   }
 }
