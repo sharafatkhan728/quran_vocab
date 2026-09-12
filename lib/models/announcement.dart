@@ -2,7 +2,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// Category of an in-app announcement — used to pick an icon/color and lets
 /// you filter by type later if you build an admin list.
-enum AnnouncementType { feature, update, payment, maintenance, developer, general }
+enum AnnouncementType {
+  feature,
+  update,
+  payment,
+  maintenance,
+  developer,
+  general
+}
 
 AnnouncementType announcementTypeFromString(String? s) {
   switch (s) {
@@ -33,7 +40,10 @@ AnnouncementType announcementTypeFromString(String? s) {
 ///   "priority": 0,                  // higher shows first when several are active
 ///   "startAt": Timestamp,           // optional — not shown before this time
 ///   "expiresAt": Timestamp,         // optional — not shown after this time
-///   "targetPlatforms": ["android"], // optional — empty/absent = all platforms
+///   "targetPlatforms": ["android"], // optional — LEAVE THE FIELD OUT ENTIRELY for all platforms.
+///                                   // (Firebase Console auto-inserts a null entry into "empty"
+///                                   // arrays — this parser ignores such nulls, but it's cleaner
+///                                   // to just delete the field if you don't need it.)
 ///   "minAppVersion": "1.0.0",       // optional — inclusive
 ///   "maxAppVersion": "1.9.9",       // optional — inclusive
 ///   "targetAll": true,              // if false, only targetUserIds see it
@@ -79,6 +89,19 @@ class Announcement {
     this.actionUrl,
   });
 
+  /// Parses a Firestore array field into a clean List<String>, dropping any
+  /// null/blank entries — this is what protects against Firebase Console's
+  /// habit of leaving a stray `null` inside an array you intended to be
+  /// empty, which would otherwise make targeting filters reject everyone.
+  static List<String> _stringList(dynamic raw) {
+    if (raw is! List) return const [];
+    return raw
+        .whereType<String>()
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+  }
+
   factory Announcement.fromFirestore(String id, Map<String, dynamic> data) {
     DateTime? ts(String key) {
       final v = data[key];
@@ -94,17 +117,11 @@ class Announcement {
       priority: (data['priority'] as num?)?.toInt() ?? 0,
       startAt: ts('startAt'),
       expiresAt: ts('expiresAt'),
-      targetPlatforms: (data['targetPlatforms'] as List?)
-              ?.map((e) => e.toString())
-              .toList() ??
-          const [],
+      targetPlatforms: _stringList(data['targetPlatforms']),
       minAppVersion: data['minAppVersion'] as String?,
       maxAppVersion: data['maxAppVersion'] as String?,
       targetAll: data['targetAll'] as bool? ?? true,
-      targetUserIds: (data['targetUserIds'] as List?)
-              ?.map((e) => e.toString())
-              .toList() ??
-          const [],
+      targetUserIds: _stringList(data['targetUserIds']),
       dismissible: data['dismissible'] as bool? ?? true,
       actionLabel: data['actionLabel'] as String?,
       actionUrl: data['actionUrl'] as String?,

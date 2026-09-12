@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'surah_list_screen.dart';
 import 'vocabulary_screen.dart';
 import 'profile_settings_screen.dart';
 import '../providers/learning_state_provider.dart';
+import '../services/announcement_service.dart';
 
 class MainNavigation extends StatefulWidget {
   const MainNavigation({super.key});
@@ -16,7 +18,8 @@ class MainNavigation extends StatefulWidget {
 class _MainNavigationState extends State<MainNavigation> {
   int _currentIndex = 0;
   bool _learningInitDone = false;
-  int _backPressCount = 0;
+
+  bool _waitingForSecondBack = false;
   Timer? _backPressTimer;
 
   final List<Widget> _screens = const [
@@ -29,6 +32,12 @@ class _MainNavigationState extends State<MainNavigation> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _deferredInit());
+    // Independent of the above — checks Firestore for any live announcements
+    // and shows them over whatever screen is active. Fully self-contained
+    // and silently no-ops on failure, so it can never affect app startup or
+    // the back-button logic below.
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => AnnouncementService.checkAndShow(context));
   }
 
   Future<void> _deferredInit() async {
@@ -38,22 +47,44 @@ class _MainNavigationState extends State<MainNavigation> {
     }
   }
 
-  Future<bool> _onBackPressed() async {
-    if (_backPressCount == 0) {
-      setState(() => _backPressCount = 1);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Press back again to exit'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-      _backPressTimer = Timer(const Duration(seconds: 2), () {
-        if (mounted) setState(() => _backPressCount = 0);
+  void _handleBackPressed() {
+    // First back press
+    if (!_waitingForSecondBack) {
+      setState(() {
+        _waitingForSecondBack = true;
       });
-      return false;
+
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Press back again to exit'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+
+      _backPressTimer?.cancel();
+
+      _backPressTimer = Timer(
+        const Duration(seconds: 2),
+        () {
+          if (!mounted) return;
+
+          setState(() {
+            _waitingForSecondBack = false;
+          });
+        },
+      );
+
+      return;
     }
+
+    // Second back press within 2 seconds
     _backPressTimer?.cancel();
-    return true;
+
+    // Close the application.
+    // This is intentionally called ONLY on the second back press.
+    SystemNavigator.pop();
   }
 
   @override
@@ -66,17 +97,23 @@ class _MainNavigationState extends State<MainNavigation> {
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
-      onPopInvoked: (didPop) async {
+      onPopInvoked: (didPop) {
         if (didPop) return;
-        final shouldPop = await _onBackPressed();
-        if (!mounted) return;
-        if (shouldPop) Navigator.of(context).pop();
+
+        _handleBackPressed();
       },
       child: Scaffold(
-        body: IndexedStack(index: _currentIndex, children: _screens),
+        body: IndexedStack(
+          index: _currentIndex,
+          children: _screens,
+        ),
         bottomNavigationBar: NavigationBar(
           selectedIndex: _currentIndex,
-          onDestinationSelected: (i) => setState(() => _currentIndex = i),
+          onDestinationSelected: (i) {
+            setState(() {
+              _currentIndex = i;
+            });
+          },
           backgroundColor: Theme.of(context).cardColor,
           destinations: const [
             NavigationDestination(
