@@ -868,13 +868,13 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                 GestureDetector(
                   onTap: _deleteCard,
                   child: Container(
-                    width: 30,
-                    height: 30,
+                    width: 40,
+                    height: 40,
                     decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.red.withValues(alpha: 0.1),
+                      shape: BoxShape.circle, //
+                      color: Colors.red.withValues(alpha: 0.1), 
                     ),
-                    child: const Icon(Icons.close, size: 16, color: Colors.red),
+                    child: const Icon(Icons.delete, size: 40, color: Colors.red),
                   ),
                 ),
               ],
@@ -887,7 +887,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                   _current.arabic,
                   textDirection: TextDirection.rtl,
                   textAlign: TextAlign.center,
-                  style: _arabicStyle(display, isDark, 60),
+                  style: _arabicStyle(display, isDark, 60), 
                 ),
                 const SizedBox(width: 10),
                 GestureDetector(
