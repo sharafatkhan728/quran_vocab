@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../database/database_importer.dart';
-import '../database/database_manager.dart';
 import '../database/migration_manager.dart';
 import 'package:provider/provider.dart';
 import '../providers/learning_state_provider.dart';
