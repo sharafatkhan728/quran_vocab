@@ -1,6 +1,8 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -11,6 +13,7 @@ import '../models/surah.dart';
 import '../models/word.dart';
 import '../providers/theme_provider.dart';
 import '../providers/display_provider.dart';
+import '../database/database_importer.dart';
 import '../repositories/content_repository.dart';
 import '../services/translation_service.dart';
 import '../services/word_glossary_service.dart';
@@ -19,6 +22,7 @@ import '../widgets/word_tile.dart';
 import '../widgets/word_detail_dialog.dart';
 import '../providers/learning_state_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
 import '../widgets/ayah_share_card.dart';
 
 class SurahReaderScreen extends StatefulWidget {
@@ -41,6 +45,18 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
   // ayahNumber → list of words — populated progressively
   final Map<int, List<QuranWord>> _ayahCache = {};
   bool _isLoading = true;
+
+  // ── In-session cache (fast, resets when app process fully dies) ──────────
+  static final Map<String, Map<int, List<QuranWord>>> _globalWordCache = {};
+  static final Map<String, Map<int, String>> _globalTranslationCache = {};
+
+  // Includes DatabaseImporter.contentCacheVersion so that whenever vocab or
+  // morphology data is updated in a future app release (i.e. _vVocab or
+  // _vMorphology is bumped), this key automatically changes — old disk/
+  // memory caches simply stop matching and get silently rebuilt, with no
+  // manual cache-clearing code needed anywhere.
+  String get _wordCacheKey =>
+      '${widget.surah.id}_${_selectedLang}_${DatabaseImporter.contentCacheVersion}';
 
   double _arabicFontSize = 32;
   double _urduFontSize = 16;
@@ -281,21 +297,167 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
   }
 
   Future<void> _loadAllTranslations() async {
+    final scholar = TranslationLangService.selectedScholar;
+    final cacheKey = '${widget.surah.id}_$scholar';
+    final cached = _globalTranslationCache[cacheKey];
+    if (cached != null) {
+      if (!mounted) return;
+      setState(() {
+        _ayahTranslations
+          ..clear()
+          ..addAll(cached);
+      });
+      return;
+    }
+
     final map = await TranslationService.getSurahTranslationsAsync(
         widget.surah.id,
-        scholar: TranslationLangService.selectedScholar);
+        scholar: scholar);
     if (!mounted) return;
+    final parsed = <int, String>{};
+    for (final e in map.entries) {
+      final num = int.tryParse(e.key);
+      if (num != null) parsed[num] = e.value;
+    }
+    _globalTranslationCache[cacheKey] = parsed;
     setState(() {
-      _ayahTranslations.clear();
-      for (final e in map.entries) {
-        final num = int.tryParse(e.key);
-        if (num != null) _ayahTranslations[num] = e.value;
-      }
+      _ayahTranslations
+        ..clear()
+        ..addAll(parsed);
     });
   }
 
+  // ── Disk cache — survives full app close/reopen ───────────────────────────
+  // A surah's built words are written once to a small JSON file in the app's
+  // documents folder. Next launch (even after fully closing the app), that
+  // file is read back instantly instead of re-querying SQLite and rebuilding
+  // every QuranWord/segment from scratch.
+
+  Future<File> _wordCacheFile(String key) async {
+    final dir = await getApplicationDocumentsDirectory();
+    // Version is baked into the folder name too — when vocab/morphology data
+    // is updated, this path changes, so old cache files are simply left
+    // behind unused (harmless) instead of being incorrectly reused.
+    final cacheDir = Directory(
+        '${dir.path}/surah_word_cache_v${DatabaseImporter.contentCacheVersion}');
+    if (!await cacheDir.exists()) {
+      await cacheDir.create(recursive: true);
+    }
+    return File('${cacheDir.path}/$key.json');
+  }
+
+  Map<String, dynamic> _wordToJson(QuranWord w) => {
+        'id': w.id,
+        'arabic': w.arabic,
+        'urduMeaning': w.urduMeaning,
+        'isWaqf': w.isWaqf,
+        'segments': w.segments
+            .map((s) => {
+                  'segNum': s.segNum,
+                  'type': s.type.index,
+                  'pos': s.pos,
+                  'root': s.root,
+                  'lemma': s.lemma,
+                  'tense': s.tense,
+                  'person': s.person,
+                  'gender': s.gender,
+                  'number': s.number,
+                  'grammaticalCase': s.grammaticalCase,
+                  'voice': s.voice,
+                  'state': s.state,
+                  'verbForm': s.verbForm,
+                  'segArabic': s.arabic,
+                  'colorHex': s.colorHex,
+                })
+            .toList(),
+      };
+
+  QuranWord _wordFromJson(Map<String, dynamic> j) => QuranWord(
+        id: j['id'] as String,
+        arabic: j['arabic'] as String,
+        urduMeaning: j['urduMeaning'] as String? ?? '',
+        isWaqf: j['isWaqf'] as bool? ?? false,
+        // isKnown is intentionally never cached — it's always recomputed
+        // live from LearningStateProvider at render time everywhere in this
+        // screen, so caching it here could only ever show a stale value.
+        segments: ((j['segments'] as List?) ?? [])
+            .map((sj) => WordSegment(
+                  segNum: sj['segNum'] as int? ?? 0,
+                  type: SegType.values[(sj['type'] as int?) ?? 0],
+                  pos: sj['pos'] as String? ?? '',
+                  root: sj['root'] as String? ?? '',
+                  lemma: sj['lemma'] as String? ?? '',
+                  tense: sj['tense'] as String? ?? '',
+                  person: sj['person'] as String? ?? '',
+                  gender: sj['gender'] as String? ?? '',
+                  number: sj['number'] as String? ?? '',
+                  grammaticalCase: sj['grammaticalCase'] as String? ?? '',
+                  voice: sj['voice'] as String? ?? '',
+                  state: sj['state'] as String? ?? '',
+                  verbForm: sj['verbForm'] as String? ?? '',
+                  arabic: sj['segArabic'] as String? ?? '',
+                  colorHex: sj['colorHex'] as String? ?? '#888888',
+                ))
+            .toList(),
+      );
+
+  Future<Map<int, List<QuranWord>>?> _readDiskWordCache(
+      String key, int expectedAyahCount) async {
+    try {
+      final file = await _wordCacheFile(key);
+      if (!await file.exists()) return null;
+      final raw = await file.readAsString();
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      if (decoded.length != expectedAyahCount) return null; // incomplete/stale
+      return decoded.map((k, v) => MapEntry(
+            int.parse(k),
+            (v as List)
+                .map((wj) => _wordFromJson(wj as Map<String, dynamic>))
+                .toList(),
+          ));
+    } catch (_) {
+      return null; // corrupt/missing cache — falls back to normal SQLite load
+    }
+  }
+
+  Future<void> _writeDiskWordCache(
+      String key, Map<int, List<QuranWord>> data) async {
+    try {
+      final file = await _wordCacheFile(key);
+      final jsonMap = data.map((ayahNum, words) => MapEntry(
+            '$ayahNum',
+            words.map(_wordToJson).toList(),
+          ));
+      await file.writeAsString(jsonEncode(jsonMap));
+    } catch (_) {
+      // Non-fatal — worst case the surah just loads from SQLite again.
+    }
+  }
+
   Future<void> _loadWordsProgressively(List<AyahRow> ayahRows) async {
+    final key = _wordCacheKey;
+
+    // 1) Already loaded this session? Reuse the in-memory copy — fastest.
+    final memCache = _globalWordCache[key];
+    if (memCache != null && memCache.length == ayahRows.length) {
+      if (mounted) setState(() => _ayahCache.addAll(memCache));
+      return;
+    }
+
+    // 2) Not in memory (e.g. app was fully closed and reopened) — check the
+    // on-disk cache written during a previous session.
+    final diskCache = await _readDiskWordCache(key, ayahRows.length);
+    if (diskCache != null) {
+      _globalWordCache[key] = diskCache;
+      if (!mounted) return;
+      setState(() => _ayahCache.addAll(diskCache));
+      return;
+    }
+
+    // 3) Truly first time for this surah+language — build from SQLite as
+    // before, batch by batch, and persist the result to disk for next time.
     const batchSize = 5;
+    final cacheForSurah = _globalWordCache.putIfAbsent(key, () => {});
     for (int i = 0; i < ayahRows.length; i += batchSize) {
       if (!mounted) return;
       final end = (i + batchSize).clamp(0, ayahRows.length);
@@ -303,12 +465,18 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
 
       final Map<int, List<QuranWord>> built = {};
       for (final ayah in batch) {
-        built[ayah.ayahNumber] = await _buildWordsForAyah(ayah);
+        final words = await _buildWordsForAyah(ayah);
+        built[ayah.ayahNumber] = words;
+        cacheForSurah[ayah.ayahNumber] = words;
       }
 
       if (!mounted) return;
       setState(() => _ayahCache.addAll(built));
       await Future.delayed(Duration.zero);
+    }
+
+    if (cacheForSurah.length == ayahRows.length) {
+      unawaited(_writeDiskWordCache(key, cacheForSurah)); // don't block UI
     }
   }
 

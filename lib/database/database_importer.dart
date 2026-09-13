@@ -49,6 +49,13 @@ class DatabaseImporter {
   static const int _vTranslation = 9;
   static const int _schemaVersion = 1;
 
+  /// Combined vocab+morphology content fingerprint. Bumping either _vVocab
+  /// or _vMorphology above changes this string — screens use it as part of
+  /// any on-disk word cache key so old caches automatically stop matching
+  /// (i.e. are effectively invalidated) whenever the underlying Quran word
+  /// data changes, without needing any manual cache-clearing logic.
+  static String get contentCacheVersion => '${_vVocab}_$_vMorphology';
+
   static Future<int> _stored(Database db, String key) async {
     final rows = await db.query('db_meta', where: 'key = ?', whereArgs: [key]);
     if (rows.isEmpty) return 0;
