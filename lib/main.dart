@@ -23,6 +23,7 @@ final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 void _initNotifications() {
   NotificationService.navigatorKey = appNavigatorKey;
   NotificationService.init();
+  NotificationService.rescheduleAll();
   // Capture scheduling errors so the notification settings screen can
   // surface them to the user after rescheduleAll() completes.
   NotificationService.onScheduleError = (message) {
