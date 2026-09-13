@@ -114,7 +114,7 @@ class _SurahListScreenState extends State<SurahListScreen> {
                     MaterialPageRoute(
                       builder: (_) => SurahReaderScreen(
                         surah: surah,
-                        jumpToAyah: ayahNumber,
+                        jumpToAyahRequested: ayahNumber,
                       ),
                     ),
                   );
