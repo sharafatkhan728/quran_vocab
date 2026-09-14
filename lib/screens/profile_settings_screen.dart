@@ -13,7 +13,6 @@ import '../providers/user_provider.dart';
 import '../services/sync_service.dart';
 import '../screens/auth_screen.dart';
 import '../services/word_glossary_service.dart';
-import 'notification_settings_screen.dart';
 import 'feedback_screen.dart';
 import 'app_tour_screen.dart';
 import '../services/translation_service.dart';
@@ -134,20 +133,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                   _buildDisplaySettings(display, theme, isDark),
                   const SizedBox(height: 5),
                   _buildProfileSettings(user, isDark),
-                  const SizedBox(height: 5),
-                  _buildSection(isDark, title: 'Reminders', items: [
-                    _buildTile(isDark,
-                        icon: Icons.notifications_active,
-                        iconColor: Colors.orange,
-                        title: 'Notifications',
-                        subtitle: 'Review reminders, streak, weekly progress',
-                        onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) =>
-                                      const NotificationSettingsScreen()),
-                            )),
-                  ]),
                   const SizedBox(height: 5),
                   _buildSection(isDark, title: 'App', items: [
                     _buildTile(isDark,

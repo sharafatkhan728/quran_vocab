@@ -22,16 +22,19 @@ final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 // Pass to NotificationService for deep-link taps
 void _initNotifications() {
   NotificationService.navigatorKey = appNavigatorKey;
-  NotificationService.init();
-  NotificationService.rescheduleAll();
-  // Capture scheduling errors so the notification settings screen can
-  // surface them to the user after rescheduleAll() completes.
   NotificationService.onScheduleError = (message) {
     debugPrint('NotificationService: $message');
     CrashlyticsService.recordError(
         Exception(message), StackTrace.current,
         context: 'Notification scheduling');
   };
+  // No settings screen to request permission from anymore — ask once here,
+  // at first run, like a standard app. After this, on/off control lives
+  // entirely in the OS's own notification settings for this app.
+  NotificationService.init().then((_) async {
+    await NotificationService.requestPermission();
+    await NotificationService.rescheduleAll();
+  });
 }
 
 void main() async {
