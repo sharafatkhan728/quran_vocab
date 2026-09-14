@@ -77,8 +77,15 @@ class FlashWord {
       // Root is already stored in vocab_words JOIN roots — no in-memory
       // corpus needed. VocabularyRepository.getByArabicClean() returns it
       // directly from the SQLite query.
+      //
+      // IMPORTANT: use normalizedForLookup, not a re-derived normalizedArabic.
+      // normalizedForLookup IS the exact vocab_words.arabic_clean value this
+      // card was built from (it came straight from the frequency map's key),
+      // so this guarantees the root is fetched for the SAME row the rest of
+      // this card's data (meaning, frequency) already came from — no risk
+      // of an indirect re-normalization drifting onto a different row.
       final vocab =
-          await VocabularyRepository.getByArabicClean(normalizedArabic);
+          await VocabularyRepository.getByArabicClean(normalizedForLookup);
       if (vocab != null && vocab.root.isNotEmpty) {
         root = vocab.root;
       }
@@ -351,6 +358,14 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     });
     // Ensure ayah translation loads when card flips
     _current.loadAyah().then((_) {
+      if (mounted) setState(() {});
+    });
+    // Defensive: normally _preloadCards() already loads the root for this
+    // card ahead of time, but this guarantees it's fetched even if the
+    // current card ever falls outside that preload window (e.g. after
+    // Undo jumps back to an earlier card). loadRoot() no-ops instantly if
+    // already loaded, so this is cheap to call unconditionally.
+    _current.loadRoot().then((_) {
       if (mounted) setState(() {});
     });
   }
@@ -908,6 +923,34 @@ class _FlashcardScreenState extends State<FlashcardScreen>
               ],
             ),
             const SizedBox(height: 12),
+            if (_current.root.isNotEmpty)
+              Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                decoration: BoxDecoration(
+                  color: _gold.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: _gold.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Root  ',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: isDark
+                                ? Colors.white54
+                                : Colors.grey.shade500)),
+                    Text(
+                      _current.root.characters.join('  '),
+                      textDirection: TextDirection.rtl,
+                      style: _arabicStyle(display, isDark, 20)
+                          .copyWith(color: _gold),
+                    ),
+                  ],
+                ),
+              ),
             Text(
               _current.transliteration,
               style: TextStyle(
