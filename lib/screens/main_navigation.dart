@@ -7,6 +7,7 @@ import 'vocabulary_screen.dart';
 import 'profile_settings_screen.dart';
 import '../providers/learning_state_provider.dart';
 import '../services/announcement_service.dart';
+import '../services/sync_service.dart';
 
 class MainNavigation extends StatefulWidget {
   const MainNavigation({super.key});
@@ -15,7 +16,7 @@ class MainNavigation extends StatefulWidget {
   State<MainNavigation> createState() => _MainNavigationState();
 }
 
-class _MainNavigationState extends State<MainNavigation> {
+class _MainNavigationState extends State<MainNavigation> with WidgetsBindingObserver {
   int _currentIndex = 0;
   bool _learningInitDone = false;
 
@@ -31,6 +32,7 @@ class _MainNavigationState extends State<MainNavigation> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _deferredInit());
     // Independent of the above — checks Firestore for any live announcements
     // and shows them over whatever screen is active. Fully self-contained
@@ -88,8 +90,16 @@ class _MainNavigationState extends State<MainNavigation> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      SyncService.scheduleSyncUp();
+    }
+  }
+
+  @override
   void dispose() {
     _backPressTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 

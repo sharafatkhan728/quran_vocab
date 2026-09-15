@@ -131,7 +131,7 @@ class SrsRepository {
     await db.insert('user_meta',
         {'key': 'srs_total_points', 'value': '${current + pts}'},
         conflictAlgorithm: ConflictAlgorithm.replace);
-        SyncService.scheduleSyncUp();
+    await SyncService.syncUp();
   }
 
   static Future<int> getCurrentSession() async {
