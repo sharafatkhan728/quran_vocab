@@ -69,7 +69,7 @@ class SrsService {
         );
     final newStage = (old.stage + 1).clamp(0, _intervalSessions.length - 1);
     final newEase = (old.easeFactor + 0.1).clamp(1.3, 2.5);
-    final pts = _pointsForStage(newStage);
+    final pts = old.totalReviews == 0 ? 2 : 10;
     await SrsRepository.upsertCard(SrsCardRow(
       vocabWordId: id,
       stage: newStage,
@@ -283,13 +283,6 @@ class SrsService {
       newCount: unseen.length,
       hasMoreNew: false,
     );
-  }
-
-  // ── Private helpers ───────────────────────────────────────────────────────
-
-  static int _pointsForStage(int stage) {
-    const pts = [5, 10, 20, 30, 50, 80, 100, 120];
-    return pts[stage.clamp(0, pts.length - 1)];
   }
 
   /// arabic_clean strings → vocab_word_ids using in-memory cache.
