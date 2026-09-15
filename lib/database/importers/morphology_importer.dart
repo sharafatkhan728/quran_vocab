@@ -26,6 +26,8 @@ class MorphologyImporter {
     final lines = raw.split('\n');
     final total = lines.length;
     final pendingRows = <Map<String, dynamic>>[];
+    final pendingRootRefs = <String>[];
+    final pendingPosRefs = <String>[];
     final newRoots = <String>[];
     final newPosCodes = <String>[];
     int count = 0;
@@ -115,33 +117,21 @@ class MorphologyImporter {
         }
       }
 
-      int? rootId;
-      if (root.isNotEmpty) {
-        rootId = _rootMap[root];
-        if (rootId == null) {
-          newRoots.add(root);
-          _rootMap[root] = -1;
-        }
-      }
-      int? posId;
-      if (effectivePosCode.isEmpty) {
-        posId = 1;
-      } else {
-        posId = _posMap[effectivePosCode];
-        if (posId == null) {
-          newPosCodes.add(effectivePosCode);
-          _posMap[effectivePosCode] = -1;
-          posId = 1; // temporary; corrected after bulk insert
-        }
-      }
-
+      // root_id/pos_id are intentionally NOT resolved here. Doing it inline
+      // (with a -1 "temporary" placeholder for a brand-new root/pos) was
+      // the exact bug: -1 is not null, so the "if (rootId == null)"
+      // re-check never re-fired for later occurrences of the same root —
+      // every occurrence AFTER the first permanently kept -1. That's why
+      // most repeated-root words (e.g. أكل "eat" → كلوا) never showed a
+      // root. Resolution now happens in a second pass below, once every
+      // new root/pos row actually exists in the database.
       pendingRows.add({
         'word_id': wordId,
         'segment_number': segNum,
         'segment_type': segType,
         'arabic_text': arabicText,
-        'pos_id': posId,
-        'root_id': rootId,
+        'pos_id': null,
+        'root_id': null,
         'lemma': lemma,
         'tense': tense,
         'person': person,
@@ -153,6 +143,18 @@ class MorphologyImporter {
         'verb_form': verbForm,
         'raw_tag': tag,
       });
+      pendingRootRefs.add(root);
+      pendingPosRefs.add(effectivePosCode);
+      if (root.isNotEmpty &&
+          !_rootMap.containsKey(root) &&
+          !newRoots.contains(root)) {
+        newRoots.add(root);
+      }
+      if (effectivePosCode.isNotEmpty &&
+          !_posMap.containsKey(effectivePosCode) &&
+          !newPosCodes.contains(effectivePosCode)) {
+        newPosCodes.add(effectivePosCode);
+      }
 
       count++;
       if (count % 10000 == 0) {
@@ -306,24 +308,12 @@ class MorphologyImporter {
         }
       }
 
-      int? rootId;
-      if (root.isNotEmpty) {
-        rootId = _rootMap[root];
-        if (rootId == null) {
-          newRoots.add(root);
-          _rootMap[root] = -1;
-        }
+      // Store root/pos strings to resolve after bulk insert
+      if (root.isNotEmpty && !_rootMap.containsKey(root) && !newRoots.contains(root)) {
+        newRoots.add(root);
       }
-      int? posId;
-      if (effectivePosCode.isEmpty) {
-        posId = 1;
-      } else {
-        posId = _posMap[effectivePosCode];
-        if (posId == null) {
-          newPosCodes.add(effectivePosCode);
-          _posMap[effectivePosCode] = -1;
-          posId = 1; // temporary; corrected after bulk insert
-        }
+      if (effectivePosCode.isNotEmpty && !_posMap.containsKey(effectivePosCode) && !newPosCodes.contains(effectivePosCode)) {
+        newPosCodes.add(effectivePosCode);
       }
 
       pendingRows.add({
@@ -331,8 +321,8 @@ class MorphologyImporter {
         'segment_number': segNum,
         'segment_type': segType,
         'arabic_text': arabicText,
-        'pos_id': posId,
-        'root_id': rootId,
+        'pos_id': null, // Will be resolved after bulk insert
+        'root_id': null, // Will be resolved after bulk insert
         'lemma': lemma,
         'tense': tense,
         'person': person,
@@ -343,6 +333,8 @@ class MorphologyImporter {
         'state': state,
         'verb_form': verbForm,
         'raw_tag': tag,
+        '_root_str': root, // Temporary: store root string for resolution
+        '_pos_str': effectivePosCode, // Temporary: store pos string for resolution
       });
 
       count++;
@@ -373,6 +365,22 @@ class MorphologyImporter {
       }
       await pb.commit(noResult: true);
       await _reloadPos();
+    }
+
+    // Resolve placeholder values to real IDs now that _rootMap/_posMap are
+    // fully populated with actual database ids from the bulk insert above.
+    for (final row in pendingRows) {
+      final rootStr = row.remove('_root_str') as String?;
+      final posStr = row.remove('_pos_str') as String?;
+
+      if (rootStr?.isNotEmpty ?? false) {
+        row['root_id'] = _rootMap[rootStr];
+      }
+      if (posStr?.isNotEmpty ?? false) {
+        row['pos_id'] = _posMap[posStr] ?? 1;
+      } else {
+        row['pos_id'] = 1;
+      }
     }
 
     // Now insert all morphology segments with correct IDs, batched at 1000

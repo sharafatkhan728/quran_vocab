@@ -71,6 +71,14 @@ class VocabularyRepository {
   }
 
   /// Look up a single vocab word by its normalized Arabic form.
+  ///
+  /// arabic_clean is NOT guaranteed unique — vocab identity is really
+  /// (arabic_clean, lemma), used to separate Arabic homographs. So more than
+  /// one row can share the same arabic_clean. When that happens, prefer the
+  /// row that actually has a root assigned (so callers like the Flashcard
+  /// screen don't silently land on a homograph row with a NULL root_id just
+  /// because it happened to sort first), then the most frequent one, so the
+  /// result is deterministic instead of whatever SQLite returns first.
   static Future<VocabWordRow?> getByArabicClean(String clean) async {
     final db = await DatabaseManager.db;
     final rows = await db.rawQuery('''
@@ -85,6 +93,9 @@ class VocabularyRepository {
       LEFT JOIN roots r ON r.id = v.root_id
       LEFT JOIN parts_of_speech p ON p.id = v.pos_id
       WHERE v.arabic_clean = ?
+      ORDER BY
+        CASE WHEN r.arabic IS NOT NULL AND r.arabic != '' THEN 0 ELSE 1 END,
+        v.frequency DESC
       LIMIT 1
     ''', [clean]);
     if (rows.isEmpty) return null;

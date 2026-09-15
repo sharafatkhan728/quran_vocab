@@ -45,8 +45,9 @@ class ImportProgress {
 class DatabaseImporter {
   static const int _vCore = 2;
   static const int _vVocab = 13;
-  static const int _vMorphology = 8;
+  static const int _vMorphology = 10; // bumped: fixes root_id resolution in run() method
   static const int _vTranslation = 9;
+// </br>
   static const int _schemaVersion = 1;
 
   /// Combined vocab+morphology content fingerprint. Bumping either _vVocab
