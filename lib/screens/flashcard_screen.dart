@@ -1,5 +1,6 @@
 // ignore_for_file: use_build_context_synchronously
 
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +12,7 @@ import '../providers/user_provider.dart';
 import '../services/srs_service.dart';
 import '../services/word_progress_service.dart';
 import '../services/translation_service.dart';
+import '../services/notification_service.dart';
 import 'morphology_sheet.dart';
 import '../repositories/vocabulary_repository.dart';
 import '../models/word.dart';
@@ -386,6 +388,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
           .setKnownByClean(_current.normalizedForLookup);
     }
     if (wasNew) await SrsService.recordNewCardReviewed();
+    // Reschedule notifications after marking word as known
+    unawaited(NotificationService.rescheduleAll());
     if (!mounted) return;
     setState(() {
       _sessionPoints += pts;
@@ -476,6 +480,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     _dragX = 0;
     if (_currentIndex + 1 >= _cards.length) {
       SrsService.clearSession();
+      // Reschedule notifications when session ends
+      unawaited(NotificationService.rescheduleAll());
       setState(() {
         _sessionDone = true;
         _isFlipped = false;

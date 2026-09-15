@@ -143,9 +143,10 @@ class NotificationService {
   /// fill a slot". Actual delivery is still gated by the OS-level
   /// notification permission/settings, exactly like a standard app.
   static Future<void> rescheduleAll() async {
-    await _plugin.cancelAll();
+    try {
+      await _plugin.cancelAll();
 
-    final db = await DatabaseManager.db;
+      final db = await DatabaseManager.db;
 
     // ── 1. SRS reviews due ────────────────────────────────────────────────
     final sessionRows = await db.query('user_meta',
@@ -307,6 +308,9 @@ class NotificationService {
         );
         await prefs.setString('notif_last_weekly', thisWeekKey);
       }
+    }
+    } catch (e) {
+      debugPrint('NotificationService.rescheduleAll error: $e');
     }
   }
 
