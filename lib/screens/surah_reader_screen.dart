@@ -274,6 +274,23 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
           }
         });
       }
+    } else if (_lastReadAyah > 1) {
+      // Resume from where user left off last time
+      final target = _lastReadAyah;
+      if (_mushafMode) {
+        _waitForAyahLoaded(target).then((_) {
+          if (mounted) {
+            WidgetsBinding.instance
+                .addPostFrameCallback((_) => _scrollToAyah(target));
+          }
+        });
+      } else {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _itemScrollController.isAttached) {
+            _itemScrollController.jumpTo(index: target, alignment: 0.0);
+          }
+        });
+      }
     }
 
     _loadAllTranslations();
