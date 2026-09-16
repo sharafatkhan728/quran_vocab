@@ -128,11 +128,14 @@ class _FlashcardScreenState extends State<FlashcardScreen>
   late AnimationController _flipCtrl;
   late AnimationController _entryCtrl;
   late AnimationController _dismissCtrl;
+  late AnimationController _nextCardCtrl;
   late Animation<double> _flipAnim;
   late Animation<double> _entryScale;
   late Animation<double> _entryFade;
   late Animation<Offset> _dismissOffset;
   late Animation<double> _dismissFade;
+  late Animation<double> _nextCardScale;
+  late Animation<double> _nextCardOffset;
 
   final AudioPlayer _audio = AudioPlayer();
 
@@ -156,6 +159,13 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     // DON'T initialize _dismissOffset here - create it in _animateDismiss() instead
     _dismissOffset = Tween<Offset>(begin: Offset.zero, end: Offset.zero)
         .animate(_dismissCtrl); // Dummy, will be replaced
+    // Next-card "come forward" controller: plays after swipe dismisses current card
+    _nextCardCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 260));
+    _nextCardScale = Tween<double>(begin: 0.92, end: 1.0).animate(
+        CurvedAnimation(parent: _nextCardCtrl, curve: Curves.easeOutCubic));
+    _nextCardOffset = Tween<double>(begin: 12.0, end: 0.0).animate(
+        CurvedAnimation(parent: _nextCardCtrl, curve: Curves.easeOutCubic));
     _loadSession();
     TranslationLangService.langNotifier
         .addListener(_onTranslationLangChanged);
@@ -181,6 +191,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     _flipCtrl.dispose();
     _entryCtrl.dispose();
     _dismissCtrl.dispose();
+    _nextCardCtrl.dispose();
     _audio.dispose();
     super.dispose();
         TranslationLangService.langNotifier
@@ -522,7 +533,9 @@ class _FlashcardScreenState extends State<FlashcardScreen>
         _canUndo = true;
       });
       _entryCtrl.reset();
+      _nextCardCtrl.reset();
       _entryCtrl.forward();
+      _nextCardCtrl.forward();
       if (_currentIndex < _cards.length - 1) {
         SrsService.saveSession(
             _cards.map((c) => c.normalizedForLookup).toList(), _currentIndex);
@@ -723,54 +736,82 @@ class _FlashcardScreenState extends State<FlashcardScreen>
         child: Stack(
           alignment: Alignment.center,
           children: [
-            // Behind card 3
-            Positioned(
-              top: 0,
-              left: 8,
-              right: 8,
-              child: Container(
-                height: 170,
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? const Color(0xFF0A1E11)
-                      : const Color(0xFFE8E2CF),
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(24)),
-                  border: Border.all(color: _gold.withValues(alpha: 0.15)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.25),
-                      blurRadius: 8,
-                      offset: const Offset(0, 3),
+            // Next card preview — visible behind current card, reveals as user drags
+            if (_currentIndex + 1 < _cards.length)
+              AnimatedBuilder(
+                animation: Listenable.merge([_nextCardCtrl]),
+                builder: (_, __) {
+                  // During drag: progress based on drag distance
+                  // After swipe: _nextCardCtrl drives it forward
+                  final dragProgress = _isDragging
+                      ? (_dragX.abs() / (screenW * 0.6)).clamp(0.0, 1.0)
+                      : 0.0;
+                  // Use whichever is larger: drag progress or controller progress
+                  final p = _dismissCtrl.isAnimating
+                      ? _nextCardCtrl.value
+                      : dragProgress;
+                  // Resting: scale 0.92, top offset 14px, side inset 8px
+                  // Revealed: scale 1.0, top offset 20px (matches main card padding), side inset 0
+                  final scale = 0.92 + 0.08 * p;
+                  final topOffset = 14.0 - (14.0 - 20.0) * p; // 14→20 (Padding.only(top:20))
+                  final sideInset = 8.0 * (1.0 - p);
+                  final nextCard = _cards[_currentIndex + 1];
+                  return Positioned(
+                    top: topOffset,
+                    left: sideInset,
+                    right: sideInset,
+                    child: Transform.scale(
+                      scale: scale,
+                      alignment: Alignment.topCenter,
+                      child: Opacity(
+                        opacity: (0.55 + 0.45 * p).clamp(0.0, 1.0),
+                        child: Container(
+                          width: double.infinity,
+                          constraints: BoxConstraints(
+                            minHeight: MediaQuery.of(context).size.height * 0.70,
+                            maxHeight: MediaQuery.of(context).size.height * 0.72,
+                          ),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(24),
+                            gradient: LinearGradient(
+                              colors: isDark
+                                  ? [const Color(0xFF1A2E1F), const Color(0xFF0D1B12)]
+                                  : [Colors.white, const Color(0xFFFDF9F0)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            border: Border.all(
+                                color: _gold.withValues(alpha: 0.30), width: 1.5),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.18),
+                                blurRadius: 14,
+                                offset: const Offset(0, 6),
+                              ),
+                            ],
+                          ),
+                          child: Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Text(
+                                nextCard.arabic,
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.amiri(
+                                  fontSize: 52,
+                                  color: isDark
+                                      ? Colors.white.withValues(alpha: 0.7)
+                                      : Colors.black.withValues(alpha: 0.55),
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
-                  ],
-                ),
+                  );
+                },
               ),
-            ),
-            // Behind card 2
-            Positioned(
-              top: 8,
-              left: 4,
-              right: 4,
-              child: Container(
-                height: 500,
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? const Color(0xFF0F2518)
-                      : const Color(0xFFF0EAD8),
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(25)),
-                  border: Border.all(color: _gold.withValues(alpha: 0.25)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.15),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-              ),
-            ),
             // Main card
             Padding(
               padding: const EdgeInsets.only(top: 20),
