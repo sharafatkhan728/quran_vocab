@@ -151,11 +151,11 @@ class _FlashcardScreenState extends State<FlashcardScreen>
         CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOutCubic));
     _entryFade = Tween<double>(begin: 0, end: 1)
         .animate(CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOut));
-    _dismissOffset = Tween<Offset>(begin: Offset.zero, end: const Offset(2, 0))
-        .animate(
-            CurvedAnimation(parent: _dismissCtrl, curve: Curves.easeInCubic));
     _dismissFade = Tween<double>(begin: 1, end: 0)
-        .animate(CurvedAnimation(parent: _dismissCtrl, curve: Curves.easeIn));
+        .animate(CurvedAnimation(parent: _dismissCtrl, curve: Curves.easeInCubic));
+    // DON'T initialize _dismissOffset here - create it in _animateDismiss() instead
+    _dismissOffset = Tween<Offset>(begin: Offset.zero, end: Offset.zero)
+        .animate(_dismissCtrl); // Dummy, will be replaced
     _loadSession();
     TranslationLangService.langNotifier
         .addListener(_onTranslationLangChanged);
@@ -378,24 +378,35 @@ class _FlashcardScreenState extends State<FlashcardScreen>
       return;
     }
     HapticFeedback.mediumImpact();
+
+    // Start animation IMMEDIATELY (don't await DB operations first)
+    final animationFuture = _animateDismiss(toRight: true);
+
+    // Run DB operations in parallel (don't block animation)
     final existingCard = await SrsService.getCard(_current.normalizedForLookup);
     final wasNew = existingCard?.totalReviews == 0;
     final pts = await SrsService.markKnown(_current.normalizedForLookup);
-    // Single source of truth — LearningStateProvider handles known_words
+
     if (mounted) {
       await context
           .read<LearningStateProvider>()
           .setKnownByClean(_current.normalizedForLookup);
     }
+
     if (wasNew) await SrsService.recordNewCardReviewed();
+
     // Reschedule notifications after marking word as known
     unawaited(NotificationService.rescheduleAll());
-    if (!mounted) return;
-    setState(() {
-      _sessionPoints += pts;
-      _totalPoints += pts;
-    });
-    await _animateDismiss(toRight: true);
+
+    if (mounted) {
+      setState(() {
+        _sessionPoints += pts;
+        _totalPoints += pts;
+      });
+    }
+
+    // Wait for animation to finish
+    await animationFuture;
     if (!mounted) return;
     _nextCard();
   }
@@ -406,13 +417,19 @@ class _FlashcardScreenState extends State<FlashcardScreen>
       return;
     }
     HapticFeedback.mediumImpact();
+
+    // Start animation IMMEDIATELY
+    final animationFuture = _animateDismiss(toRight: false);
+
+    // Run DB operations in parallel
     await SrsService.markUnknown(_current.normalizedForLookup);
-    if (!mounted) return;
-    // Mark as unknown in global learning state
-    await context
-        .read<LearningStateProvider>()
-        .setUnknownByClean(_current.normalizedForLookup);
-    if (!mounted) return;
+    if (mounted) {
+      await context
+          .read<LearningStateProvider>()
+          .setUnknownByClean(_current.normalizedForLookup);
+    }
+
+    // Re-queue card if needed
     final remaining = _cards.length - _currentIndex - 1;
     if (remaining > 2) {
       final insertAt =
@@ -420,7 +437,9 @@ class _FlashcardScreenState extends State<FlashcardScreen>
       final card = _cards[_currentIndex];
       _cards.insert(insertAt.clamp(0, _cards.length), card);
     }
-    await _animateDismiss(toRight: false);
+
+    // Wait for animation to finish
+    await animationFuture;
     if (!mounted) return;
     _nextCard();
   }
@@ -466,21 +485,26 @@ class _FlashcardScreenState extends State<FlashcardScreen>
   }
 
   Future<void> _animateDismiss({required bool toRight}) async {
+    // Simple: start from current position and slide off-screen
+    final screenWidth = MediaQuery.of(context).size.width;
+    final startPos = _dragX / screenWidth;
+
     _dismissOffset = Tween<Offset>(
-      begin: Offset(_dragX / MediaQuery.of(context).size.width, 0),
-      end: Offset(toRight ? 2.0 : -2.0, 0),
-    ).animate(CurvedAnimation(parent: _dismissCtrl, curve: Curves.easeIn));
+      begin: Offset(startPos, 0),
+      end: Offset(toRight ? 2.5 : -2.5, 0),
+    ).animate(CurvedAnimation(parent: _dismissCtrl, curve: Curves.easeInCubic));
+
     _dismissCtrl.reset();
     await _dismissCtrl.forward();
   }
 
   void _nextCard() {
-    _dismissCtrl.reset();
     _flipCtrl.reset();
+    _dismissCtrl.reset();
     _dragX = 0;
+
     if (_currentIndex + 1 >= _cards.length) {
       SrsService.clearSession();
-      // Reschedule notifications when session ends
       unawaited(NotificationService.rescheduleAll());
       setState(() {
         _sessionDone = true;
@@ -488,7 +512,6 @@ class _FlashcardScreenState extends State<FlashcardScreen>
         _canUndo = false;
       });
     } else {
-      // Save current card so user can undo
       _lastCard = _current;
       _lastIndex = _currentIndex;
       setState(() {
@@ -685,9 +708,10 @@ class _FlashcardScreenState extends State<FlashcardScreen>
             return;
           }
           final v = d.primaryVelocity ?? 0;
-          if (_dragX > 80 || v > 400) {
+          // Trigger swipe with lower threshold (60px) or high velocity (300)
+          if (_dragX > 60 || v > 300) {
             _swipeKnown();
-          } else if (_dragX < -80 || v < -400) {
+          } else if (_dragX < -60 || v < -300) {
             _swipeUnknown();
           } else {
             setState(() {

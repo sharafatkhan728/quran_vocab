@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../database/database_importer.dart';
 import '../database/migration_manager.dart';
 import 'package:provider/provider.dart';
@@ -23,53 +24,91 @@ class _SplashScreenState extends State<SplashScreen>
   bool _hasError = false;
   bool _showOnboarding = false;
 
-  // ── Logo animation ─────────────────────────────────────────────────────────
+  // ── Logo animation (runs independently of data loading) ──────────────────
   late final AnimationController _logoCtrl;
-  late final Animation<double> _entranceScale;
-  late final Animation<double> _entranceFade;
-  late final Animation<double> _idlePulse;
+  late final Animation<double> _bgReveal;      // 0-200ms: background square
+  late final Animation<double> _ringReveal;    // 200-600ms: outer ring/border
+  late final Animation<double> _bookReveal;    // 600-1000ms: book shape reveals
+  late final Animation<double> _textReveal;    // 1000-1400ms: Arabic text appears
+  late final Animation<double> _glowPass;      // 1400-1600ms: light passes across
+  late final Animation<double> _glowFinal;     // 1600-1800ms: final subtle glow
 
   @override
   void initState() {
     super.initState();
 
+    // One-shot animation: 1.8 seconds total
     _logoCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 5000),
+      duration: const Duration(milliseconds: 1800),
     );
-    // First ~900ms: scale + fade the logo in with a soft overshoot.
-    _entranceScale = TweenSequence<double>([
+
+    // Phase 1: Background appears (0-200ms = 11% of timeline)
+    _bgReveal = TweenSequence<double>([
       TweenSequenceItem(
-        tween: Tween(begin: 0.6, end: 1.0)
-            .chain(CurveTween(curve: Curves.easeOutBack)),
-        weight: 18,
+        tween: Tween<double>(begin: 0.0, end: 1.0)
+            .chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 11,
       ),
-      TweenSequenceItem(tween: ConstantTween(1.0), weight: 82),
+      TweenSequenceItem(tween: ConstantTween(1.0), weight: 89),
     ]).animate(_logoCtrl);
-    _entranceFade = TweenSequence<double>([
+
+    // Phase 2: Outer ring/border draws in (200-600ms = 22% of timeline)
+    _ringReveal = TweenSequence<double>([
+      TweenSequenceItem(tween: ConstantTween(0.0), weight: 11),
       TweenSequenceItem(
-        tween: Tween(begin: 0.0, end: 1.0)
-            .chain(CurveTween(curve: Curves.easeOut)),
-        weight: 12,
+        tween: Tween<double>(begin: 0.0, end: 1.0)
+            .chain(CurveTween(curve: Curves.easeOutQuad)),
+        weight: 22,
       ),
-      TweenSequenceItem(tween: ConstantTween(1.0), weight: 88),
+      TweenSequenceItem(tween: ConstantTween(1.0), weight: 67),
     ]).animate(_logoCtrl);
-    // A gentle continuous "breathing" glow/scale for the rest of the loading
-    // wait, so the logo stays alive instead of freezing once it lands.
-    _idlePulse = TweenSequence<double>([
-      TweenSequenceItem(tween: ConstantTween(1.0), weight: 18),
+
+    // Phase 3: Book shape reveals (600-1000ms = 22% of timeline)
+    _bookReveal = TweenSequence<double>([
+      TweenSequenceItem(tween: ConstantTween(0.0), weight: 33),
       TweenSequenceItem(
-        tween: Tween(begin: 1.0, end: 1.06)
-            .chain(CurveTween(curve: Curves.easeInOut)),
-        weight: 41,
+        tween: Tween<double>(begin: 0.0, end: 1.0)
+            .chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 22,
       ),
+      TweenSequenceItem(tween: ConstantTween(1.0), weight: 45),
+    ]).animate(_logoCtrl);
+
+    // Phase 4: Arabic text appears (1000-1400ms = 22% of timeline)
+    _textReveal = TweenSequence<double>([
+      TweenSequenceItem(tween: ConstantTween(0.0), weight: 56),
       TweenSequenceItem(
-        tween: Tween(begin: 1.06, end: 1.0)
-            .chain(CurveTween(curve: Curves.easeInOut)),
-        weight: 41,
+        tween: Tween<double>(begin: 0.0, end: 1.0)
+            .chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 22,
+      ),
+      TweenSequenceItem(tween: ConstantTween(1.0), weight: 22),
+    ]).animate(_logoCtrl);
+
+    // Phase 5: Light passes across (1400-1600ms = 11% of timeline)
+    _glowPass = TweenSequence<double>([
+      TweenSequenceItem(tween: ConstantTween(0.0), weight: 78),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 0.0, end: 1.0)
+            .chain(CurveTween(curve: Curves.easeInOutQuad)),
+        weight: 11,
+      ),
+      TweenSequenceItem(tween: ConstantTween(0.0), weight: 11),
+    ]).animate(_logoCtrl);
+
+    // Phase 6: Final subtle glow (1600-1800ms = 11% of timeline)
+    _glowFinal = TweenSequence<double>([
+      TweenSequenceItem(tween: ConstantTween(0.0), weight: 89),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 0.0, end: 1.0)
+            .chain(CurveTween(curve: Curves.easeInCubic)),
+        weight: 11,
       ),
     ]).animate(_logoCtrl);
-    _logoCtrl.repeat();
+
+    // Play once (non-repeating)
+    _logoCtrl.forward();
 
     _run();
   }
@@ -88,6 +127,7 @@ class _SplashScreenState extends State<SplashScreen>
 
       final needs = await DatabaseImporter.needsImport();
       if (needs) {
+        bool importFailed = false;
         await for (final p in DatabaseImporter.runImport()) {
           if (!mounted) return;
           if (p.step == ImportStep.error) {
@@ -96,8 +136,7 @@ class _SplashScreenState extends State<SplashScreen>
               _progress = 0;
               _hasError = true;
             });
-            // Wait so user can read the error, then continue with old data
-            await Future.delayed(const Duration(seconds: 4));
+            importFailed = true;
             break;
           }
           setState(() {
@@ -105,6 +144,18 @@ class _SplashScreenState extends State<SplashScreen>
             _progress = p.fraction;
           });
           if (p.step == ImportStep.done) break;
+        }
+        // If import failed, show error and wait for user to retry or dismiss
+        // Do NOT silently continue with old data
+        if (importFailed && mounted) {
+          await Future.delayed(const Duration(seconds: 5));
+          if (mounted) {
+            _showErrorDialog(
+              'Database Import Failed',
+              'Unable to import essential app data. Please restart the app to retry.',
+            );
+            return;
+          }
         }
       }
     } catch (e, stack) {
@@ -114,17 +165,19 @@ class _SplashScreenState extends State<SplashScreen>
           _progress = 0;
           _hasError = true;
         });
-        await Future.delayed(const Duration(seconds: 4));
       }
-      // Report even if the widget was disposed (e.g. user navigated away)
-      if (!mounted) {
-        CrashlyticsService.recordError(e, stack, context: 'SplashScreen._run');
+      CrashlyticsService.recordError(e, stack, context: 'SplashScreen._run');
+      if (mounted) {
+        await Future.delayed(const Duration(seconds: 2));
+        _showErrorDialog(
+          'Startup Error',
+          'An error occurred during app startup: $e\n\nPlease restart the app.',
+        );
+        return;
       }
     }
 
-    // These must run regardless of whether an import happened, so the
-    // onboarding check and sync callback are never skipped on the fast
-    // "no import needed" path.
+    // Only proceed if no errors occurred
     if (mounted) {
       SyncService.onSyncDownComplete = () async {
         final learning = context.read<LearningStateProvider>();
@@ -139,6 +192,27 @@ class _SplashScreenState extends State<SplashScreen>
         });
       }
     }
+  }
+
+  void _showErrorDialog(String title, String message) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              // Exit app or retry
+              SystemNavigator.pop();
+            },
+            child: const Text('Exit App'),
+          ),
+        ],
+      ),
+    );
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -198,38 +272,193 @@ class _SplashScreenState extends State<SplashScreen>
   Widget _buildAnimatedLogo() {
     return AnimatedBuilder(
       animation: _logoCtrl,
-      builder: (_, child) {
-        final scale = _entranceScale.value * _idlePulse.value;
-        return Opacity(
-          opacity: _entranceFade.value,
-          child: Transform.scale(scale: scale, child: child),
+      builder: (context, _) {
+        return CustomPaint(
+          painter: LogoPainter(
+            bgReveal: _bgReveal.value,
+            ringReveal: _ringReveal.value,
+            bookReveal: _bookReveal.value,
+            textReveal: _textReveal.value,
+            glowPass: _glowPass.value,
+            glowFinal: _glowFinal.value,
+            isDark: Theme.of(context).brightness == Brightness.dark,
+          ),
+          size: const Size(140, 140),
         );
       },
-      child: Container(
-        width: 110,
-        height: 110,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: const LinearGradient(
-            colors: [Color(0xFF1B4332), Color(0xFF2D6A4F)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          border: Border.all(
-              color: const Color(0xFFD4AF37).withValues(alpha: 0.6), width: 2),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFFD4AF37).withValues(alpha: 0.35),
-              blurRadius: 24,
-              spreadRadius: 2,
-            ),
-          ],
-        ),
-        child: const Center(
-          child: Text('﷽',
-              style: TextStyle(fontSize: 34, color: Color(0xFFD4AF37))),
-        ),
-      ),
     );
+  }
+}
+
+// ── Custom Logo Painter ─────────────────────────────────────────────────────
+class LogoPainter extends CustomPainter {
+  final double bgReveal;
+  final double ringReveal;
+  final double bookReveal;
+  final double textReveal;
+  final double glowPass;
+  final double glowFinal;
+  final bool isDark;
+
+  LogoPainter({
+    required this.bgReveal,
+    required this.ringReveal,
+    required this.bookReveal,
+    required this.textReveal,
+    required this.glowPass,
+    required this.glowFinal,
+    required this.isDark,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    const goldColor = Color(0xFFD4AF37);
+    const darkGreen = Color(0xFF1B4332);
+    final bgColor = isDark ? darkGreen : const Color(0xFFE8F5E9);
+
+    // ── Phase 1: Background square appears ──
+    if (bgReveal > 0) {
+      final bgSize = 120.0 * bgReveal;
+      final bgPaint = Paint()
+        ..color = bgColor.withValues(alpha: 0.9 * bgReveal)
+        ..style = PaintingStyle.fill;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(
+            center: center,
+            width: bgSize,
+            height: bgSize,
+          ),
+          const Radius.circular(8),
+        ),
+        bgPaint,
+      );
+    }
+
+    // ── Phase 2: Outer ring/border draws in ──
+    if (ringReveal > 0) {
+      final ringPaint = Paint()
+        ..color = goldColor.withValues(alpha: 0.8 * ringReveal)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(
+            center: center,
+            width: 120.0,
+            height: 120.0,
+          ),
+          const Radius.circular(8),
+        ),
+        ringPaint,
+      );
+    }
+
+    // ── Phase 3: Book shape reveals (Quran book silhouette) ──
+    if (bookReveal > 0) {
+      final bookPaint = Paint()
+        ..color = goldColor.withValues(alpha: 0.9 * bookReveal)
+        ..style = PaintingStyle.fill;
+
+      // Draw simplified book shape (two pages meeting at spine)
+      final path = Path();
+      path.moveTo(center.dx - 20 * bookReveal, center.dy - 25 * bookReveal);
+      path.lineTo(center.dx - 5 * bookReveal, center.dy - 25 * bookReveal);
+      path.lineTo(center.dx - 2 * bookReveal, center.dy - 5 * bookReveal);
+      path.lineTo(center.dx - 20 * bookReveal, center.dy + 5 * bookReveal);
+      path.close();
+
+      // Right page
+      path.moveTo(center.dx + 5 * bookReveal, center.dy - 25 * bookReveal);
+      path.lineTo(center.dx + 20 * bookReveal, center.dy - 25 * bookReveal);
+      path.lineTo(center.dx + 20 * bookReveal, center.dy + 5 * bookReveal);
+      path.lineTo(center.dx + 2 * bookReveal, center.dy - 5 * bookReveal);
+      path.close();
+
+      canvas.drawPath(path, bookPaint);
+
+      // Spine line
+      final spinePaint = Paint()
+        ..color = goldColor.withValues(alpha: 0.6 * bookReveal)
+        ..strokeWidth = 1.5;
+      canvas.drawLine(
+        Offset(center.dx - 2 * bookReveal, center.dy - 25 * bookReveal),
+        Offset(center.dx + 2 * bookReveal, center.dy + 5 * bookReveal),
+        spinePaint,
+      );
+    }
+
+    // ── Phase 4: Arabic text appears (decorative symbol) ──
+    if (textReveal > 0) {
+      final textPaint = Paint()
+        ..color = goldColor.withValues(alpha: 0.85 * textReveal)
+        ..style = PaintingStyle.fill;
+
+      // Draw decorative Islamic pattern (simplified)
+      final decorSize = 8.0 * textReveal;
+      canvas.drawCircle(
+        Offset(center.dx, center.dy + 18),
+        decorSize,
+        textPaint,
+      );
+
+      // Flanking dots
+      canvas.drawCircle(
+        Offset(center.dx - 12, center.dy + 18),
+        decorSize * 0.6,
+        textPaint..color = textPaint.color.withValues(alpha: 0.6 * textReveal),
+      );
+      canvas.drawCircle(
+        Offset(center.dx + 12, center.dy + 18),
+        decorSize * 0.6,
+        textPaint..color = textPaint.color.withValues(alpha: 0.6 * textReveal),
+      );
+    }
+
+    // ── Phase 5: Light passes across (shimmer effect) ──
+    if (glowPass > 0) {
+      final glowPaint = Paint()
+        ..color = goldColor.withValues(alpha: 0.4 * (1 - (glowPass - 0.5).abs() * 2))
+        ..style = PaintingStyle.fill;
+
+      // Sweeping light from left to right
+      final lightX = center.dx - 70 + glowPass * 140;
+      canvas.drawCircle(
+        Offset(lightX, center.dy),
+        15 * glowPass,
+        glowPaint,
+      );
+    }
+
+    // ── Phase 6: Final subtle glow ──
+    if (glowFinal > 0) {
+      final finalGlowPaint = Paint()
+        ..color = goldColor.withValues(alpha: 0.25 * glowFinal)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0;
+
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(
+            center: center,
+            width: 125.0,
+            height: 125.0,
+          ),
+          const Radius.circular(10),
+        ),
+        finalGlowPaint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(LogoPainter oldDelegate) {
+    return oldDelegate.bgReveal != bgReveal ||
+        oldDelegate.ringReveal != ringReveal ||
+        oldDelegate.bookReveal != bookReveal ||
+        oldDelegate.textReveal != textReveal ||
+        oldDelegate.glowPass != glowPass ||
+        oldDelegate.glowFinal != glowFinal;
   }
 }
