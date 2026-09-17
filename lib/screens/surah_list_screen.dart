@@ -13,6 +13,7 @@ import '../widgets/surah_search_delegate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'flashcard_screen.dart';
 import '../providers/learning_state_provider.dart';
+import '../database/database_manager.dart';
 
 class SurahListScreen extends StatefulWidget {
   const SurahListScreen({super.key});
@@ -21,17 +22,27 @@ class SurahListScreen extends StatefulWidget {
   State<SurahListScreen> createState() => _SurahListScreenState();
 }
 
-class _SurahListScreenState extends State<SurahListScreen> {
+class _SurahListScreenState extends State<SurahListScreen>
+    with SingleTickerProviderStateMixin {
   double _totalProgress = 0;
   Map<int, double> _surahProgress = {};
   Map<int, int> _lastReadAyahs = {};
   List<Map<String, dynamic>> _bookmarks = [];
+  int _knownCount = 0;
+  int _streak = 0;
+
+  late AnimationController _barCtrl;
+  late Animation<double> _barAnim;
 
   LearningStateProvider? _learning;
 
   @override
   void initState() {
     super.initState();
+    _barCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1200));
+    _barAnim = Tween<double>(begin: 0, end: 0).animate(
+        CurvedAnimation(parent: _barCtrl, curve: Curves.easeOutCubic));
     _loadProgress();
   }
 
@@ -52,6 +63,7 @@ class _SurahListScreenState extends State<SurahListScreen> {
 
   @override
   void dispose() {
+    _barCtrl.dispose();
     _learning?.removeListener(_onLearningChanged);
     super.dispose();
   }
@@ -59,6 +71,28 @@ class _SurahListScreenState extends State<SurahListScreen> {
   Future<void> _loadProgress() async {
     final progressPercent = await WordProgressService.getProgressPercent();
     final sp = await WordProgressService.getAllSurahProgress();
+
+    // Known word count from LearningStateProvider
+    final knownCount = context.read<LearningStateProvider>().knownCount;
+
+    // Streak: count consecutive days with words_learned > 0
+    int streak = 0;
+    try {
+      final db = await DatabaseManager.db;
+      final today = DateTime.now();
+      for (int d = 0; d < 365; d++) {
+        final day = today.subtract(Duration(days: d));
+        final key =
+            '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+        final rows = await db.query('daily_stats',
+            where: 'date_key = ?', whereArgs: [key], limit: 1);
+        if (rows.isNotEmpty && (rows.first['words_learned'] as int? ?? 0) > 0) {
+          streak++;
+        } else {
+          break;
+        }
+      }
+    } catch (_) {}
 
     // ── Last-read positions from SQLite reading_progress ──────────────────
     final Map<int, int> lastRead = {};
@@ -76,7 +110,15 @@ class _SurahListScreenState extends State<SurahListScreen> {
       setState(() {
         _totalProgress = progressPercent;
         _surahProgress = sp;
+        _knownCount = knownCount;
+        _streak = streak;
       });
+      // Animate bar to new value
+      _barAnim = Tween<double>(begin: _barAnim.value, end: progressPercent / 100)
+          .animate(CurvedAnimation(parent: _barCtrl, curve: Curves.easeOutCubic));
+      _barCtrl
+        ..reset()
+        ..forward();
     }
   }
 
@@ -265,27 +307,231 @@ IconButton(
   }
 
   Widget _buildProgressHeader(BuildContext context) {
+    // ── Level system ──────────────────────────────────────────────────────
+    final (levelEn, levelAr, levelColor) = _getLevel(_totalProgress);
+
+    // ── Milestone detection ───────────────────────────────────────────────
+    final milestone = _getMilestone(_totalProgress);
+
+    // ── Comparison text ───────────────────────────────────────────────────
+    final comparisonText = _getComparisonText(_totalProgress, _knownCount);
+
     return Container(
       color: const Color(0xFF1B4332),
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Overall: ${_totalProgress.toStringAsFixed(1)}%',
-              style: const TextStyle(color: Colors.white70, fontSize: 17)),
-          const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: _totalProgress / 100,
-              backgroundColor: Colors.white24,
-              valueColor: const AlwaysStoppedAnimation(Colors.greenAccent),
-              minHeight: 6,
-            ),
+          // ── Row 1: Level badge + streak + comparison ──────────────────
+          Row(
+            children: [
+              // Level badge
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: levelColor.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: levelColor.withValues(alpha: 0.6)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(levelAr,
+                        style: TextStyle(
+                            fontSize: 13,
+                            color: levelColor,
+                            fontWeight: FontWeight.bold)),
+                    const SizedBox(width: 5),
+                    Text(levelEn,
+                        style: TextStyle(
+                            fontSize: 10,
+                            color: levelColor.withValues(alpha: 0.85))),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Streak
+              if (_streak > 0)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                        color: Colors.orange.withValues(alpha: 0.5)),
+                  ),
+                  child: Text('🔥 $_streak days',
+                      style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.orange,
+                          fontWeight: FontWeight.w600)),
+                ),
+              const Spacer(),
+              // Comparison text
+              Text(comparisonText,
+                  style: const TextStyle(
+                      fontSize: 10, color: Colors.white38)),
+            ],
           ),
+
+          const SizedBox(height: 10),
+
+          // ── Row 2: Percentage + known count ───────────────────────────
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '${_totalProgress.toStringAsFixed(1)}% of Quran',
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold),
+              ),
+              Text(
+                '$_knownCount words known',
+                style: const TextStyle(color: Colors.white54, fontSize: 11),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 8),
+
+          // ── Row 3: Animated gradient bar ──────────────────────────────
+          AnimatedBuilder(
+            animation: _barAnim,
+            builder: (_, __) {
+              return Stack(
+                children: [
+                  // Background track
+                  Container(
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: Colors.white12,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                  // Filled gradient bar
+                  FractionallySizedBox(
+                    widthFactor: _barAnim.value.clamp(0.0, 1.0),
+                    child: Container(
+                      height: 10,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(6),
+                        gradient: LinearGradient(
+                          colors: [
+                            const Color(0xFFD4AF37),
+                            const Color(0xFF2ECC71),
+                          ],
+                          stops: const [0.0, 1.0],
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF2ECC71).withValues(alpha: 0.4),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  // Milestone tick marks
+                  ...[10, 25, 50, 75].map((pct) {
+                    return FractionallySizedBox(
+                      widthFactor: pct / 100,
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: Container(
+                          width: 2,
+                          height: 10,
+                          color: Colors.white24,
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              );
+            },
+          ),
+
+          // ── Row 4: Milestone badge (shown when at/past a milestone) ───
+          if (milestone != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    const Color(0xFFD4AF37).withValues(alpha: 0.15),
+                    const Color(0xFF1B4332),
+                  ],
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                ),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: const Color(0xFFD4AF37).withValues(alpha: 0.4)),
+              ),
+              child: Row(
+                children: [
+                  Text(milestone.$1,
+                      style: const TextStyle(fontSize: 18)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(milestone.$2,
+                            style: const TextStyle(
+                                color: Color(0xFFD4AF37),
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold)),
+                        Text(milestone.$3,
+                            style: const TextStyle(
+                                color: Colors.white54, fontSize: 10)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  // ── Level system ─────────────────────────────────────────────────────────
+  (String, String, Color) _getLevel(double pct) {
+    if (pct >= 75) return ('Master', 'متقدم', const Color(0xFFD4AF37));
+    if (pct >= 50) return ('Advanced', 'متوسط متقدم', Colors.green.shade400);
+    if (pct >= 25) return ('Intermediate', 'متوسط', Colors.teal.shade300);
+    if (pct >= 10) return ('Beginner', 'مبتدئ', Colors.blue.shade300);
+    return ('Starter', 'مبتدئ', Colors.grey.shade400);
+  }
+
+  // ── Milestone detection ───────────────────────────────────────────────────
+  // Returns (emoji, title, arabic phrase) for the nearest passed milestone
+  (String, String, String)? _getMilestone(double pct) {
+    if (pct >= 75) return ('🏆', 'Three-Quarters of Quran!', 'ماشاء اللہ — أحسنت!');
+    if (pct >= 50) return ('⭐', 'Half of Quran!', 'مبارك — نصف القرآن!');
+    if (pct >= 25) return ('🌟', 'Quarter of Quran!', 'احسنت — ربع القرآن!');
+    if (pct >= 10) return ('✨', 'First Milestone!', 'جزاك الله خيراً');
+    return null;
+  }
+
+  // ── Comparison text ───────────────────────────────────────────────────────
+  String _getComparisonText(double pct, int known) {
+    if (known == 0) return 'Start learning today';
+    if (pct >= 50) return 'Top learner 🏅';
+    if (pct >= 25) return 'Better than most';
+    if (pct >= 10) return 'Great progress!';
+    return '$known words and counting';
   }
 }
 
