@@ -14,6 +14,7 @@ import '../models/word.dart';
 import '../providers/theme_provider.dart';
 import '../providers/display_provider.dart';
 import '../database/database_importer.dart';
+import '../database/database_manager.dart';
 import '../repositories/content_repository.dart';
 import '../services/translation_service.dart';
 import '../services/word_glossary_service.dart';
@@ -986,7 +987,7 @@ onKnownToggled: (nowKnown) {
       itemBuilder: (context, index) {
         if (index == 0) {
           return _showBismillahHeader
-              ? _BismillahHeader()
+              ? _BismillahHeader(surah: widget.surah, knownWords: context.read<LearningStateProvider>().knownCount)
               : const SizedBox.shrink();
         }
         if (index == _totalAyahs + 1) return _buildNavigation();
@@ -1171,7 +1172,7 @@ onKnownToggled: (nowKnown) {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (_showBismillahHeader) _BismillahHeader(),
+            if (_showBismillahHeader) _BismillahHeader(surah: widget.surah, knownWords: context.read<LearningStateProvider>().knownCount),
             Directionality(
               textDirection: TextDirection.rtl,
               child: Wrap(
@@ -1337,58 +1338,336 @@ onKnownToggled: (nowKnown) {
 
 // ── Bismillah header ──────────────────────────────────────────────────────────
 
-class _BismillahHeader extends StatelessWidget {
+class _BismillahHeader extends StatefulWidget {
+  final Surah surah;
+  final int knownWords;
+  const _BismillahHeader({required this.surah, required this.knownWords});
+
+  @override
+  State<_BismillahHeader> createState() => _BismillahHeaderState();
+}
+
+class _BismillahHeaderState extends State<_BismillahHeader>
+    with TickerProviderStateMixin {
+  static const _gold = Color(0xFFD4AF37);
+  static const _green = Color(0xFF1B4332);
+
+  late AnimationController _entryCtrl;
+  late AnimationController _shimmerCtrl;
+  late Animation<double> _entryFade;
+  late Animation<double> _entryScale;
+  late Animation<double> _shimmer;
+
+  int _surahKnownCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _entryCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 700));
+    _shimmerCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 900));
+
+    _entryFade = Tween<double>(begin: 0, end: 1).animate(
+        CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOut));
+    _entryScale = Tween<double>(begin: 0.94, end: 1.0).animate(
+        CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOutCubic));
+    _shimmer = Tween<double>(begin: -1.0, end: 2.0).animate(
+        CurvedAnimation(parent: _shimmerCtrl, curve: Curves.easeInOut));
+
+    _entryCtrl.forward().then((_) {
+      Future.delayed(const Duration(milliseconds: 200), () {
+        if (mounted) _shimmerCtrl.forward();
+      });
+    });
+
+    _loadSurahKnownCount();
+  }
+
+  @override
+  void dispose() {
+    _entryCtrl.dispose();
+    _shimmerCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadSurahKnownCount() async {
+    try {
+      final db = await DatabaseManager.db;
+      final rows = await db.rawQuery('''
+        SELECT COUNT(DISTINCT kw.vocab_word_id) as cnt
+        FROM known_words kw
+        JOIN vocab_words v ON v.id = kw.vocab_word_id
+        JOIN ayah_words aw ON aw.vocab_word_id = v.id
+        JOIN ayahs a ON a.id = aw.ayah_id
+        WHERE a.surah_id = ?
+      ''', [widget.surah.id]);
+      final cnt = (rows.first['cnt'] as int?) ?? 0;
+      if (mounted) setState(() => _surahKnownCount = cnt);
+    } catch (_) {}
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final display = context.read<DisplayProvider>();
+    final revelation = quran.getPlaceOfRevelation(widget.surah.id);
+    final isMakki = revelation.toLowerCase().contains('mecca') ||
+        revelation.toLowerCase().contains('makk');
 
-    // Build style matching user's selected Arabic font
     TextStyle arabicStyle;
     switch (display.arabicFont) {
       case 'indopak':
         arabicStyle = TextStyle(
             fontFamily: 'IndoPak',
-            fontSize: display.arabicFontSize.clamp(22, 36),
-            color: isDark ? const Color(0xFFD4AF37) : const Color(0xFF1B4332),
+            fontSize: display.arabicFontSize.clamp(24, 40),
+            color: isDark ? _gold : _green,
             height: 2.0);
         break;
       case 'noorehuda':
         arabicStyle = TextStyle(
             fontFamily: 'NoorehudaFont',
-            fontSize: display.arabicFontSize.clamp(22, 36),
-            color: isDark ? const Color(0xFFD4AF37) : const Color(0xFF1B4332),
+            fontSize: display.arabicFontSize.clamp(24, 40),
+            color: isDark ? _gold : _green,
             height: 2.0);
         break;
       default:
         arabicStyle = GoogleFonts.amiri(
-            fontSize: display.arabicFontSize.clamp(22, 36),
-            color: isDark ? const Color(0xFFD4AF37) : const Color(0xFF1B4332),
+            fontSize: display.arabicFontSize.clamp(24, 40),
+            color: isDark ? _gold : _green,
             height: 2.0);
     }
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-      decoration: BoxDecoration(
-        // Better dark mode contrast
-        color: isDark
-            ? const Color(0xFF1B4332).withValues(alpha: 0.5)
-            : const Color(0xFFF0F7F0),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-            color: isDark
-                ? const Color(0xFFD4AF37).withValues(alpha: 0.4)
-                : const Color(0xFF1B4332).withValues(alpha: 0.3),
-            width: isDark ? 1.5 : 1.0),
-      ),
-      child: Center(
-        child: Text(
-          quran.basmala,
-          textDirection: TextDirection.rtl,
-          style: arabicStyle,
-        ),
-      ),
+    return AnimatedBuilder(
+      animation: Listenable.merge([_entryCtrl, _shimmerCtrl]),
+      builder: (_, __) {
+        return FadeTransition(
+          opacity: _entryFade,
+          child: ScaleTransition(
+            scale: _entryScale,
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                gradient: LinearGradient(
+                  colors: isDark
+                      ? [
+                          const Color(0xFF1B4332),
+                          const Color(0xFF0D2418),
+                          const Color(0xFF1A3A28),
+                        ]
+                      : [
+                          const Color(0xFFFBF6E8),
+                          const Color(0xFFF0F7F0),
+                          const Color(0xFFFAF3E0),
+                        ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                border: Border.all(
+                  color: _gold.withValues(alpha: isDark ? 0.5 : 0.4),
+                  width: 1.5,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: _gold.withValues(alpha: isDark ? 0.15 : 0.1),
+                    blurRadius: 16,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: CustomPaint(
+                  painter: _GeometricBorderPainter(isDark: isDark),
+                  child: Stack(
+                    children: [
+                      // Shimmer overlay
+                      if (_shimmerCtrl.isAnimating)
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment(_shimmer.value - 0.5, 0),
+                                  end: Alignment(_shimmer.value + 0.5, 0),
+                                  colors: [
+                                    Colors.transparent,
+                                    _gold.withValues(alpha: 0.18),
+                                    Colors.transparent,
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 18, 16, 14),
+                        child: Column(
+                          children: [
+                            // ── Ornamental row + Bismillah text ────────
+                            Row(
+                              children: [
+                                // Left ornament
+                                Text('❧',
+                                    style: TextStyle(
+                                        fontSize: 22,
+                                        color: _gold.withValues(alpha: 0.7))),
+                                // Bismillah text
+                                Expanded(
+                                  child: Text(
+                                    quran.basmala,
+                                    textDirection: TextDirection.rtl,
+                                    textAlign: TextAlign.center,
+                                    style: arabicStyle,
+                                  ),
+                                ),
+                                // Right ornament
+                                Text('❧',
+                                    style: TextStyle(
+                                        fontSize: 22,
+                                        color: _gold.withValues(alpha: 0.7))),
+                              ],
+                            ),
+
+                            const SizedBox(height: 10),
+
+                            // ── Info strip ─────────────────────────────
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                // Makki/Madani badge
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: isMakki
+                                        ? Colors.amber.withValues(alpha: 0.15)
+                                        : Colors.teal.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: isMakki
+                                          ? Colors.amber.withValues(alpha: 0.5)
+                                          : Colors.teal.withValues(alpha: 0.5),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    isMakki ? '🕋 Makki' : '🕌 Madani',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: isMakki
+                                          ? (isDark
+                                              ? Colors.amber.shade300
+                                              : Colors.amber.shade800)
+                                          : (isDark
+                                              ? Colors.teal.shade300
+                                              : Colors.teal.shade700),
+                                    ),
+                                  ),
+                                ),
+
+                                if (_surahKnownCount > 0) ...[
+                                  const SizedBox(width: 8),
+                                  // Known words in this surah
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color:
+                                          Colors.green.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                          color: Colors.green
+                                              .withValues(alpha: 0.4)),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.check_circle_outline,
+                                            size: 12,
+                                            color: isDark
+                                                ? Colors.green.shade300
+                                                : Colors.green.shade700),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          '$_surahKnownCount words known',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: isDark
+                                                ? Colors.green.shade300
+                                                : Colors.green.shade700,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
+}
+
+// ── Geometric border painter ──────────────────────────────────────────────────
+class _GeometricBorderPainter extends CustomPainter {
+  final bool isDark;
+  static const _gold = Color(0xFFD4AF37);
+
+  const _GeometricBorderPainter({required this.isDark});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = _gold.withValues(alpha: isDark ? 0.18 : 0.12)
+      ..style = PaintingStyle.fill;
+
+    const dotR = 3.0;
+    const spacing = 20.0;
+
+    // Top edge dots
+    for (double x = spacing; x < size.width - spacing; x += spacing) {
+      canvas.drawCircle(Offset(x, 6), dotR * 0.6, paint);
+    }
+    // Bottom edge dots
+    for (double x = spacing; x < size.width - spacing; x += spacing) {
+      canvas.drawCircle(Offset(x, size.height - 6), dotR * 0.6, paint);
+    }
+
+    // Corner diamond ornaments
+    final diamondPaint = Paint()
+      ..color = _gold.withValues(alpha: isDark ? 0.25 : 0.18)
+      ..style = PaintingStyle.fill;
+
+    void drawDiamond(Offset center, double r) {
+      final path = Path()
+        ..moveTo(center.dx, center.dy - r)
+        ..lineTo(center.dx + r, center.dy)
+        ..lineTo(center.dx, center.dy + r)
+        ..lineTo(center.dx - r, center.dy)
+        ..close();
+      canvas.drawPath(path, diamondPaint);
+    }
+
+    drawDiamond(const Offset(14, 14), 6);
+    drawDiamond(Offset(size.width - 14, 14), 6);
+    drawDiamond(Offset(14, size.height - 14), 6);
+    drawDiamond(Offset(size.width - 14, size.height - 14), 6);
+  }
+
+  @override
+  bool shouldRepaint(_GeometricBorderPainter old) => old.isDark != isDark;
 }
