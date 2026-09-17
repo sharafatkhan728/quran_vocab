@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:quran/quran.dart' as quran;
+import 'package:quran_vocab/screens/payment_screen.dart';
 import '../models/surah.dart';
 import '../services/word_progress_service.dart';
 import '../repositories/content_repository.dart';
@@ -73,6 +74,7 @@ class _SurahListScreenState extends State<SurahListScreen>
     final sp = await WordProgressService.getAllSurahProgress();
 
     // Known word count from LearningStateProvider
+    // ignore: use_build_context_synchronously
     final knownCount = context.read<LearningStateProvider>().knownCount;
 
     // Streak: count consecutive days with words_learned > 0
@@ -127,6 +129,13 @@ class _SurahListScreenState extends State<SurahListScreen>
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.volunteer_activism, color: Color.fromARGB(255, 255, 254, 253)),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const PaymentScreen()),
+            ),
+          ),        
         title: const Column(
           children: [
             Text('القرآن الكريم', style: TextStyle(fontSize: 22)),

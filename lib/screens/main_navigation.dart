@@ -107,6 +107,7 @@ class _MainNavigationState extends State<MainNavigation> with WidgetsBindingObse
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
+      // ignore: deprecated_member_use
       onPopInvoked: (didPop) {
         if (didPop) return;
 

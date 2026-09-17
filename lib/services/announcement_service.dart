@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -36,6 +35,7 @@ class AnnouncementService {
     try {
       final announcements = await _fetchEligible();
       if (announcements.isEmpty) return;
+      // ignore: use_build_context_synchronously
       await _showQueue(context, announcements);
     } catch (e, stack) {
       debugPrint('AnnouncementService: check failed — $e');
@@ -72,14 +72,20 @@ class AnnouncementService {
       if (a.startAt != null && now.isBefore(a.startAt!)) continue;
       if (a.expiresAt != null && now.isAfter(a.expiresAt!)) continue;
       if (a.targetPlatforms.isNotEmpty &&
-          !a.targetPlatforms.contains(platform)) continue;
+          !a.targetPlatforms.contains(platform)) {
+        continue;
+      }
       if (!a.targetAll && !(uid != null && a.targetUserIds.contains(uid))) {
         continue;
       }
       if (a.minAppVersion != null &&
-          _compareVersions(currentVersion, a.minAppVersion!) < 0) continue;
+          _compareVersions(currentVersion, a.minAppVersion!) < 0) {
+        continue;
+      }
       if (a.maxAppVersion != null &&
-          _compareVersions(currentVersion, a.maxAppVersion!) > 0) continue;
+          _compareVersions(currentVersion, a.maxAppVersion!) > 0) {
+        continue;
+      }
 
       result.add(a);
     }

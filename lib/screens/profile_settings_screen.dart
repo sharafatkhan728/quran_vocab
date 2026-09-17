@@ -1105,6 +1105,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   // 2. DONATE — shows donation info dialog (report in comments below)
   // ═══════════════════════════════════════════════════════════════════════════
 
+  // ignore: unused_element
   void _showDonateDialog() {
     showDialog(
       context: context,

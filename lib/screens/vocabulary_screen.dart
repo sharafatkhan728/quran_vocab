@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:quran_vocab/screens/payment_screen.dart';
 import '../services/word_progress_service.dart';
 import 'word_occurrences_screen.dart';
 import '../providers/display_provider.dart';
@@ -200,6 +201,13 @@ class _VocabularyScreenState extends State<VocabularyScreen>
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.volunteer_activism, color: Color.fromARGB(255, 250, 248, 248)),
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const PaymentScreen()),
+          ),
+        ),
         title: const Column(
           children: [
             Text('Vocabulary'),
@@ -640,6 +648,7 @@ class _WordCard extends StatelessWidget {
                     color: Colors.green,
                   ),
                   child: const Icon(Icons.check, color: Colors.white, size: 18),
+                  // child: const Icon(Icons.volunteer_activism, color: Colors.red, size: 18),
                 )
               else
                 const SizedBox(width: 32),

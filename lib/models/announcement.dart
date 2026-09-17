@@ -89,6 +89,7 @@ class Announcement {
     this.actionUrl,
   });
 
+  // ignore: unintended_html_in_doc_comment
   /// Parses a Firestore array field into a clean List<String>, dropping any
   /// null/blank entries — this is what protects against Firebase Console's
   /// habit of leaving a stray `null` inside an array you intended to be
