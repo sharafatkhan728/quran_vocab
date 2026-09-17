@@ -12,6 +12,7 @@ import '../providers/display_provider.dart';
 import '../providers/user_provider.dart';
 import '../services/sync_service.dart';
 import '../screens/auth_screen.dart';
+import 'payment_screen.dart';
 import '../services/word_glossary_service.dart';
 import 'feedback_screen.dart';
 import 'app_tour_screen.dart';
@@ -152,7 +153,11 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                         iconColor: Colors.red,
                         title: 'Donate',
                         subtitle: 'Support this app',
-                        onTap: () => _showDonateDialog()),
+                        onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => const PaymentScreen()),
+                            )),
                   ]),
                   const SizedBox(height: 5),
                   _buildSection(isDark, title: 'Support & Info', items: [
