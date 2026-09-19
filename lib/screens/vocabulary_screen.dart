@@ -18,6 +18,7 @@ class VocabularyScreen extends StatefulWidget {
 
 class _VocabularyScreenState extends State<VocabularyScreen>
     with SingleTickerProviderStateMixin {
+
   late TabController _tabController;
   List<WordEntry> _allWords = [];
   List<WordEntry> _knownWords = [];
@@ -25,6 +26,10 @@ class _VocabularyScreenState extends State<VocabularyScreen>
   LearningStateProvider? _learning;
   bool _isLoading = true;
   String _searchQuery = '';
+  // Standalone entries for the always-transparent attached particles are
+  // hidden from every tab — their known/unknown status no longer gates
+  // compound-word derivation, so listing them separately just adds noise.
+  static const _hiddenStandalone = {'و', 'ف', 'ال'};
   String _sortBy = 'frequency';
   final TextEditingController _searchController = TextEditingController();
 
@@ -103,6 +108,7 @@ class _VocabularyScreenState extends State<VocabularyScreen>
     final wordFreq = await WordProgressService.getWordFrequencies();
 
     final all = wordFreq.entries
+        .where((e) => !_hiddenStandalone.contains(e.key))
         .map((e) => WordEntry(
               arabic: e.key,
               originalArabic: e.value.originalArabic.isNotEmpty
@@ -113,7 +119,6 @@ class _VocabularyScreenState extends State<VocabularyScreen>
               isKnown: learning.isKnown(e.key),
             ))
         .toList();
-
     _applySort(all);
 
     if (mounted) {
@@ -257,28 +262,6 @@ class _VocabularyScreenState extends State<VocabularyScreen>
       ),
       body: Column(
         children: [
-          // Stats bar
-          // Container(
-          //   color: const Color(0xFF1B4332),
-          //   padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          //   child: Row(
-          //     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          //     children: [
-          //       _StatBadge(
-          //           label: 'Total Unique',
-          //           value: '14,870',
-          //           color: Colors.white70),
-          //       _StatBadge(
-          //           label: 'Discovered',
-          //           value: '${_allWords.length}',
-          //           color: Colors.amber),
-          //       _StatBadge(
-          //           label: 'Known',
-          //           value: '${_knownWords.length}',
-          //           color: Colors.greenAccent),
-          //     ],
-          //   ),
-          // ),
           // Search bar
           Padding(
             padding: const EdgeInsets.all(12),
@@ -648,7 +631,7 @@ class _WordCard extends StatelessWidget {
                     color: Colors.green,
                   ),
                   child: const Icon(Icons.check, color: Colors.white, size: 18),
-                  // child: const Icon(Icons.volunteer_activism, color: Colors.red, size: 18),
+
                 )
               else
                 const SizedBox(width: 32),

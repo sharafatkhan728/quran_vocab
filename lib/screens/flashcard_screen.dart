@@ -108,6 +108,9 @@ class _FlashcardScreenState extends State<FlashcardScreen>
   static const _green = Color(0xFF1B4332);
   static const _gold = Color(0xFFD4AF37);
   static const _teal = Color(0xFF2D6A4F);
+  // Same as VocabularyScreen — و/ف/ال are always-transparent attached
+  // particles now, never shown as a standalone learnable item anywhere.
+  static const _hiddenStandalone = {'و', 'ف', 'ال'};
 
   List<FlashWord> _cards = [];
   int _currentIndex = 0;
@@ -232,7 +235,9 @@ class _FlashcardScreenState extends State<FlashcardScreen>
       final knownCleans =
           context.read<LearningStateProvider>().allKnownCleans;
       final extra = await SrsService.buildExtraSession(
-          freq.keys.toList(), 10, knownCleans: knownCleans);
+          freq.keys.where((w) => !_hiddenStandalone.contains(w)).toList(),
+          10,
+          knownCleans: knownCleans);
       if (extra.isEmpty) {
         setState(() => _loading = false);
         if (mounted) {
@@ -299,7 +304,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     await SrsService.startNewSession();
     // Read dailyGoal here — after providers have fully loaded
     final dailyGoal = context.read<UserProvider>().dailyGoal;
-    final allWords = freq.keys.toList();
+    final allWords =
+        freq.keys.where((w) => !_hiddenStandalone.contains(w)).toList();
     final knownCleans =
         context.read<LearningStateProvider>().allKnownCleans;
     final result =

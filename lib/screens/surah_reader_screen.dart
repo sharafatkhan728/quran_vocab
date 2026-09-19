@@ -126,8 +126,25 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
   }
 
   void _onLearningStateChanged() {
-    // Do nothing here — scroll position is preserved by updating
-    // _ayahCache directly in _onWordLongPress instead
+    // A known/unknown change anywhere (this screen, Vocabulary, Flashcards,
+    // or a group-sync cascade to a related compound like وٱلذین when
+    // ٱلذین is toggled) must be reflected here too. This only updates each
+    // cached QuranWord's isKnown flag — it never touches scroll controllers
+    // or _ayahCache's structure, so scroll position is unaffected.
+    _refreshAllKnownFlags();
+  }
+
+  void _refreshAllKnownFlags() {
+    if (!mounted || _ayahCache.isEmpty) return;
+    final learning = context.read<LearningStateProvider>();
+    setState(() {
+      for (final ayahNum in _ayahCache.keys) {
+        _ayahCache[ayahNum] = _ayahCache[ayahNum]!.map((w) {
+          final normalized = WordProgressService.normalizeArabic(w.arabic);
+          return w.copyWith(isKnown: learning.isKnown(normalized));
+        }).toList();
+      }
+    });
   }
 
   void _onTranslationLangChanged() {
@@ -610,17 +627,11 @@ Future<void> _onWordLongPress(QuranWord word) async {
     final learning = context.read<LearningStateProvider>();
     final nowKnown = await learning.toggleByClean(normalized);
     if (!mounted) return;
-    // Update cached QuranWord objects so word tiles and count badge rebuild
-    setState(() {
-      for (final ayahNum in _ayahCache.keys) {
-        _ayahCache[ayahNum] = _ayahCache[ayahNum]!.map((w) {
-          if (WordProgressService.normalizeArabic(w.arabic) == normalized) {
-            return w.copyWith(isKnown: nowKnown);
-          }
-          return w;
-        }).toList();
-      }
-    });
+    // Refresh every cached word's isKnown from the provider — not just the
+    // toggled one — so a related compound (e.g. وٱلذین when ٱلذین is
+    // toggled) updates in the UI too, without waiting for a manual scroll
+    // or mode switch to trigger a rebuild.
+    _refreshAllKnownFlags();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content:
@@ -648,19 +659,7 @@ Future<void> _onWordLongPress(QuranWord word) async {
         isKnown: context.read<LearningStateProvider>()
             .isKnown(WordProgressService.normalizeArabic(word.arabic)),
         ayahWords: _ayahCache[ayahNum] ?? [],
-onKnownToggled: (nowKnown) {
-          final normalized = WordProgressService.normalizeArabic(word.arabic);
-          setState(() {
-            for (final ayah in _ayahCache.keys) {
-              _ayahCache[ayah] = _ayahCache[ayah]!.map((w) {
-                if (WordProgressService.normalizeArabic(w.arabic) == normalized) {
-                  return w.copyWith(isKnown: nowKnown);
-                }
-                return w;
-              }).toList();
-            }
-          });
-        },
+        onKnownToggled: (_) => _refreshAllKnownFlags(),
       ),
     );
   }

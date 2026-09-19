@@ -110,4 +110,48 @@ class MorphologyRepository {
     if (rows.isEmpty) return '#888888';
     return rows.first['color_hex'] as String? ?? '#888888';
   }
+
+  /// Representative morphology segments per vocab word, keyed by arabic_clean.
+  /// Uses each vocab word's first occurrence only — segmentation (PREF/STEM/
+  /// SUFF) is identical across every occurrence of the same (arabic_clean,
+  /// lemma) vocab identity. Used by LearningStateProvider to decide whether a
+  /// compound word (e.g. والله) counts as Known based on its components.
+  static Future<Map<String, List<MorphSegmentLite>>>
+      getRepresentativeSegmentsByClean() async {
+    final db = await DatabaseManager.db;
+    final rows = await db.rawQuery('''
+      SELECT v.arabic_clean AS vocab_clean, ms.segment_type, ms.arabic_text,
+        COALESCE(ms.lemma, '') AS lemma
+      FROM vocab_words v
+      JOIN ayah_words aw ON aw.id = (
+        SELECT aw2.id FROM ayah_words aw2
+        WHERE aw2.vocab_word_id = v.id
+        ORDER BY aw2.id ASC LIMIT 1
+      )
+      JOIN morphology_segments ms ON ms.word_id = aw.id
+      WHERE v.frequency > 0
+      ORDER BY v.arabic_clean ASC, ms.segment_number ASC
+    ''');
+    final result = <String, List<MorphSegmentLite>>{};
+    for (final r in rows) {
+      final clean = r['vocab_clean'] as String;
+      result.putIfAbsent(clean, () => []).add(MorphSegmentLite(
+            type: r['segment_type'] as String? ?? '',
+            arabicText: r['arabic_text'] as String? ?? '',
+            lemma: r['lemma'] as String? ?? '',
+          ));
+    }
+    return result;
+  }
+}
+
+/// Minimal segment data for known/unknown grouping — kept separate from
+/// MorphSegmentRow (which carries pos/root/color fields not needed or
+/// fetched here).
+class MorphSegmentLite {
+  final String type; // 'prefix' | 'stem' | 'suffix'
+  final String arabicText;
+  final String lemma;
+  MorphSegmentLite(
+      {required this.type, required this.arabicText, this.lemma = ''});
 }
