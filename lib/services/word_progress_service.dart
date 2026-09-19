@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../repositories/vocabulary_repository.dart';
-import '../repositories/srs_repository.dart';
 import '../database/database_manager.dart';
 import 'word_glossary_service.dart';
 
@@ -140,12 +139,6 @@ class WordProgressService {
 
   // ── Daily stat helper ─────────────────────────────────────────────────────
   static Timer? _dailyTimer;
-  static void _scheduleDailyUpdate() {
-    _dailyTimer?.cancel();
-    _dailyTimer = Timer(const Duration(milliseconds: 500), () async {
-      await SrsRepository.recordWordLearned();
-    });
-  }
 
   // ── Kept for migration_manager compatibility ──────────────────────────────
   static Future<SharedPreferences?> getPrefsInstance() async =>

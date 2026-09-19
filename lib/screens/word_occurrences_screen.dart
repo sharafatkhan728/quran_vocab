@@ -3,7 +3,6 @@ import 'package:google_fonts/google_fonts.dart';
 import '../database/database_manager.dart';
 import '../models/surah.dart';
 import '../repositories/vocabulary_repository.dart';
-import '../services/word_progress_service.dart';
 import 'surah_reader_screen.dart';
 import 'vocabulary_screen.dart';
 import 'package:quran/quran.dart' as quran;

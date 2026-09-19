@@ -1379,7 +1379,7 @@ class _DonateDialogState extends State<_DonateDialog> {
   static const _green = Color(0xFF1B4332);
   static const _gold = Color(0xFFD4AF37);
 
-  // TODO: Replace these placeholder values with actual donation details
+
   //       stored in a config file or Firebase Remote Config (not hard-coded).
   static const _accountHolder = 'QR Code Donor';
   static const _bankName = 'Bank Name';
