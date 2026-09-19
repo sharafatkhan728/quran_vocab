@@ -7,6 +7,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
+import 'package:flutter_timezone/flutter_timezone.dart';
 import '../database/database_manager.dart';
 
 /// NotificationService — local notifications only, no FCM.
@@ -56,6 +57,18 @@ class NotificationService {
   static Future<void> init() async {
     if (_initialized) return;
     tz.initializeTimeZones();
+    // CRITICAL: without this, tz.local silently defaults to UTC, and every
+    // scheduled reminder below fires at the wrong wall-clock time for the
+    // device's actual timezone (often appearing to the user as "never
+    // arrives", since it lands hours off from the expected daytime window).
+    try {
+      final deviceTz = await FlutterTimezone.getLocalTimezone();
+      tz.setLocalLocation(tz.getLocation(_resolveTzAlias(deviceTz)));
+    } catch (e) {
+      debugPrint(
+          'NotificationService: could not detect device timezone ($e) — '
+          'falling back to UTC, reminder times will be off');
+    }
 
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const ios = DarwinInitializationSettings(
@@ -419,8 +432,25 @@ class NotificationService {
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
-  static String _todayKey() => _dateKey(DateTime.now());
-  static String _dateKey(DateTime d) =>
+  // Some Android devices/OEMs report legacy IANA timezone names that the
+  // bundled tz database no longer recognizes under that exact string (the
+  // IANA database periodically renames zones, keeping the old name only as
+  // an alias elsewhere). This maps the ones most likely to appear back to
+  // their current canonical name so setLocalLocation doesn't throw and
+  // silently fall back to UTC.
+  static const _tzAliases = {
+    'Asia/Calcutta': 'Asia/Kolkata',
+    'Asia/Katmandu': 'Asia/Kathmandu',
+    'Asia/Dacca': 'Asia/Dhaka',
+    'Asia/Rangoon': 'Asia/Yangon',
+    'Asia/Saigon': 'Asia/Ho_Chi_Minh',
+    'Asia/Ujung_Pandang': 'Asia/Makassar',
+    'Europe/Kiev': 'Europe/Kyiv',
+  };
+
+  static String _resolveTzAlias(String name) => _tzAliases[name] ?? name;
+
+  static String _todayKey() => _dateKey(DateTime.now());  static String _dateKey(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-'
       '${d.day.toString().padLeft(2, '0')}';
 

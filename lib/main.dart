@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:quran_vocab/database/database_manager.dart';
 import 'providers/theme_provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
@@ -70,6 +71,25 @@ void main() async {
   ]);
 
   _initNotifications();
+
+
+  // TEMP DEBUG — remove after checking terminal output once
+  () async {
+    final db = await DatabaseManager.db;
+    final rows = await db.rawQuery('''
+      SELECT arabic_clean, COUNT(*) as cnt, COUNT(DISTINCT lemma) as lemma_cnt
+      FROM vocab_words
+      GROUP BY arabic_clean
+      HAVING COUNT(*) > 1
+      ORDER BY cnt DESC
+      LIMIT 20
+    ''');
+    debugPrint('[HomographCheck] duplicate arabic_clean rows: ${rows.length}');
+    for (final r in rows) {
+      debugPrint('[HomographCheck] ${r['arabic_clean']} -> count=${r['cnt']} lemmas=${r['lemma_cnt']}');
+    }
+  }();
+
 
   runApp(
     MultiProvider(

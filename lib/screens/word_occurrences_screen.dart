@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../database/database_manager.dart';
 import '../models/surah.dart';
+import '../repositories/vocabulary_repository.dart';
 import '../services/word_progress_service.dart';
 import 'surah_reader_screen.dart';
 import 'vocabulary_screen.dart';
@@ -20,8 +21,6 @@ class WordOccurrencesScreen extends StatefulWidget {
 class _WordOccurrencesScreenState extends State<WordOccurrencesScreen> {
   final List<OccurrenceEntry> _occurrences = [];
   bool _isLoading = true;
-  int _loadedSurahs = 0;
-  int _totalSurahsToSearch = 0;
 
   @override
   void initState() {
@@ -49,148 +48,67 @@ class _WordOccurrencesScreenState extends State<WordOccurrencesScreen> {
     }
   }
 
+  /// Reads occurrences directly from SQLite via the already-existing
+  /// vocab_word_id foreign key on ayah_words — instead of the old approach
+  /// which re-scanned all 114 surahs / 6236 ayahs via the `quran` package
+  /// and string-matched every word on every single screen open. This is a
+  /// single indexed query instead of thousands of string comparisons.
   Future<void> _loadOccurrences() async {
-    await SharedPreferences.getInstance();
-    final normalized = WordProgressService.normalizeArabic(widget.word.arabic);
+    setState(() => _isLoading = true);
 
-    setState(() {
-      _isLoading = true;
-      _totalSurahsToSearch = 114;
-    });
-
-    for (int surahId = 1; surahId <= 114; surahId++) {
-      final verseCount = quran.getVerseCount(surahId);
-      final List<OccurrenceEntry> newEntries = [];
-
-      for (int ayah = 1; ayah <= verseCount; ayah++) {
-        String verse = quran.getVerse(surahId, ayah);
-        if (ayah == 1 && surahId != 1 && surahId != 9) {
-          final parts = verse.split(' ');
-          if (parts.length > 4) verse = parts.skip(4).join(' ');
-        }
-        final words =
-            verse.split(' ').where((w) => w.trim().isNotEmpty).toList();
-        bool found = false;
-        final List<WordToken> tokens = [];
-
-        for (final w in words) {
-          final isMatch = WordProgressService.normalizeArabic(w) == normalized;
-          if (isMatch) found = true;
-          tokens.add(WordToken(arabic: w, isHighlighted: isMatch));
-        }
-
-        if (found) {
-          newEntries.add(OccurrenceEntry(
-            surahId: surahId,
-            ayahNumber: ayah,
-            tokens: tokens,
-          ));
-        }
-      }
-
-      if (newEntries.isNotEmpty && mounted) {
-        setState(() {
-          _occurrences.addAll(newEntries);
-          _loadedSurahs = surahId;
-        });
-      } else if (mounted) {
-        setState(() => _loadedSurahs = surahId);
-      }
-
-      // Yield every 5 surahs
-      if (surahId % 5 == 0) await Future.delayed(Duration.zero);
+    // widget.word.arabic is already the arabic_clean form (comes straight
+    // from vocab_words.arabic_clean via WordProgressService.getWordFrequencies
+    // in vocabulary_screen.dart), so this resolves to the exact same vocab
+    // row every other screen (LearningStateProvider, SrsService) uses.
+    final vocab =
+        await VocabularyRepository.getByArabicClean(widget.word.arabic);
+    if (vocab == null) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
     }
 
-    if (mounted) setState(() => _isLoading = false);
+    final db = await DatabaseManager.db;
+    final rows = await db.rawQuery('''
+      SELECT a.surah_id, a.ayah_number, aw.position, aw.arabic_text, aw.vocab_word_id
+      FROM ayah_words aw
+      JOIN ayahs a ON a.id = aw.ayah_id
+      WHERE a.id IN (SELECT ayah_id FROM ayah_words WHERE vocab_word_id = ?)
+      ORDER BY a.surah_id ASC, a.ayah_number ASC, aw.position ASC
+    ''', [vocab.id]);
+
+    // Group flat rows into one entry per ayah, preserving word order.
+    final grouped = <String, List<Map<String, Object?>>>{};
+    final order = <String>[];
+    for (final r in rows) {
+      final key = '${r['surah_id']}:${r['ayah_number']}';
+      if (!grouped.containsKey(key)) order.add(key);
+      grouped.putIfAbsent(key, () => []).add(r);
+    }
+
+    final entries = order.map((key) {
+      final wordsInAyah = grouped[key]!;
+      final tokens = wordsInAyah
+          .map((r) => WordToken(
+                arabic: r['arabic_text'] as String? ?? '',
+                isHighlighted: (r['vocab_word_id'] as int?) == vocab.id,
+              ))
+          .toList();
+      final first = wordsInAyah.first;
+      return OccurrenceEntry(
+        surahId: first['surah_id'] as int,
+        ayahNumber: first['ayah_number'] as int,
+        tokens: tokens,
+      );
+    }).toList();
+
+    if (!mounted) return;
+    setState(() {
+      _occurrences
+        ..clear()
+        ..addAll(entries);
+      _isLoading = false;
+    });
   }
-
-  // Future<void> _loadOccurrences() async {
-  //   final prefs = await SharedPreferences.getInstance();
-  //   final normalized = WordProgressService.normalizeArabic(widget.word.arabic);
-
-  //   // Step 1: Find which surahs contain this word from local cache
-  //   final List<int> surahsWithWord = [];
-  //   for (int i = 1; i <= 114; i++) {
-  //     final raw = prefs.getStringList('surah_word_counts_$i');
-  //     if (raw == null) continue;
-  //     final has = raw.any((e) {
-  //       final p = e.split('|||');
-  //       return p.isNotEmpty && p[0] == normalized;
-  //     });
-  //     if (has) surahsWithWord.add(i);
-  //   }
-
-  //   if (mounted) {
-  //     setState(() {
-  //       _totalSurahsToSearch = surahsWithWord.length;
-  //       _isLoading = surahsWithWord.isNotEmpty;
-  //     });
-  //   }
-
-  //   if (surahsWithWord.isEmpty) {
-  //     if (mounted) setState(() => _isLoading = false);
-  //     return;
-  //   }
-
-  //   // Step 2: For each surah, read verse data from local cache
-  //   // We saved verse-level data in surah_word_counts, but we need
-  //   // ayah text — fetch from API only for matching surahs (much fewer calls)
-  //   for (final surahId in surahsWithWord) {
-  //     try {
-  //       final url =
-  //           'https://api.qurancdn.com/api/qdc/verses/by_chapter/$surahId'
-  //           '?words=true&word_fields=text_uthmani'
-  //           '&word_translation_language=ur&per_page=300&page=1';
-  //       final response = await http.get(Uri.parse(url));
-  //       if (response.statusCode != 200) {
-  //         if (mounted) setState(() => _loadedSurahs++);
-  //         continue;
-  //       }
-
-  //       final data = json.decode(response.body);
-  //       final verses = data['verses'] as List;
-  //       final List<OccurrenceEntry> newEntries = [];
-
-  //       for (final verse in verses) {
-  //         final ayahNum = verse['verse_number'] as int;
-  //         final wordsJson = verse['words'] as List;
-  //         bool found = false;
-  //         final List<WordToken> tokens = [];
-
-  //         for (final w in wordsJson) {
-  //           if (w['char_type_name'] == 'end') continue;
-  //           final arabic = (w['text_uthmani'] ?? '') as String;
-  //           final isMatch =
-  //               WordProgressService.normalizeArabic(arabic) == normalized;
-  //           if (isMatch) found = true;
-  //           tokens.add(WordToken(arabic: arabic, isHighlighted: isMatch));
-  //         }
-  //         if (found) {
-  //           newEntries.add(OccurrenceEntry(
-  //             surahId: surahId,
-  //             ayahNumber: ayahNum,
-  //             tokens: tokens,
-  //           ));
-  //         }
-  //       }
-
-  //       // Show results immediately as each surah loads
-  //       if (mounted) {
-  //         setState(() {
-  //           _occurrences.addAll(newEntries);
-  //           _loadedSurahs++;
-  //           if (_loadedSurahs >= _totalSurahsToSearch) {
-  //             _isLoading = false;
-  //           }
-  //         });
-  //       }
-  //     } catch (_) {
-  //       if (mounted) setState(() => _loadedSurahs++);
-  //     }
-  //   }
-
-  //   if (mounted) setState(() => _isLoading = false);
-  // }
 
   void _openSurah(OccurrenceEntry o) {
     final surah = Surah(
@@ -264,162 +182,115 @@ class _WordOccurrencesScreenState extends State<WordOccurrencesScreen> {
           Expanded(
             child: _isLoading
                 ? const Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        CircularProgressIndicator(color: Color(0xFF1B4332)),
-                        SizedBox(height: 16),
-                        Text('Finding all occurrences...'),
-                      ],
-                    ),
-                  )
-                : _occurrences.isEmpty && !_isLoading
+                    child: CircularProgressIndicator(color: Color(0xFF1B4332)))
+                : _occurrences.isEmpty
                     ? const Center(
                         child: Text(
                             'No occurrences found.\n'
                             'Make sure vocabulary is fully loaded.',
                             textAlign: TextAlign.center))
-                    : _occurrences.isEmpty && _isLoading
-                        ? const Center(
-                            child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              CircularProgressIndicator(
-                                  color: Color(0xFF1B4332)),
-                              SizedBox(height: 16),
-                              Text('Searching...'),
-                            ],
-                          ))
-                        : ListView.builder(
-                            padding: const EdgeInsets.all(12),
-                            itemCount:
-                                _occurrences.length + (_isLoading ? 1 : 0),
-                            itemBuilder: (context, index) {
-                              // Loading indicator at bottom
-                              if (index == _occurrences.length) {
-                                return Padding(
-                                  padding: const EdgeInsets.all(24),
-                                  child: Column(
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(12),
+                        itemCount: _occurrences.length,
+                        itemBuilder: (context, index) {
+                          final o = _occurrences[index];
+                          return GestureDetector(
+                            onTap: () => _openSurah(o),
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 10),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).cardColor,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                    color: const Color(0xFFD4AF37)
+                                        .withValues(alpha: 0.4)),
+                              ),
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
                                     children: [
-                                      const CircularProgressIndicator(
-                                          color: Color(0xFF1B4332)),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        'Searching surah $_loadedSurahs of $_totalSurahsToSearch...',
-                                        style: TextStyle(
-                                            color: Colors.grey.shade500,
-                                            fontSize: 12),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              }
-                              final o = _occurrences[index];
-                              return GestureDetector(
-                                onTap: () => _openSurah(o),
-                                child: Container(
-                                  margin: const EdgeInsets.only(bottom: 10),
-                                  decoration: BoxDecoration(
-                                    color: Theme.of(context).cardColor,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                        color: const Color(0xFFD4AF37)
-                                            .withValues(alpha: 0.4)),
-                                  ),
-                                  padding: const EdgeInsets.all(12),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    children: [
-                                      // Surah:Ayah badge + tap hint
                                       Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceBetween,
                                         children: [
-                                          Row(
-                                            children: [
-                                              Icon(Icons.open_in_new,
-                                                  size: 14,
-                                                  color: Colors.grey.shade400),
-                                              const SizedBox(width: 4),
-                                              Text('Open',
-                                                  style: TextStyle(
-                                                      fontSize: 11,
-                                                      color: Colors
-                                                          .grey.shade400)),
-                                            ],
-                                          ),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                                horizontal: 10, vertical: 3),
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFF1B4332),
-                                              borderRadius:
-                                                  BorderRadius.circular(20),
-                                            ),
-                                            child: Text(
-                                              '${o.surahId}:${o.ayahNumber}',
-                                              style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 12),
-                                            ),
-                                          ),
+                                          Icon(Icons.open_in_new,
+                                              size: 14,
+                                              color: Colors.grey.shade400),
+                                          const SizedBox(width: 4),
+                                          Text('Open',
+                                              style: TextStyle(
+                                                  fontSize: 11,
+                                                  color:
+                                                      Colors.grey.shade400)),
                                         ],
                                       ),
-                                      const SizedBox(height: 10),
-                                      // Highlighted ayah text
-
-                                      //chatgpt suggested wrap to handle long ayahs better, and it worked great! no more overflow errors 🎉
-
-                                      Wrap(
-                                        alignment: WrapAlignment.end,
-                                        textDirection: TextDirection.rtl,
-                                        spacing: 4,
-                                        children: o.tokens.map((token) {
-                                          return token.isHighlighted
-                                              ? Container(
-                                                  padding: const EdgeInsets
-                                                      .symmetric(
-                                                    horizontal: 4,
-                                                    vertical: 2,
-                                                  ),
-                                                  decoration: BoxDecoration(
-                                                    color:
-                                                        const Color(0xFFD4AF37)
-                                                            .withValues(
-                                                                alpha: 0.3),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            4),
-                                                    border: Border.all(
-                                                      color: const Color(
-                                                          0xFFD4AF37),
-                                                    ),
-                                                  ),
-                                                  child: Text(
-                                                    token.arabic,
-                                                    style: _arabicStyle(
-                                                            context, 20)
-                                                        .copyWith(
-                                                      color: const Color(
-                                                          0xFF1B4332),
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                    ),
-                                                  ),
-                                                )
-                                              : Text(
-                                                  token.arabic,
-                                                  style:
-                                                      _arabicStyle(context, 26),
-                                                );
-                                        }).toList(),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 10, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF1B4332),
+                                          borderRadius:
+                                              BorderRadius.circular(20),
+                                        ),
+                                        child: Text(
+                                          '${o.surahId}:${o.ayahNumber}',
+                                          style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 12),
+                                        ),
                                       ),
                                     ],
                                   ),
-                                ),
-                              );
-                            },
-                          ),
+                                  const SizedBox(height: 10),
+                                  Wrap(
+                                    alignment: WrapAlignment.end,
+                                    textDirection: TextDirection.rtl,
+                                    spacing: 4,
+                                    children: o.tokens.map((token) {
+                                      return token.isHighlighted
+                                          ? Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 4,
+                                                vertical: 2,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFD4AF37)
+                                                    .withValues(alpha: 0.3),
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
+                                                border: Border.all(
+                                                  color:
+                                                      const Color(0xFFD4AF37),
+                                                ),
+                                              ),
+                                              child: Text(
+                                                token.arabic,
+                                                style: _arabicStyle(
+                                                        context, 20)
+                                                    .copyWith(
+                                                  color:
+                                                      const Color(0xFF1B4332),
+                                                  fontWeight:
+                                                      FontWeight.bold,
+                                                ),
+                                              ),
+                                            )
+                                          : Text(
+                                              token.arabic,
+                                              style:
+                                                  _arabicStyle(context, 26),
+                                            );
+                                    }).toList(),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
           ),
         ],
       ),
