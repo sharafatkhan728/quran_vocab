@@ -26,6 +26,12 @@ class SearchResult {
 }
 
 class SearchRepository {
+  // Always-transparent attached particles (و/ف/ال) — excluded from word
+  // search results, matching VocabularyScreen which never lists these as
+  // standalone learnable items (their known/unknown status is now grouped
+  // with whatever compound they attach to; see LearningStateProvider).
+  static const _hiddenStandaloneClean = "('و', 'ف', 'ال')";
+
   /// Search vocab_words by Arabic text or Urdu/English meaning.
   /// Returns up to [limit] results ordered by frequency.
   static Future<List<SearchResult>> searchWords(
@@ -53,7 +59,8 @@ class SearchRepository {
           COALESCE(r.arabic, '') AS root
         FROM vocab_words v
         LEFT JOIN roots r ON r.id = v.root_id
-        WHERE v.arabic_clean LIKE ? OR v.arabic_display LIKE ?
+        WHERE (v.arabic_clean LIKE ? OR v.arabic_display LIKE ?)
+          AND v.arabic_clean NOT IN $_hiddenStandaloneClean
         ORDER BY v.frequency DESC
         LIMIT ?
       ''', ['%$q%', '%$q%', limit]);
@@ -68,6 +75,7 @@ class SearchRepository {
         FROM vocab_words v
         LEFT JOIN roots r ON r.id = v.root_id
         WHERE v.$meaningCol LIKE ?
+          AND v.arabic_clean NOT IN $_hiddenStandaloneClean
         ORDER BY v.frequency DESC
         LIMIT ?
       ''', ['%$q%', limit]);

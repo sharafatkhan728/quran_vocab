@@ -9,6 +9,13 @@ class WordProgressService {
   static String normalizeArabic(String text) =>
       text.replaceAll(RegExp(r'[\u064B-\u065F\u0670\u0640]'), '').trim();
 
+  // Always-transparent attached particles — excluded from every stats query
+  // below so Progress screen numbers (discovered, remaining, total, known %)
+  // match what the Vocabulary screen actually lists (which already hides
+  // these three, since they're never independently learnable items).
+  static const _hiddenStandaloneClean = "('و', 'ف', 'ال')";
+  static const _hiddenStandalone = {'و', 'ف', 'ال'};
+
   static Future<Set<String>> getAllKnownWords() =>
       VocabularyRepository.getAllKnownWordCleans();
 
@@ -20,7 +27,7 @@ class WordProgressService {
       SELECT COALESCE(SUM(v.frequency), 0) as total
       FROM known_words k
       JOIN vocab_words v ON v.id = k.vocab_word_id
-      WHERE v.frequency > 0
+      WHERE v.frequency > 0 AND v.arabic_clean NOT IN $_hiddenStandaloneClean
     ''');
     final knownOccurrences =
         (knownFreqRows.first['total'] as int?) ?? 0;
@@ -35,7 +42,8 @@ class WordProgressService {
   static Future<int> getTotalVocabCount() async {
     final db = await DatabaseManager.db;
     final rows = await db.rawQuery(
-        'SELECT COUNT(*) as cnt FROM vocab_words WHERE frequency > 0');
+        'SELECT COUNT(*) as cnt FROM vocab_words '
+        'WHERE frequency > 0 AND arabic_clean NOT IN $_hiddenStandaloneClean');
     return (rows.first['cnt'] as int?) ?? 0;
   }
 
@@ -45,7 +53,8 @@ class WordProgressService {
   static Future<int> getTotalWordOccurrences() async {
     final db = await DatabaseManager.db;
     final rows = await db.rawQuery(
-        'SELECT COALESCE(SUM(frequency), 0) as total FROM vocab_words WHERE frequency > 0');
+        'SELECT COALESCE(SUM(frequency), 0) as total FROM vocab_words '
+        'WHERE frequency > 0 AND arabic_clean NOT IN $_hiddenStandaloneClean');
     return (rows.first['total'] as int?) ?? 77430;
   }
 
@@ -56,7 +65,7 @@ class WordProgressService {
     final rows = await VocabularyRepository.getAllWordsByFrequency();
     final lang = WordGlossaryService.selectedLang;
     return {
-      for (final r in rows)
+      for (final r in rows.where((r) => !_hiddenStandalone.contains(r.arabicClean)))
         r.arabicClean: WordData(
           urdu: lang == 'en'
               ? (r.meaningEn.isNotEmpty ? r.meaningEn : r.meaningUr)
@@ -78,7 +87,9 @@ class WordProgressService {
       SELECT a.surah_id, COUNT(DISTINCT aw.vocab_word_id) AS cnt
       FROM ayah_words aw
       JOIN ayahs a ON a.id = aw.ayah_id
+      JOIN vocab_words v ON v.id = aw.vocab_word_id
       WHERE aw.is_waqf = 0 AND aw.vocab_word_id IS NOT NULL
+        AND v.arabic_clean NOT IN $_hiddenStandaloneClean
       GROUP BY a.surah_id
     ''');
     final totals = <int, int>{
@@ -91,7 +102,8 @@ class WordProgressService {
       FROM ayah_words aw
       JOIN ayahs a ON a.id = aw.ayah_id
       JOIN known_words kw ON kw.vocab_word_id = aw.vocab_word_id
-      WHERE aw.is_waqf = 0
+      JOIN vocab_words v ON v.id = aw.vocab_word_id
+      WHERE aw.is_waqf = 0 AND v.arabic_clean NOT IN $_hiddenStandaloneClean
       GROUP BY a.surah_id
     ''');
     final knowns = <int, int>{

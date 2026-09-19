@@ -154,10 +154,6 @@ class SrsService {
 
   static Future<void> clearSession() => SrsRepository.clearSavedSession();
 
-  // ── Compatibility stubs ───────────────────────────────────────────────────
-
-  static Future<bool> isInitialized() async => true;
-  static Future<void> setInitialized() async {}
 
   // ── Card initialisation ───────────────────────────────────────────────────
 
@@ -327,11 +323,4 @@ class SessionBuildResult {
     required this.hasMoreNew,
   });
   bool get isEmpty => words.isEmpty;
-}
-
-class SrsStats {
-  final int due;
-  final int learning;
-  final int known;
-  SrsStats({required this.due, required this.learning, required this.known});
 }
