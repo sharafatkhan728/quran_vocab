@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:quran/quran.dart' as quran;
 import 'package:quran_vocab/screens/payment_screen.dart';
+import '../data/surah_data.dart';
 import '../models/surah.dart';
 import '../services/word_progress_service.dart';
 import '../repositories/content_repository.dart';
@@ -25,6 +26,11 @@ class SurahListScreen extends StatefulWidget {
 
 class _SurahListScreenState extends State<SurahListScreen>
     with SingleTickerProviderStateMixin {
+  // Built once instead of calling quran.getSurahName()/getSurahNameArabic()/
+  // getVerseCount() repeatedly per card on every rebuild (scroll, theme
+  // toggle, learning-state change) — cuts ~342 package calls down to 114,
+  // done a single time up front.
+  final List<Surah> _surahs = buildSurahList();
   double _totalProgress = 0;
   Map<int, double> _surahProgress = {};
   Map<int, int> _lastReadAyahs = {};
@@ -265,19 +271,13 @@ IconButton(
                   padding: const EdgeInsets.fromLTRB(12, 8, 12, 20),
                   itemCount: 114,
                   itemBuilder: (context, index) {
-                    final id = index + 1;
+                    final surah = _surahs[index];
+                    final id = surah.id;
                     return _SurahCard(
-                      id: id,
+                      surah: surah,
                       surahProgress: _surahProgress[id] ?? 0,
                       lastReadAyah: _lastReadAyahs[id],
                       onTap: () async {
-                        final surah = Surah(
-                          id: id,
-                          englishName: quran.getSurahName(id),
-                          arabicName: quran.getSurahNameArabic(id),
-                          urduName: quran.getSurahName(id),
-                          verseCount: quran.getVerseCount(id),
-                        );
                         await Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -545,16 +545,18 @@ IconButton(
 }
 
 class _SurahCard extends StatefulWidget {
-  final int id;
+  final Surah surah;
   final double surahProgress;
   final int? lastReadAyah;
   final VoidCallback onTap;
   const _SurahCard({
-    required this.id,
+    required this.surah,
     required this.surahProgress,
     required this.onTap,
     this.lastReadAyah,
   });
+
+  int get id => surah.id;
 
   @override
   State<_SurahCard> createState() => _SurahCardState();
@@ -598,6 +600,8 @@ class _SurahCardState extends State<_SurahCard>
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    // getPlaceOfRevelation has no equivalent field on Surah — this one stays
+    // a direct package call since it's the only per-card data not cached.
     final revelation = quran.getPlaceOfRevelation(widget.id);
     final isMakki = revelation.toLowerCase().contains('mecca') ||
         revelation.toLowerCase().contains('makk');
@@ -707,7 +711,7 @@ class _SurahCardState extends State<_SurahCard>
                                           ),
                                           Expanded(
                                             child: Text(
-                                              quran.getSurahName(widget.id),
+                                              widget.surah.englishName,
                                               style: TextStyle(
                                                 fontSize: 20,
                                                 fontWeight: FontWeight.w700,
@@ -755,7 +759,7 @@ class _SurahCardState extends State<_SurahCard>
                                           ),
                                           const SizedBox(width: 6),
                                           Text(
-                                            '${quran.getVerseCount(widget.id)} ayahs',
+                                            '${widget.surah.verseCount} ayahs',
                                             style: TextStyle(
                                                 fontSize: 11,
                                                 color: isDark

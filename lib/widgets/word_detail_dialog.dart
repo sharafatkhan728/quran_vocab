@@ -431,7 +431,11 @@ class _WordDetailDialogState extends State<WordDetailDialog> {
         isDark ? Colors.white.withValues(alpha: 0.05) : Colors.grey.shade50;
     final cellBg = isDark ? const Color(0xFF0F1F14) : Colors.white;
 
-    final urdu = widget.word.urduMeaning;
+    // Always the true Urdu meaning from vocab_words — not widget.word.urduMeaning,
+    // which is whatever language is currently selected for word-by-word
+    // display in the Surah reader (could be Hindi/English), and would
+    // otherwise leak into this fixed "اردو" column.
+    final urdu = _vocab?.meaningUr ?? '';
     final english = _vocab?.meaningEn ?? '';
     final hindi = _vocab?.meaningHi ?? '';
     final translit = widget.word.transliteration;

@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:quran/quran.dart' as quran;
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
+import '../data/ruku_data.dart';
 import '../models/surah.dart';
 import '../models/word.dart';
 import '../providers/theme_provider.dart';
@@ -88,6 +89,15 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
   final GlobalKey _mushafViewportKey = GlobalKey();
 
   bool get _showBismillahHeader => widget.surah.id != 9 && widget.surah.id != 1;
+
+  /// Ruku number that ends at [ayahNum] in this surah, or null if this ayah
+  /// isn't a ruku boundary. Used to show a "۩ Ruku N" divider after that ayah.
+  int? _rukuEndingAt(int ayahNum) {
+    final ends = RukuData.rukuEnds[widget.surah.id];
+    if (ends == null) return null;
+    final idx = ends.indexOf(ayahNum);
+    return idx == -1 ? null : idx + 1;
+  }
 
   LearningStateProvider? _learning;
 
@@ -991,7 +1001,13 @@ Future<void> _onWordLongPress(QuranWord word) async {
         }
         if (index == _totalAyahs + 1) return _buildNavigation();
         final ayahNum = index;
-        return _buildCardAyah(ayahNum, _ayahCache[ayahNum], isDark);
+        final rukuNum = _rukuEndingAt(ayahNum);
+        return Column(
+          children: [
+            _buildCardAyah(ayahNum, _ayahCache[ayahNum], isDark),
+            if (rukuNum != null) _RukuDivider(rukuNumber: rukuNum),
+          ],
+        );
       },
     );
   }
@@ -1252,6 +1268,33 @@ Future<void> _onWordLongPress(QuranWord word) async {
           ),
         ),
       ));
+
+      final rukuNum = _rukuEndingAt(ayahNum);
+      if (rukuNum != null) {
+        children.add(Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Directionality(
+            textDirection: TextDirection.ltr,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                border: Border.all(
+                    color: const Color(0xFFD4AF37).withValues(alpha: 0.6)),
+                borderRadius: BorderRadius.circular(14),
+                color: const Color(0xFFD4AF37).withValues(alpha: 0.1),
+              ),
+              child: Text(
+                '۩ $rukuNum',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFFD4AF37),
+                ),
+              ),
+            ),
+          ),
+        ));
+      }
     }
     return children;
   }
@@ -1669,4 +1712,42 @@ class _GeometricBorderPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_GeometricBorderPainter old) => old.isDark != isDark;
+}
+
+// ── Ruku divider ───────────────────────────────────────────────────────────
+class _RukuDivider extends StatelessWidget {
+  final int rukuNumber;
+  const _RukuDivider({required this.rukuNumber});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final gold = const Color(0xFFD4AF37);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        children: [
+          Expanded(child: Divider(color: gold.withValues(alpha: 0.4))),
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              border: Border.all(color: gold.withValues(alpha: 0.6)),
+              borderRadius: BorderRadius.circular(20),
+              color: gold.withValues(alpha: isDark ? 0.12 : 0.08),
+            ),
+            child: Text(
+              '۩ Ruku $rukuNumber',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: isDark ? gold : const Color(0xFF7A5C10),
+              ),
+            ),
+          ),
+          Expanded(child: Divider(color: gold.withValues(alpha: 0.4))),
+        ],
+      ),
+    );
+  }
 }
