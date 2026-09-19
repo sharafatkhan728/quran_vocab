@@ -1284,9 +1284,9 @@ Future<void> _onWordLongPress(QuranWord word) async {
                 color: const Color(0xFFD4AF37).withValues(alpha: 0.1),
               ),
               child: Text(
-                '۩ $rukuNum',
+                'ع $rukuNum',
                 style: const TextStyle(
-                  fontSize: 12,
+                  fontSize: 15,
                   fontWeight: FontWeight.w600,
                   color: Color(0xFFD4AF37),
                 ),
@@ -1737,9 +1737,9 @@ class _RukuDivider extends StatelessWidget {
               color: gold.withValues(alpha: isDark ? 0.12 : 0.08),
             ),
             child: Text(
-              '۩ Ruku $rukuNumber',
+              '$rukuNumberۼ',
               style: TextStyle(
-                fontSize: 12,
+                fontSize: 15,
                 fontWeight: FontWeight.w600,
                 color: isDark ? gold : const Color(0xFF7A5C10),
               ),
