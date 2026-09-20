@@ -83,18 +83,29 @@ class _SurahListScreenState extends State<SurahListScreen>
     // ignore: use_build_context_synchronously
     final knownCount = context.read<LearningStateProvider>().knownCount;
 
-    // Streak: count consecutive days with words_learned > 0
+    // Streak: count consecutive days with words_learned > 0.
+    // Single bulk query for the last year + in-memory walk, instead of up
+    // to 365 sequential single-row DB queries.
     int streak = 0;
     try {
       final db = await DatabaseManager.db;
       final today = DateTime.now();
+      final cutoff = today.subtract(const Duration(days: 365));
+      final cutoffKey =
+          '${cutoff.year}-${cutoff.month.toString().padLeft(2, '0')}-'
+          '${cutoff.day.toString().padLeft(2, '0')}';
+      final rows = await db.query('daily_stats',
+          where: 'date_key >= ?', whereArgs: [cutoffKey]);
+      final dailyMap = <String, int>{
+        for (final r in rows)
+          r['date_key'] as String: (r['words_learned'] as int? ?? 0),
+      };
       for (int d = 0; d < 365; d++) {
         final day = today.subtract(Duration(days: d));
         final key =
-            '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
-        final rows = await db.query('daily_stats',
-            where: 'date_key = ?', whereArgs: [key], limit: 1);
-        if (rows.isNotEmpty && (rows.first['words_learned'] as int? ?? 0) > 0) {
+            '${day.year}-${day.month.toString().padLeft(2, '0')}-'
+            '${day.day.toString().padLeft(2, '0')}';
+        if ((dailyMap[key] ?? 0) > 0) {
           streak++;
         } else {
           break;
@@ -103,11 +114,18 @@ class _SurahListScreenState extends State<SurahListScreen>
     } catch (_) {}
 
     // ── Last-read positions from SQLite reading_progress ──────────────────
+    // Single query for all 114 surahs instead of 114 sequential calls to
+    // ContentRepository.getLastReadAyah().
     final Map<int, int> lastRead = {};
-    for (int i = 1; i <= 114; i++) {
-      final ayah = await ContentRepository.getLastReadAyah(i);
-      if (ayah > 1) lastRead[i] = ayah;
-    }
+    try {
+      final db = await DatabaseManager.db;
+      final rows = await db.query('reading_progress',
+          columns: ['surah_id', 'last_ayah']);
+      for (final r in rows) {
+        final ayah = r['last_ayah'] as int? ?? 0;
+        if (ayah > 1) lastRead[r['surah_id'] as int] = ayah;
+      }
+    } catch (_) {}
     if (mounted) setState(() => _lastReadAyahs = lastRead);
 
     // ── Bookmarks from SQLite bookmarks table ─────────────────────────────
