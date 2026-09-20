@@ -191,65 +191,7 @@ class WordTile extends StatelessWidget {
     );
   }
 
-  static Widget _buildEnglishMeaning(
-      String rawHtml, double fontSize, bool isDark) {
-    if (!rawHtml.contains('<span')) {
-      return Text(rawHtml,
-          style: TextStyle(
-              fontSize: fontSize,
-              color: isDark ? Colors.white54 : Colors.grey.shade600));
-    }
-    final spans = <InlineSpan>[];
-    final regex = RegExp(r"<span class='(\w+)'>(.*?)</span>");
-    int last = 0;
-    for (final match in regex.allMatches(rawHtml)) {
-      if (match.start > last) {
-        spans.add(TextSpan(
-            text: rawHtml.substring(last, match.start),
-            style: TextStyle(
-                fontSize: fontSize,
-                color: isDark ? Colors.white54 : Colors.grey.shade600)));
-      }
-      final cls = match.group(1) ?? '';
-      final text = match.group(2) ?? '';
-      final color = _englishSpanColor(cls, isDark);
-      spans.add(TextSpan(
-          text: text,
-          style: TextStyle(
-              fontSize: fontSize,
-              color: color,
-              fontWeight: cls == 'pn' ? FontWeight.w600 : FontWeight.normal)));
-      last = match.end;
-    }
-    if (last < rawHtml.length) {
-      spans.add(TextSpan(
-          text: rawHtml.substring(last),
-          style: TextStyle(
-              fontSize: fontSize,
-              color: isDark ? Colors.white54 : Colors.grey.shade600)));
-    }
-    return RichText(
-      textAlign: TextAlign.center,
-      text: TextSpan(children: spans),
-    );
-  }
 
-  static Color _englishSpanColor(String cls, bool isDark) {
-    switch (cls) {
-      case 'v':
-        return Colors.red.shade400;
-      case 'n':
-        return Colors.blue.shade400;
-      case 'pn':
-        return Colors.blue.shade600;
-      case 'p':
-        return Colors.green.shade500;
-      case 'paren':
-        return Colors.grey.shade400;
-      default:
-        return isDark ? Colors.white70 : Colors.grey.shade700;
-    }
-  }
 
   TextStyle _arabicStyle(DisplayProvider d, Color color, double size) {
     switch (d.arabicFont) {

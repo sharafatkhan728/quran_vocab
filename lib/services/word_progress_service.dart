@@ -57,7 +57,10 @@ class WordProgressService {
     return (rows.first['total'] as int?) ?? 77430;
   }
 
-  static int get totalUniqueWords => 15072;
+  /// Live count from SQLite — replaces the old hardcoded '15072' value,
+  /// which would silently go stale (and mislead users with a wrong "X of Y
+  /// words" total) if the vocabulary dataset is ever updated in the future.
+  static Future<int> get totalUniqueWords => getTotalVocabCount();
 
   /// Returns frequency map from SQLite vocab_words table.
   static Future<Map<String, WordData>> getWordFrequencies() async {

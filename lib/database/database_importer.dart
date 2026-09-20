@@ -501,14 +501,23 @@ class DatabaseImporter {
     int tCount = 0;
     int matchedCount = 0;
 
+    // Single query for every ayah across all 114 surahs, grouped in memory —
+    // replaces 114 separate per-surah SELECT queries. This method only runs
+    // during first-install or a content-data update, but the saving still
+    // makes that one-time import noticeably faster.
+    final allAyahRows =
+        await txn.rawQuery('SELECT id, surah_id, ayah_number FROM ayahs');
+    final ayahMapBySurah = <int, Map<int, int>>{};
+    for (final r in allAyahRows) {
+      final surahId = r['surah_id'] as int;
+      ayahMapBySurah
+          .putIfAbsent(surahId, () => {})[r['ayah_number'] as int] =
+          r['id'] as int;
+    }
+
     for (int s = 1; s <= 114; s++) {
       final keys = bySurah[s] ?? [];
-      final ayahRows = await txn.rawQuery(
-          'SELECT id, ayah_number FROM ayahs WHERE surah_id = ?', [s]);
-      final ayahMap = <int, int>{};
-      for (final r in ayahRows) {
-        ayahMap[r['ayah_number'] as int] = r['id'] as int;
-      }
+      final ayahMap = ayahMapBySurah[s] ?? {};
 
       // Sort keys by ayah then position
       final sortedKeys = List<String>.from(keys)

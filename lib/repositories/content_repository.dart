@@ -325,25 +325,30 @@ class ContentRepository {
 
   static Future<void> toggleBookmark(int surahId, int ayahNumber) async {
     final db = await DatabaseManager.db;
-    final existing = await db.query('bookmarks',
-        where: 'surah_id = ? AND ayah_number = ?',
-        whereArgs: [surahId, ayahNumber],
-        limit: 1);
-    if (existing.isNotEmpty) {
-      await db.delete('bookmarks',
+    // Single atomic transaction instead of a separate SELECT-then-decide —
+    // avoids a race where two rapid taps could both read "not bookmarked"
+    // and both try to insert, or otherwise disagree on the final state.
+    await db.transaction((txn) async {
+      final existing = await txn.query('bookmarks',
           where: 'surah_id = ? AND ayah_number = ?',
-          whereArgs: [surahId, ayahNumber]);
-    } else {
-      await db.insert(
-          'bookmarks',
-          {
-            'surah_id': surahId,
-            'ayah_number': ayahNumber,
-            'created_at': DateTime.now().millisecondsSinceEpoch,
-          },
-          conflictAlgorithm: ConflictAlgorithm.ignore);
-          SyncService.scheduleSyncUp();
-    }
+          whereArgs: [surahId, ayahNumber],
+          limit: 1);
+      if (existing.isNotEmpty) {
+        await txn.delete('bookmarks',
+            where: 'surah_id = ? AND ayah_number = ?',
+            whereArgs: [surahId, ayahNumber]);
+      } else {
+        await txn.insert(
+            'bookmarks',
+            {
+              'surah_id': surahId,
+              'ayah_number': ayahNumber,
+              'created_at': DateTime.now().millisecondsSinceEpoch,
+            },
+            conflictAlgorithm: ConflictAlgorithm.ignore);
+      }
+    });
+    SyncService.scheduleSyncUp();
   }
 
   static Future<List<Map<String, dynamic>>> getAllBookmarks() async {

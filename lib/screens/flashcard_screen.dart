@@ -355,12 +355,14 @@ class _FlashcardScreenState extends State<FlashcardScreen>
 
   Future<void> _preloadCards(int from) async {
     final end = (from + 5).clamp(0, _cards.length);
+    // Wait for all 5 cards' data to finish loading, then refresh the screen
+    // ONCE — instead of once per card as each individually finished, which
+    // could cause several back-to-back partial redraws.
     await Future.wait([
       for (int i = from; i < end; i++)
-        _cards[i].loadAyah().then((_) => _cards[i].loadRoot()).then((_) {
-          if (mounted) setState(() {});
-        }),
+        _cards[i].loadAyah().then((_) => _cards[i].loadRoot()),
     ]);
+    if (mounted) setState(() {});
   }
 
   FlashWord get _current => _cards[_currentIndex];

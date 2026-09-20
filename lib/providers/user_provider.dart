@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/crashlytics_service.dart';
 import '../services/sync_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -67,9 +68,12 @@ class UserProvider extends ChangeNotifier {
         _profile = doc.data() ?? {};
         notifyListeners();
       }
-    } catch (_) {}
+    } catch (e, stack) {
+      debugPrint('UserProvider._loadProfile failed: $e');
+      CrashlyticsService.recordError(e, stack,
+          context: 'UserProvider._loadProfile');
+    }
   }
-
   Future<void> updateProfile(Map<String, dynamic> data) async {
     _profile.addAll(data);
     // Save daily goal locally so it works offline and without login

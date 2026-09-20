@@ -15,8 +15,6 @@ const String kPlayStoreLink =
 
 /// Share an ayah as a beautiful Islamic styled image card
 class AyahShareCard {
-  static final GlobalKey _cardKey = GlobalKey();
-
   /// Main entry point — shows preview bottom sheet then shares
   static Future<void> share({
     required BuildContext context,
@@ -30,12 +28,16 @@ class AyahShareCard {
     required String scholarName,
     required String arabicFont,
   }) async {
+    // Fresh key per share invocation — a static/shared key across all
+    // instances risked two concurrent share sheets (e.g. rapid double-tap)
+    // capturing/mixing up each other's card image.
+    final cardKey = GlobalKey();
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _SharePreviewSheet(
-        cardKey: _cardKey,
+        cardKey: cardKey,
         surahId: surahId,
         surahNameEnglish: surahNameEnglish,
         surahNameArabic: surahNameArabic,
