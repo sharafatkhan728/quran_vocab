@@ -87,8 +87,16 @@ class _ProgressScreenState extends State<ProgressScreen>
       if ((surahProg[i] ?? 0) >= 100) completed.add(i);
     }
 
-    // ── Load all daily_stats in one query ─────────────────────────────────
-    final dailyRows = await db.query('daily_stats');
+    // ── Load daily_stats for the last year only ────────────────────────────
+    // Streak needs up to 365 days back; heatmap needs only 84. Capping this
+    // query avoids scanning the whole table as it grows over years of use.
+    final statsToday = DateTime.now();
+    final statsCutoff = statsToday.subtract(const Duration(days: 365));
+    final statsCutoffKey =
+        '${statsCutoff.year}-${statsCutoff.month.toString().padLeft(2, '0')}-'
+        '${statsCutoff.day.toString().padLeft(2, '0')}';
+    final dailyRows = await db.query('daily_stats',
+        where: 'date_key >= ?', whereArgs: [statsCutoffKey]);
     final dailyMap = <String, int>{
       for (final r in dailyRows)
         r['date_key'] as String: (r['words_learned'] as int? ?? 0),

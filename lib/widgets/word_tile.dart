@@ -110,36 +110,24 @@ class WordTile extends StatelessWidget {
   Widget _buildMeaning(bool isDark, double urduFontSize) {
     final lang = WordGlossaryService.selectedLang;
     final meaningText = word.urduMeaning;
-    Widget textWidget;
-    if (lang == 'en') {
-      final rawHtml = WordGlossaryService.getRawByPosition(
-        int.parse(word.id.split(':')[0]),
-        int.parse(word.id.split(':')[1]),
-        int.parse(word.id.split(':')[2]),
-      );
-      textWidget = rawHtml.isNotEmpty
-          ? _buildEnglishMeaning(rawHtml, urduFontSize, isDark)
-          : Text(meaningText,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                  fontSize: urduFontSize,
-                  color: isDark ? Colors.white54 : Colors.grey.shade600));
-    } else {
-      textWidget = Text(
-        meaningText,
-        textDirection: TextDirection.rtl,
-        textAlign: TextAlign.center,
-        softWrap: true,
-        maxLines: 3,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontFamily: lang == 'ur' ? 'JameelNoori' : null,
-          fontSize: urduFontSize,
-          color: isDark ? Colors.white54 : Colors.grey.shade600,
-          height: 1.4,
-        ),
-      );
-    }
+    // getRawByPosition() always returns an empty string in practice, so the
+    // old 'en' branch split word.id and ran 3 int.parse() calls on every
+    // single build just to fall through to this same plain Text() anyway.
+    // Removed — renders directly for every language now.
+    final textWidget = Text(
+      meaningText,
+      textDirection: lang == 'en' ? TextDirection.ltr : TextDirection.rtl,
+      textAlign: TextAlign.center,
+      softWrap: true,
+      maxLines: 3,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        fontFamily: lang == 'ur' ? 'JameelNoori' : null,
+        fontSize: urduFontSize,
+        color: isDark ? Colors.white54 : Colors.grey.shade600,
+        height: 1.4,
+      ),
+    );
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
