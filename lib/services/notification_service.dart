@@ -4,11 +4,15 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:quran_vocab/services/crashlytics_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:flutter_timezone/flutter_timezone.dart';
 import '../database/database_manager.dart';
+import '../screens/flashcard_screen.dart';
+import '../screens/progress_screen.dart';
+import '../screens/main_navigation.dart';
 
 /// NotificationService — local notifications only, no FCM.
 ///
@@ -143,16 +147,30 @@ class NotificationService {
   // ── Tap handler (deep link) ───────────────────────────────────────────────
 
   static void _onTap(NotificationResponse response) {
-    final payload = response.payload ?? '';
-    if (payload == 'flashcards') {
-      navigatorKey?.currentState?.pushNamedAndRemoveUntil(
-          '/flashcards', (r) => false);
-    } else if (payload == 'progress') {
-      navigatorKey?.currentState?.pushNamedAndRemoveUntil(
-          '/progress', (r) => false);
-    } else if (payload == 'quran') {
-      navigatorKey?.currentState?.pushNamedAndRemoveUntil(
-          '/', (r) => false);
+    // Uses direct MaterialPageRoute pushes rather than named routes —
+    // MaterialApp in main.dart only declares a `home`, no routes table, so
+    // pushNamedAndRemoveUntil('/flashcards', ...) would throw at runtime
+    // (no registered route generator) every time a notification was tapped.
+    final nav = navigatorKey?.currentState;
+    if (nav == null) return;
+    try {
+      if (response.payload == 'flashcards') {
+        nav.pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const FlashcardScreen()),
+            (r) => false);
+      } else if (response.payload == 'progress') {
+        nav.pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const ProgressScreen()),
+            (r) => false);
+      } else if (response.payload == 'quran') {
+        nav.pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const MainNavigation()),
+            (r) => false);
+      }
+    } catch (e, stack) {
+      debugPrint('NotificationService._onTap navigation failed: $e');
+      CrashlyticsService.recordError(e, stack,
+          context: 'NotificationService._onTap');
     }
   }
 

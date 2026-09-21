@@ -17,6 +17,7 @@ import 'morphology_sheet.dart';
 import '../repositories/vocabulary_repository.dart';
 import '../models/word.dart';
 import '../providers/learning_state_provider.dart';
+import '../services/analytics_service.dart';
 import '../widgets/progress_graph.dart';
 
 // ── FlashWord model ─────────────────────────────────────────────────────────
@@ -410,6 +411,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
           .read<LearningStateProvider>()
           .setKnownByClean(_current.normalizedForLookup);
     }
+    unawaited(AnalyticsService.logWordMarkedKnown(source: 'flashcard'));
 
     if (wasNew) await SrsService.recordNewCardReviewed();
 
@@ -446,6 +448,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
           .read<LearningStateProvider>()
           .setUnknownByClean(_current.normalizedForLookup);
     }
+    unawaited(AnalyticsService.logWordMarkedUnknown(source: 'flashcard'));
 
     // Re-queue card if needed
     final remaining = _cards.length - _currentIndex - 1;
@@ -524,6 +527,10 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     if (_currentIndex + 1 >= _cards.length) {
       SrsService.clearSession();
       unawaited(NotificationService.rescheduleAll());
+      unawaited(AnalyticsService.logFlashcardSessionCompleted(
+        cardsReviewed: _cards.length,
+        pointsEarned: _sessionPoints,
+      ));
       setState(() {
         _sessionDone = true;
         _isFlipped = false;

@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/splash_screen.dart';
 import 'screens/main_navigation.dart';
 import 'providers/learning_state_provider.dart';
+import 'services/analytics_service.dart';
 import 'services/notification_service.dart';
 import 'services/crashlytics_service.dart';
 
@@ -43,6 +44,18 @@ Future<void> _initNotifications() async {
 }
 
 void main() async {
+  // Wraps the entire app so any uncaught error anywhere (not just ones we
+  // explicitly try/catch) is captured and sent to Crashlytics, instead of
+  // silently crashing with no record of what happened.
+  runZonedGuarded(() async {
+    await _runApp();
+  }, (error, stack) {
+    debugPrint('Uncaught error: $error');
+    CrashlyticsService.recordError(error, stack, context: 'runZonedGuarded');
+  });
+}
+
+Future<void> _runApp() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
 
@@ -115,6 +128,7 @@ class QuranAppRoot extends StatelessWidget {
       darkTheme: themeProvider.darkTheme,
       themeMode: themeProvider.isDark ? ThemeMode.dark : ThemeMode.light,
       navigatorKey: appNavigatorKey,
+      navigatorObservers: [AnalyticsService.navigatorObserver],
       // SplashScreen handles DB init then shows _AppGate
       home: const SplashScreen(child: _AppGate()),
     );
