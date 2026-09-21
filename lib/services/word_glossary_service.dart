@@ -60,9 +60,4 @@ class WordGlossaryService {
 
   /// All words for current language — used by vocabulary screen fallback.
   static Map<String, String> getAllWords({String? lang}) => {};
-
-  static String getByPosition(int surah, int ayah, int pos, {String? lang}) =>
-      '';
-
-  static String getRawByPosition(int surah, int ayah, int pos) => '';
 }

@@ -66,8 +66,7 @@ class FlashWord {
                 sampleSurah, sampleAyahNum,
                 scholar: scholarKey) ?? '';
       }
-      // Reset so it reloads if language changes
-      if (sampleAyahTranslation.isNotEmpty) ayahLoaded = true;
+
       ayahLoaded = true;
     } catch (_) {}
   }

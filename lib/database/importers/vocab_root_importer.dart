@@ -11,6 +11,16 @@ class VocabRootImporter {
   VocabRootImporter(this.db);
 
   Future<void> run() async {
+    // Defensive cleanup: if a previous import run crashed or was force-
+    // closed after creating these temp tables but before Step 7's cleanup
+    // ran, they'd still exist from that interrupted attempt — and the plain
+    // CREATE TEMP TABLE below (with no IF NOT EXISTS) would then fail with
+    // "table already exists", permanently blocking every future import
+    // retry. Clearing them first makes each run self-healing.
+    await db.execute('DROP TABLE IF EXISTS _root_best');
+    await db.execute('DROP TABLE IF EXISTS _pos_best');
+    await db.execute('DROP TABLE IF EXISTS _lemma_best');
+
     // ── Step 1: Build indexed root frequency temp table ─────────────────────
     // ROW_NUMBER() picks the root_id with highest frequency per vocab_word,
     // ties broken by root_id DESC (deterministic, same as original).

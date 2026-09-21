@@ -126,11 +126,15 @@ class SrsRepository {
   }
 
   static Future<void> addPoints(int pts) async {
-    final current = await getTotalPoints();
     final db = await DatabaseManager.db;
-    await db.insert('user_meta',
-        {'key': 'srs_total_points', 'value': '${current + pts}'},
-        conflictAlgorithm: ConflictAlgorithm.replace);
+    // Atomic increment inside SQLite itself — instead of "read current
+    // value, add in Dart, write back", which could lose points if two
+    // devices sync within the same window. This does the read+write in
+    // one indivisible database operation.
+    await db.rawInsert('''
+      INSERT INTO user_meta(key, value) VALUES('srs_total_points', ?)
+      ON CONFLICT(key) DO UPDATE SET value = CAST(CAST(value AS INTEGER) + ? AS TEXT)
+    ''', ['$pts', pts]);
     await SyncService.syncUp();
   }
 

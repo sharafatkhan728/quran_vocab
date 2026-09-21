@@ -10,6 +10,10 @@ class TranslationLangService {
   static final ValueNotifier<String> langNotifier =
       ValueNotifier<String>('ur.bayanulquran');
 
+  // This is now the ONLY copy of the selected scholar/language anywhere in
+  // the app — TranslationService below reads it live instead of keeping its
+  // own separate copy, so the two classes can never disagree with each
+  // other regardless of which one's setScholar() is called.
   static String _selectedScholar = 'ur.bayanulquran';
   static String get selectedScholar => _selectedScholar;
 
@@ -25,8 +29,6 @@ class TranslationLangService {
     langNotifier.value = key;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('selected_scholar', key);
-    // Keep TranslationService in sync so getAyahTranslation works correctly
-    await TranslationService.setScholar(key);
   }
 
   // Alias so profile_settings_screen can call either name
@@ -55,27 +57,22 @@ class TranslationService {
     ),
   };
 
-  static String _selectedScholar = 'ur.bayanulquran';
-
   static Future<void> init() async {
-    final prefs = await SharedPreferences.getInstance();
-    _selectedScholar = prefs.getString('selected_scholar') ?? 'ur.bayanulquran';
+    // No-op — TranslationLangService is the single source of truth and
+    // loads the persisted value itself during its own init().
   }
 
-  static String get selectedScholar => _selectedScholar;
+  static String get selectedScholar => TranslationLangService.selectedScholar;
   static String get selectedScholarName =>
-      scholars[_selectedScholar]?.name ?? '';
-  static bool get isRtl => scholars[_selectedScholar]?.isRtl ?? true;
+      scholars[selectedScholar]?.name ?? '';
+  static bool get isRtl => scholars[selectedScholar]?.isRtl ?? true;
 
-  static Future<void> setScholar(String key) async {
-    _selectedScholar = key;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('selected_scholar', key);
-  }
+  static Future<void> setScholar(String key) =>
+      TranslationLangService.setScholar(key);
 
   static Future<String?> getAyahTranslation(int surah, int ayah,
       {String? scholar}) async {
-    final s = scholar ?? _selectedScholar;
+    final s = scholar ?? 'selected_Scholar';
     final source = scholars[s];
     if (source == null) return null;
     return ContentRepository.getAyahTranslation(
@@ -85,8 +82,8 @@ class TranslationService {
   /// Returns Map<ayahNumber, text> for the full surah — instant from SQLite.
   static Future<Map<String, String>> getSurahTranslationsAsync(int surahId,
       {String? scholar}) async {
-    final key = scholar ?? _selectedScholar;
-    final source = scholars[key] ?? scholars[_selectedScholar];
+    final key = scholar ?? selectedScholar;
+    final source = scholars[key] ?? scholars[selectedScholar];
     if (source == null) return {};
     final map = await ContentRepository.getSurahTranslations(
         surahId, source.language, source.scholarKey);

@@ -234,11 +234,8 @@ class SyncService {
         'syncDown known_words.get',
       );
       if (knownDoc.exists) {
-        final vocabRows =
-            await db.query('vocab_words', columns: ['id', 'arabic_clean']);
-        final cleanToId = <String, int>{
-          for (final r in vocabRows) r['arabic_clean'] as String: r['id'] as int
-        };
+        // Reuses the cleanToId map already built above — no need to query
+        // vocab_words a second time for the same lookup.
         for (final entry in knownDoc.data()!.entries) {
           final vocabId = cleanToId[entry.key];
           if (vocabId == null) continue;

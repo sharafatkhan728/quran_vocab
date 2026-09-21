@@ -467,12 +467,6 @@ class DatabaseImporter {
   /// englishRaw, and morphWordText populated from [_loadAndParseVocabAssets].
   static Future<void> importWordTranslations(
       DatabaseExecutor txn, ParsedAssets parsed) async {
-    // ── Debug: check ayah_words exists and has data ─────────────────────
-    final ayahWordCount = await txn.rawQuery(
-        'SELECT COUNT(*) as cnt FROM ayah_words');
-    debugPrint(
-        'importWordTranslations: ayah_words count=${ayahWordCount.first['cnt']}');
-
     final wordIdMap = <String, int>{};
     final ayahWordRows = await txn.rawQuery(
         'SELECT id, ayah_id, position FROM ayah_words');
@@ -480,8 +474,6 @@ class DatabaseImporter {
       final key = '${r['ayah_id']}:${r['position']}';
       wordIdMap[key] = r['id'] as int;
     }
-    debugPrint('importWordTranslations: wordIdMap size=${wordIdMap.length} '
-        'first5=${wordIdMap.keys.take(5).toList()}');
 
     // Group morphology keys by surah for ordered processing
     final bySurah = <int, List<String>>{};
@@ -491,9 +483,6 @@ class DatabaseImporter {
       final s = int.tryParse(p[0]);
       if (s != null) bySurah.putIfAbsent(s, () => []).add(key);
     }
-    debugPrint('importWordTranslations: morphWordText size=${parsed.morphWordText.length} '
-        'bySurah[1]=${(bySurah[1] ?? []).length} '
-        'urduGloss[1:1:1]=${parsed.urduGlossary['1:1:1']}');
 
     final waqfRe = RegExp(r'^[ۖ-ۜ۟-۪ۤۧۨ-ۭ\s]+$');
     final batchSize = 500;
@@ -558,18 +547,12 @@ class DatabaseImporter {
 
         final waKey = '$ayahId:$pos';
         final awId = wordIdMap[waKey];
-        if (awId == null) {
-          debugPrint('importWordTranslations: NO awId for waKey=$waKey '
-              '(key=$key, ayahId=$ayahId, pos=$pos)');
-          continue;
-        }
+        if (awId == null) continue;
         matchedCount++;
 
         final urdu = parsed.urduGlossary[key] ?? '';
         final en = parsed.englishGlossary[key] ?? '';
         final hi = parsed.hindiGlossary[key] ?? '';
-        debugPrint('importWordTranslations: key=$key awId=$awId '
-            'ur=$urdu en=$en hi=$hi');
 
         if (urdu.isEmpty && en.isEmpty && hi.isEmpty) continue;
 

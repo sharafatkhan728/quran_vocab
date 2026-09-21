@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -23,6 +24,7 @@ class _VocabularySearchScreenState extends State<VocabularySearchScreen>
 
   final TextEditingController _searchCtrl = TextEditingController();
   late TabController _tabs;
+  Timer? _debounce;
 
   List<SearchResult> _surahs = [];
   List<SearchResult> _words = [];
@@ -39,6 +41,7 @@ class _VocabularySearchScreenState extends State<VocabularySearchScreen>
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _searchCtrl.removeListener(_onQueryChanged);
     _searchCtrl.dispose();
     _tabs.dispose();
@@ -49,6 +52,7 @@ class _VocabularySearchScreenState extends State<VocabularySearchScreen>
     final q = _searchCtrl.text;
     if (q == _lastQuery) return;
     _lastQuery = q;
+    _debounce?.cancel();
     if (q.trim().isEmpty) {
       setState(() {
         _surahs = [];
@@ -58,7 +62,10 @@ class _VocabularySearchScreenState extends State<VocabularySearchScreen>
       });
       return;
     }
-    _search(q);
+    // Wait for a short pause in typing before actually querying — avoids
+    // running a full search (3 DB queries) on every single keystroke while
+    // the user is still mid-word.
+    _debounce = Timer(const Duration(milliseconds: 400), () => _search(q));
   }
 
   Future<void> _search(String q) async {

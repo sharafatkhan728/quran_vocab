@@ -82,28 +82,35 @@ class NotificationService {
     );
 
     if (Platform.isAndroid) {
-      final android = _plugin.resolvePlatformSpecificImplementation<
-    AndroidFlutterLocalNotificationsPlugin>();
-      await android?.createNotificationChannel(const AndroidNotificationChannel(
-        _chReview, 'Vocabulary Review',
-        description: 'SRS review reminders',
-        importance: Importance.high,
-      ));
-      await android?.createNotificationChannel(const AndroidNotificationChannel(
-        _chDaily, 'Daily Quran Reminder',
-        description: 'Daily Quran reading reminders',
-        importance: Importance.defaultImportance,
-      ));
-      await android?.createNotificationChannel(const AndroidNotificationChannel(
-        _chStreak, 'Streak Reminder',
-        description: 'Streak protection reminders',
-        importance: Importance.high,
-      ));
-      await android?.createNotificationChannel(const AndroidNotificationChannel(
-        _chWeekly, 'Weekly Progress',
-        description: 'Weekly progress summary',
-        importance: Importance.low,
-      ));
+      final prefs = await SharedPreferences.getInstance();
+      // Channels only need to be created once, ever — recreating them on
+      // every app launch is a harmless no-op to Android but still an
+      // unnecessary round-trip. Skip it once we know they already exist.
+      if (prefs.getBool('notif_channels_created') != true) {
+        final android = _plugin
+            .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+        await android?.createNotificationChannel(const AndroidNotificationChannel(
+          _chReview, 'Vocabulary Review',
+          description: 'SRS review reminders',
+          importance: Importance.high,
+        ));
+        await android?.createNotificationChannel(const AndroidNotificationChannel(
+          _chDaily, 'Daily Quran Reminder',
+          description: 'Daily Quran reading reminders',
+          importance: Importance.defaultImportance,
+        ));
+        await android?.createNotificationChannel(const AndroidNotificationChannel(
+          _chStreak, 'Streak Reminder',
+          description: 'Streak protection reminders',
+          importance: Importance.high,
+        ));
+        await android?.createNotificationChannel(const AndroidNotificationChannel(
+          _chWeekly, 'Weekly Progress',
+          description: 'Weekly progress summary',
+          importance: Importance.low,
+        ));
+        await prefs.setBool('notif_channels_created', true);
+      }
     }
 
     _initialized = true;
@@ -254,14 +261,24 @@ class NotificationService {
     // ── 4. Streak reminder ────────────────────────────────────────────────
     if (learnedToday == 0) {
       final today = DateTime.now();
+      // Single bulk query for the last year + in-memory walk, instead of up
+      // to 365 sequential single-row DB queries. This path runs far more
+      // often than a one-time screen load — it's called after every
+      // flashcard swipe and every session completion — so the old per-day
+      // query loop could add a noticeable stutter to normal app use.
+      final cutoff = today.subtract(const Duration(days: 365));
+      final cutoffKey = _dateKey(cutoff);
+      final streakRows = await db.query('daily_stats',
+          where: 'date_key >= ?', whereArgs: [cutoffKey]);
+      final streakMap = <String, int>{
+        for (final r in streakRows)
+          r['date_key'] as String: (r['words_learned'] as int? ?? 0),
+      };
       int streak = 0;
       for (int d = 1; d <= 365; d++) {
         final day = today.subtract(Duration(days: d));
         final key = _dateKey(day);
-        final rows = await db.query('daily_stats',
-            where: 'date_key = ?', whereArgs: [key], limit: 1);
-        if (rows.isNotEmpty &&
-            (rows.first['words_learned'] as int? ?? 0) > 0) {
+        if ((streakMap[key] ?? 0) > 0) {
           streak++;
         } else {
           break;
