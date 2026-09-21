@@ -34,7 +34,8 @@ Future<void> _initNotifications() async {
   // entirely in the OS's own notification settings for this app.
   try {
     await NotificationService.init();
-    await NotificationService.requestPermission();
+    final granted = await NotificationService.requestPermission();
+    debugPrint('NotificationService: permission granted = $granted');
     await NotificationService.rescheduleAll();
   } catch (e, stack) {
     debugPrint('NotificationService init failed: $e');

@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:quran/quran.dart' as quran;
+import 'package:quran_vocab/providers/user_provider.dart';
 import 'package:quran_vocab/screens/payment_screen.dart';
 import '../data/surah_data.dart';
 import '../models/surah.dart';
@@ -26,6 +27,10 @@ class SurahListScreen extends StatefulWidget {
 
 class _SurahListScreenState extends State<SurahListScreen>
     with SingleTickerProviderStateMixin {
+
+
+int _dueTodayCount = 0;   
+
   // Built once instead of calling quran.getSurahName()/getSurahNameArabic()/
   // getVerseCount() repeatedly per card on every rebuild (scroll, theme
   // toggle, learning-state change) — cuts ~342 package calls down to 114,
@@ -74,6 +79,46 @@ class _SurahListScreenState extends State<SurahListScreen>
     _learning?.removeListener(_onLearningChanged);
     super.dispose();
   }
+
+
+  Future<int> _loadDueTodayCount() async {
+  try {
+    final db = await DatabaseManager.db;
+    final sessionRows = await db.query('user_meta',
+        where: 'key = ?', whereArgs: ['srs_total_sessions'], limit: 1);
+    final currentSession = sessionRows.isEmpty
+        ? 0
+        : int.tryParse(sessionRows.first['value'] as String) ?? 0;
+
+    final dueRows = await db.rawQuery('''
+      SELECT COUNT(*) as cnt FROM srs_cards
+      WHERE is_deleted = 0 AND total_reviews > 0 AND next_review_session <= ?
+    ''', [currentSession]);
+    final due = (dueRows.first['cnt'] as int?) ?? 0;
+
+    final failedRows = await db.rawQuery('''
+      SELECT COUNT(*) as cnt FROM srs_cards
+      WHERE is_deleted = 0 AND fail_count > 0 AND stage = 0 AND next_review_session <= ?
+    ''', [currentSession]);
+    final failed = (failedRows.first['cnt'] as int?) ?? 0;
+
+    final today = DateTime.now();
+    final todayKey =
+        '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+    final todayRows = await db.query('daily_stats',
+        where: 'date_key = ?', whereArgs: [todayKey], limit: 1);
+    final learnedToday =
+        todayRows.isEmpty ? 0 : (todayRows.first['words_learned'] as int? ?? 0);
+
+    // ignore: use_build_context_synchronously
+    final goal = mounted ? context.read<UserProvider>().dailyGoal : 5;
+    final remainingNew = (goal - learnedToday).clamp(0, goal);
+
+    return due + failed + remainingNew;
+  } catch (_) {
+    return 0;
+  }
+}
 
   Future<void> _loadProgress() async {
     final progressPercent = await WordProgressService.getProgressPercent();
@@ -132,13 +177,17 @@ class _SurahListScreenState extends State<SurahListScreen>
     final bmarks = await ContentRepository.getAllBookmarks();
     if (mounted) setState(() => _bookmarks = bmarks);
 
+    final dueCount = await _loadDueTodayCount();
+
     if (mounted) {
       setState(() {
+        _dueTodayCount = dueCount;
         _totalProgress = progressPercent;
         _surahProgress = sp;
         _knownCount = knownCount;
         _streak = streak;
       });
+
       // Animate bar to new value
       _barAnim = Tween<double>(begin: _barAnim.value, end: progressPercent / 100)
           .animate(CurvedAnimation(parent: _barCtrl, curve: Curves.easeOutCubic));
@@ -320,6 +369,7 @@ IconButton(
             left: 40,
             right: 40,
             child: _FlashcardEntryButton(
+              dueCount: _dueTodayCount,
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -831,9 +881,11 @@ class _SurahCardState extends State<_SurahCard>
   }
 }
 
+
 class _FlashcardEntryButton extends StatefulWidget {
   final VoidCallback onTap;
-  const _FlashcardEntryButton({required this.onTap});
+  final int dueCount;
+  const _FlashcardEntryButton({required this.onTap, this.dueCount = 0});
 
   @override
   State<_FlashcardEntryButton> createState() => _FlashcardEntryButtonState();
@@ -912,14 +964,20 @@ class _FlashcardEntryButtonState extends State<_FlashcardEntryButton>
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFD4AF37).withValues(alpha: 0.25),
+                  color: widget.dueCount > 0
+                      ? Colors.orange.withValues(alpha: 0.9)
+                      : const Color(0xFFD4AF37).withValues(alpha: 0.25),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Text('SRS',
-                    style: TextStyle(
-                        color: Color(0xFFD4AF37),
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold)),
+                child: Text(
+                  widget.dueCount > 0 ? '${widget.dueCount} due' : 'SRS',
+                  style: TextStyle(
+                      color: widget.dueCount > 0
+                          ? Colors.white
+                          : const Color(0xFFD4AF37),
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold),
+                ),
               ),
             ],
           ),

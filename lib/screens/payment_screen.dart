@@ -1,6 +1,9 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../providers/user_provider.dart';
 import '../utils/app_colors.dart';
 
@@ -61,15 +64,40 @@ class _PaymentScreenState extends State<_PaymentScreen> {
   }
 
   Future<void> _saveQRCode() async {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('QR code saved to gallery'),
-        backgroundColor: AppColors.successGreen,
-        behavior: SnackBarBehavior.floating,
-        shape:    RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(8))),
-        margin: EdgeInsets.all(16),
-      ),
-    );
+    // Previously this only showed a fake "saved" message without writing
+    // any file. Actual save-to-gallery needs extra platform permission
+    // handling (and differs by Android version), so instead we copy the
+    // bundled QR asset to a temp file and hand it to the native share
+    // sheet — the same pattern already used for ayah-sharing elsewhere in
+    // the app. From there the user can tap "Save image" / "Save to
+    // Photos" themselves, or send it directly via WhatsApp etc.
+    try {
+      final byteData = await rootBundle.load(_qrCodePath);
+      final bytes = byteData.buffer.asUint8List();
+      final tempDir = await getTemporaryDirectory();
+      final file = File('${tempDir.path}/quran_kalima_donation_qr.png');
+      await file.writeAsBytes(bytes);
+
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(file.path)],
+          text: 'Quran Kalima donation QR code — UPI: $_upiId',
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not share QR code: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.all(Radius.circular(8))),
+            margin: const EdgeInsets.all(16),
+          ),
+        );
+      }
+    }
   }
 
   void _openStripePayment() {
@@ -429,9 +457,9 @@ class _PaymentScreenState extends State<_PaymentScreen> {
                   children: [
                     TextButton.icon(
                       onPressed: _saveQRCode,
-                      icon: Icon(Icons.download, color: AppColors.primaryGreen),
+                      icon: Icon(Icons.share, color: AppColors.primaryGreen),
                       label: const Text(
-                        'Save QR',
+                        'Save / Share QR',
                         style: TextStyle(color: AppColors.primaryGreen),
                       ),
                     ),

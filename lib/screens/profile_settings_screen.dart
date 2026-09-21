@@ -10,6 +10,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../providers/theme_provider.dart';
 import '../providers/display_provider.dart';
 import '../providers/user_provider.dart';
+import '../providers/learning_state_provider.dart';
+import '../database/database_manager.dart';
 import '../services/sync_service.dart';
 import '../screens/auth_screen.dart';
 import 'payment_screen.dart';
@@ -207,6 +209,12 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                               MaterialPageRoute(
                                   builder: (_) => const PrivacyScreen()),
                             )),
+                    _buildTile(isDark,
+                        icon: Icons.description_outlined,
+                        iconColor: Colors.brown,
+                        title: 'Terms of Service',
+                        subtitle: 'Rules for using this app',
+                        onTap: () => _openLegalUrl('terms.html')),
                   ]),
                   const SizedBox(height: 5),
                   _buildSyncCard(isDark, user),
@@ -229,6 +237,12 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                         title: 'Delete Account',
                         titleColor: Colors.red,
                         onTap: () => _deleteAccount()),
+                    _buildTile(isDark,
+                        icon: Icons.info_outline,
+                        iconColor: Colors.grey,
+                        title: 'How Account Deletion Works',
+                        subtitle: 'Details for Play Store review',
+                        onTap: () => _openLegalUrl('delete-account.html')),
                   ]),
                   const SizedBox(height: 32),
                   Text('Quran Kalima $_appVersion',
@@ -1058,6 +1072,46 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                 'Will my progress sync across devices?',
                 'Yes. Make sure you are logged in with the same account on both devices. Your known words, flashcard progress, bookmarks, and reading position are all backed up to the cloud and restored automatically when you log in.',
               ),
+              const Divider(),
+              _faqItem(
+                'Why did marking one word as known also mark a similar word?',
+                'Words like "الله" and "والله" share the same base word — the second is just "and" attached to the first. The app treats them as one learning unit, so marking one automatically updates the other. This avoids you learning the same word twice under a different disguise.',
+              ),
+              const Divider(),
+              _faqItem(
+                'I am not receiving notifications — why?',
+                'Reminders are generated based on your own activity (e.g. words due for review, daily goal not met) — if nothing is due, no notification is sent. Also check your phone\'s Settings → Apps → Quran Kalima → Battery, and set it to "Unrestricted" or "No restrictions". Many phones (Xiaomi, Oppo, Vivo, Samsung) aggressively stop background apps by default, which can silently block scheduled reminders.',
+              ),
+              const Divider(),
+              _faqItem(
+                'What is the difference between Card mode and Mushaf mode?',
+                'Card mode shows each ayah in its own card with translation below it — good for study. Mushaf mode shows the Quran as continuous flowing text, like a printed Mushaf — good for reading practice. Switch between them using the icon in the top app bar.',
+              ),
+              const Divider(),
+              _faqItem(
+                'What does the Root and Grammar information mean?',
+                'Most Arabic words are built from a 3-letter root that carries the core meaning. Tapping "Learn More About This Word" shows that root, related words built from it, and grammatical details (verb tense, noun case, etc.) so you understand not just the meaning but the grammar behind it.',
+              ),
+              const Divider(),
+              _faqItem(
+                'Can I use the app without creating an account?',
+                'Yes — all core features (reading, vocabulary, flashcards) work fully offline without signing in. Your progress is saved on your device. Signing in only adds cloud backup and syncing across multiple devices.',
+              ),
+              const Divider(),
+              _faqItem(
+                'How do I change the Word-by-Word or Ayah Translation language?',
+                'Go to Profile → Display, and you will find two separate settings: "Word-by-Word Language" (meaning shown under each Arabic word) and "Ayah Translation Language" (the full ayah translation shown below). You can set these independently — e.g. Urdu words with an English full translation.',
+              ),
+              const Divider(),
+              _faqItem(
+                'What happens if I delete my account?',
+                'Your cloud data and Firebase account are permanently deleted, and all locally-stored progress on that device is cleared as well. This cannot be undone — make sure you really want to start fresh before confirming.',
+              ),
+              const Divider(),
+              _faqItem(
+                'Why did a word disappear from my Flashcard deck?',
+                'If a word\'s status changes to Known (either you marked it directly, or it became known automatically because a related word — like a stem with و attached — became known), it is removed from the "new words" queue since there is nothing left to learn about it.',
+              ),
             ],
           ),
         ),
@@ -1109,6 +1163,16 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     }
   }
 
+  Future<void> _openLegalUrl(String page) async {
+    final url = Uri.parse(
+        'https://sharafatkhan728.github.io/quran-kalima-legal/$page');
+    final launched =
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+    if (!launched && mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Could not open page')));
+    }
+  }
   // ═══════════════════════════════════════════════════════════════════════════
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1361,6 +1425,25 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       try {
         await SyncService.deleteCloudData();
         await FirebaseAuth.instance.currentUser?.delete();
+        // Wipe locally-stored progress too — otherwise it silently survives
+        // on this device and would bleed into whatever account signs in
+        // next (their known words, SRS cards, streak etc. would appear to
+        // belong to the new account).
+        final db = await DatabaseManager.db;
+        await db.delete('known_words');
+        await db.delete('srs_cards');
+        await db.delete('daily_stats');
+        await db.delete('reading_progress');
+        await db.delete('bookmarks');
+        await db.delete('user_meta', where: 'key IN (?, ?, ?, ?)', whereArgs: [
+          'srs_total_points',
+          'longest_streak',
+          'srs_total_sessions',
+          '_last_sync_ts',
+        ]);
+        if (mounted) {
+          await context.read<LearningStateProvider>().reload();
+        }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context)

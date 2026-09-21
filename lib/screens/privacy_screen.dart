@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class PrivacyScreen extends StatelessWidget {
   const PrivacyScreen({super.key});
@@ -116,6 +117,18 @@ class PrivacyScreen extends StatelessWidget {
               'If you have questions about this privacy policy, contact '
               'us at: sharafatkhan728@gmail.com',
               isDark,
+            ),
+            const SizedBox(height: 16),
+            Center(
+              child: TextButton.icon(
+                onPressed: () => launchUrl(
+                  Uri.parse(
+                      'https://sharafatkhan728.github.io/quran-kalima-legal/privacy.html'),
+                  mode: LaunchMode.externalApplication,
+                ),
+                icon: const Icon(Icons.open_in_browser, size: 16),
+                label: const Text('View full policy online'),
+              ),
             ),
             const SizedBox(height: 32),
           ],
