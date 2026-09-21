@@ -6,6 +6,7 @@ import 'surah_list_screen.dart';
 import 'vocabulary_screen.dart';
 import 'profile_settings_screen.dart';
 import '../providers/learning_state_provider.dart';
+import '../services/analytics_service.dart';
 import '../services/announcement_service.dart';
 import '../services/sync_service.dart';
 
@@ -29,11 +30,17 @@ class _MainNavigationState extends State<MainNavigation> with WidgetsBindingObse
     ProfileSettingsScreen(),
   ];
 
+  static const _tabNames = ['Quran', 'Vocabulary', 'Profile'];
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _deferredInit());
+    // Tab switches use IndexedStack + setState, not Navigator.push, so the
+    // global NavigatorObserver in main.dart never sees them — log the
+    // initial tab explicitly here.
+    unawaited(AnalyticsService.logScreenView(_tabNames[_currentIndex]));
     // Independent of the above — checks Firestore for any live announcements
     // and shows them over whatever screen is active. Fully self-contained
     // and silently no-ops on failure, so it can never affect app startup or
@@ -124,6 +131,7 @@ class _MainNavigationState extends State<MainNavigation> with WidgetsBindingObse
             setState(() {
               _currentIndex = i;
             });
+            unawaited(AnalyticsService.logScreenView(_tabNames[i]));
           },
           backgroundColor: Theme.of(context).cardColor,
           destinations: const [

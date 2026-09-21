@@ -16,6 +16,7 @@ import 'payment_screen.dart';
 import '../services/word_glossary_service.dart';
 import 'feedback_screen.dart';
 import 'app_tour_screen.dart';
+import 'privacy_screen.dart';
 import '../services/translation_service.dart';
 
 class ProfileSettingsScreen extends StatefulWidget {
@@ -196,6 +197,16 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                         title: 'Instagram',
                         subtitle: '@qurankalima',
                         onTap: () => _instagram()),
+                    _buildTile(isDark,
+                        icon: Icons.privacy_tip_outlined,
+                        iconColor: Colors.indigo,
+                        title: 'Privacy Policy',
+                        subtitle: 'How we handle your data',
+                        onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => const PrivacyScreen()),
+                            )),
                   ]),
                   const SizedBox(height: 5),
                   _buildSyncCard(isDark, user),
@@ -985,34 +996,38 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   }
 
   Widget _wtnPara(String text) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Text(
         text,
-        style: const TextStyle(fontSize: 12.5, height: 1.6, color: Colors.black87),
+        style: TextStyle(
+            fontSize: 12.5,
+            height: 1.6,
+            color: isDark ? Colors.white70 : Colors.black87),
       ),
     );
   }
 
   Widget _wtnItem(String text) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final color = isDark ? Colors.white70 : Colors.black87;
     return Padding(
       padding: const EdgeInsets.only(left: 10, bottom: 3),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('•  ',
-              style: TextStyle(fontSize: 14, color: Colors.black87)),
+          Text('•  ', style: TextStyle(fontSize: 14, color: color)),
           Expanded(
             child: Text(
               text,
-              style: const TextStyle(fontSize: 12.5, height: 1.5, color: Colors.black87),
+              style: TextStyle(fontSize: 12.5, height: 1.5, color: color),
             ),
           ),
         ],
       ),
     );
   }
-
   void _showFAQ() {
     showDialog(
       context: context,
@@ -1101,17 +1116,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // 2. DONATE — shows donation info dialog (report in comments below)
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  // ignore: unused_element
-  void _showDonateDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => const _DonateDialog(),
-    );
-  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // 3. APP TOUR
@@ -1182,6 +1186,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                   obscureText: obscureNew,
                   enableSuggestions: false,
                   autocorrect: false,
+                  onChanged: (_) => setDlg(() {}),
                   decoration: InputDecoration(
                     labelText: 'New Password',
                     helperText: 'At least 6 characters',
@@ -1201,10 +1206,10 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                   obscureText: obscureConfirm,
                   enableSuggestions: false,
                   autocorrect: false,
+                  onChanged: (_) => setDlg(() {}),
                   decoration: InputDecoration(
                     labelText: 'Confirm New Password',
-                    errorText: _pwMatchError(
-                        newPw.text, confirmPw.text, setDlg),
+                    errorText: _pwMatchError(newPw.text, confirmPw.text),
                     suffixIcon: IconButton(
                       icon: Icon(obscureConfirm
                           ? Icons.visibility_off
@@ -1305,7 +1310,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     );
   }
 
-  String? _pwMatchError(String newPw, String confirm, Function(void Function()) setDlg) {
+  String? _pwMatchError(String newPw, String confirm) {
     if (confirm.isNotEmpty && confirm != newPw) return 'Passwords do not match';
     return null;
   }
@@ -1366,133 +1371,133 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-// Donate Dialog — shows bank / UPI details for manual transfer
-// ═════════════════════════════════════════════════════════════════════════════
-class _DonateDialog extends StatefulWidget {
-  const _DonateDialog();
-  @override
-  State<_DonateDialog> createState() => _DonateDialogState();
-}
+// // ═════════════════════════════════════════════════════════════════════════════
+// // Donate Dialog — shows bank / UPI details for manual transfer
+// // ═════════════════════════════════════════════════════════════════════════════
+// class _DonateDialog extends StatefulWidget {
+//   const _DonateDialog();
+//   @override
+//   State<_DonateDialog> createState() => _DonateDialogState();
+// }
 
-class _DonateDialogState extends State<_DonateDialog> {
-  static const _green = Color(0xFF1B4332);
-  static const _gold = Color(0xFFD4AF37);
-
-
-  //       stored in a config file or Firebase Remote Config (not hard-coded).
-  static const _accountHolder = 'QR Code Donor';
-  static const _bankName = 'Bank Name';
-  static const _accountNumber = '0000-0000000000-0';
-  static const _ifsc = 'BBBB0000000';
-  static const _upiId = 'qurankalima@upi';
+// class _DonateDialogState extends State<_DonateDialog> {
+//   static const _green = Color(0xFF1B4332);
+//   static const _gold = Color(0xFFD4AF37);
 
 
-  void _copyToClipboard(String value, String label) {
-    Clipboard.setData(ClipboardData(text: value));
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$label copied'), duration: const Duration(seconds: 1)));
-    }
-  }
+//   //       stored in a config file or Firebase Remote Config (not hard-coded).
+//   static const _accountHolder = 'QR Code Donor';
+//   static const _bankName = 'Bank Name';
+//   static const _accountNumber = '0000-0000000000-0';
+//   static const _ifsc = 'BBBB0000000';
+//   static const _upiId = 'qurankalima@upi';
 
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return AlertDialog(
-      title: const Row(
-        children: [
-          Icon(Icons.volunteer_activism, color: Colors.red),
-          SizedBox(width: 8),
-          Text('Support Quran Kalima'),
-        ],
-      ),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Your generous support helps keep this app free and growing. '
-              'You can donate via bank transfer or UPI below.',
-              style: TextStyle(
-                  fontSize: 13,
-                  color: isDark ? Colors.white70 : Colors.grey.shade700,
-                  height: 1.5),
-            ),
-            const SizedBox(height: 16),
-            _infoRow('Account Holder', _accountHolder),
-            _infoRow('Bank Name', _bankName),
-            _infoRow('Account Number', _accountNumber),
-            _infoRow('IFSC Code', _ifsc),
-            _infoRow('UPI ID', _upiId),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1A2E1F) : Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Column(
-                children: [
-                  const Icon(Icons.qr_code, size: 48, color: Colors.grey),
-                  const SizedBox(height: 4),
-                  Text(
-                    'QR code will be added here',
-                    style: TextStyle(
-                        fontSize: 11,
-                        color: isDark ? Colors.white38 : Colors.grey),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Note: Please add a note with your email after donating '
-              'so we can acknowledge your contribution. JazakAllah!',
-              style: TextStyle(
-                  fontSize: 11,
-                  color: isDark ? Colors.white38 : Colors.grey.shade500,
-                  fontStyle: FontStyle.italic),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Close'),
-        ),
-      ],
-    );
-  }
 
-  Widget _infoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 110,
-            child: Text(label,
-                style: const TextStyle(
-                    fontSize: 12, fontWeight: FontWeight.w600)),
-          ),
-          Expanded(
-            child: Text(value,
-                style: const TextStyle(fontSize: 12),
-                overflow: TextOverflow.ellipsis),
-          ),
-          IconButton(
-            icon: const Icon(Icons.copy, size: 16),
-            onPressed: () => _copyToClipboard(value, label),
-            tooltip: 'Copy $label',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-          ),
-        ],
-      ),
-    );
-  }
-}
+//   void _copyToClipboard(String value, String label) {
+//     Clipboard.setData(ClipboardData(text: value));
+//     if (mounted) {
+//       ScaffoldMessenger.of(context).showSnackBar(
+//         SnackBar(content: Text('$label copied'), duration: const Duration(seconds: 1)));
+//     }
+//   }
+
+//   @override
+//   Widget build(BuildContext context) {
+//     final isDark = Theme.of(context).brightness == Brightness.dark;
+//     return AlertDialog(
+//       title: const Row(
+//         children: [
+//           Icon(Icons.volunteer_activism, color: Colors.red),
+//           SizedBox(width: 8),
+//           Text('Support Quran Kalima'),
+//         ],
+//       ),
+//       content: SingleChildScrollView(
+//         child: Column(
+//           mainAxisSize: MainAxisSize.min,
+//           crossAxisAlignment: CrossAxisAlignment.start,
+//           children: [
+//             Text(
+//               'Your generous support helps keep this app free and growing. '
+//               'You can donate via bank transfer or UPI below.',
+//               style: TextStyle(
+//                   fontSize: 13,
+//                   color: isDark ? Colors.white70 : Colors.grey.shade700,
+//                   height: 1.5),
+//             ),
+//             const SizedBox(height: 16),
+//             _infoRow('Account Holder', _accountHolder),
+//             _infoRow('Bank Name', _bankName),
+//             _infoRow('Account Number', _accountNumber),
+//             _infoRow('IFSC Code', _ifsc),
+//             _infoRow('UPI ID', _upiId),
+//             const SizedBox(height: 12),
+//             Container(
+//               padding: const EdgeInsets.all(10),
+//               decoration: BoxDecoration(
+//                 color: isDark ? const Color(0xFF1A2E1F) : Colors.grey.shade100,
+//                 borderRadius: BorderRadius.circular(12),
+//               ),
+//               child: Column(
+//                 children: [
+//                   const Icon(Icons.qr_code, size: 48, color: Colors.grey),
+//                   const SizedBox(height: 4),
+//                   Text(
+//                     'QR code will be added here',
+//                     style: TextStyle(
+//                         fontSize: 11,
+//                         color: isDark ? Colors.white38 : Colors.grey),
+//                   ),
+//                 ],
+//               ),
+//             ),
+//             const SizedBox(height: 8),
+//             Text(
+//               'Note: Please add a note with your email after donating '
+//               'so we can acknowledge your contribution. JazakAllah!',
+//               style: TextStyle(
+//                   fontSize: 11,
+//                   color: isDark ? Colors.white38 : Colors.grey.shade500,
+//                   fontStyle: FontStyle.italic),
+//             ),
+//           ],
+//         ),
+//       ),
+//       actions: [
+//         TextButton(
+//           onPressed: () => Navigator.pop(context),
+//           child: const Text('Close'),
+//         ),
+//       ],
+//     );
+//   }
+
+//   Widget _infoRow(String label, String value) {
+//     return Padding(
+//       padding: const EdgeInsets.symmetric(vertical: 4),
+//       child: Row(
+//         children: [
+//           SizedBox(
+//             width: 110,
+//             child: Text(label,
+//                 style: const TextStyle(
+//                     fontSize: 12, fontWeight: FontWeight.w600)),
+//           ),
+//           Expanded(
+//             child: Text(value,
+//                 style: const TextStyle(fontSize: 12),
+//                 overflow: TextOverflow.ellipsis),
+//           ),
+//           IconButton(
+//             icon: const Icon(Icons.copy, size: 16),
+//             onPressed: () => _copyToClipboard(value, label),
+//             tooltip: 'Copy $label',
+//             padding: EdgeInsets.zero,
+//             constraints: const BoxConstraints(),
+//           ),
+//         ],
+//       ),
+//     );
+//   }
+// }
 
