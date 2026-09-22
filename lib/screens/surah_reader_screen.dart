@@ -63,14 +63,6 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
   double _arabicFontSize = 32;
   double _urduFontSize = 16;
 
-  // Mushaf mode renders every loaded ayah's words in one flat Wrap (needed
-  // for continuous-flow rendering, unlike Card mode's virtualized list) —
-  // for very long surahs (Al-Baqarah: 286 ayahs, 6000+ words) building all
-  // of them at once can be heavy on lower-end devices. This caps how many
-  // ayahs are actually rendered at first; scrolling near the bottom reveals
-  // more in batches instead of the whole surah building up front.
-  int _mushafRenderLimit = 60;
-
   // ayahNumber → translation text
   final Map<int, String> _ayahTranslations = {};
   bool _showTranslation = true;
@@ -227,7 +219,6 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
   }
 
   void _onMushafScroll() {
-    _maybeExtendMushafRender();
     _mushafScrollDebounce?.cancel();
     _mushafScrollDebounce = Timer(const Duration(milliseconds: 200), () {
       if (!mounted || !_mushafMode) return;
@@ -1222,8 +1213,7 @@ Future<void> _onWordLongPress(QuranWord word) async {
   /// there is no per-ayah list index to jump to anymore.
   List<Widget> _buildContinuousWords(bool isDark) {
     final children = <Widget>[];
-    final renderUpTo = _mushafRenderLimit.clamp(0, _totalAyahs);
-    for (int ayahNum = 1; ayahNum <= renderUpTo; ayahNum++) {
+    for (int ayahNum = 1; ayahNum <= _totalAyahs; ayahNum++) {
       final words = _ayahCache[ayahNum];
       // Words load progressively in ayah order, so the first gap means
       // everything after it isn't ready yet.
@@ -1307,20 +1297,6 @@ Future<void> _onWordLongPress(QuranWord word) async {
       }
     }
     return children;
-  }
-
-  /// Called from the Mushaf scroll listener — extends how many ayahs are
-  /// rendered once the user nears the bottom of what's currently built,
-  /// instead of building the entire (possibly 6000+ word) surah up front.
-  void _maybeExtendMushafRender() {
-    if (!_mushafMode) return;
-    if (_mushafRenderLimit >= _totalAyahs) return;
-    if (!_mushafScrollController.hasClients) return;
-    final pos = _mushafScrollController.position;
-    if (pos.pixels > pos.maxScrollExtent - 800) {
-      setState(() => _mushafRenderLimit =
-          (_mushafRenderLimit + 60).clamp(0, _totalAyahs));
-    }
   }
 
   TextStyle _mushafStyle(bool isDark) {
