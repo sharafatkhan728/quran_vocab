@@ -16,6 +16,7 @@ import '../services/sync_service.dart';
 import '../screens/auth_screen.dart';
 import 'payment_screen.dart';
 import '../services/word_glossary_service.dart';
+import 'package:in_app_review/in_app_review.dart';
 import 'feedback_screen.dart';
 import 'app_tour_screen.dart';
 import 'privacy_screen.dart';
@@ -149,8 +150,8 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                         icon: Icons.star_rate,
                         iconColor: _gold,
                         title: 'Rate App',
-                        subtitle: 'Available after Play Store release',
-                        onTap: null),
+                        subtitle: 'Enjoying the app? Leave a review',
+                        onTap: () => _rateApp()),
                     _buildTile(isDark,
                         icon: Icons.volunteer_activism,
                         iconColor: Colors.red,
@@ -1148,6 +1149,18 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _rateApp() async {
+    final inAppReview = InAppReview.instance;
+    if (await inAppReview.isAvailable()) {
+      await inAppReview.requestReview();
+    } else {
+      // Fallback if the native in-app review sheet isn't available on this
+      // device — opens the Play Store listing directly instead.
+      await inAppReview.openStoreListing(
+          appStoreId: 'com.qurankalima.app');
+    }
   }
 
   Future<void> _instagram() async {
