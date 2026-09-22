@@ -23,6 +23,7 @@ import '../services/word_progress_service.dart';
 import '../widgets/word_tile.dart';
 import '../widgets/word_detail_dialog.dart';
 import '../providers/learning_state_provider.dart';
+import '../services/surah_prefetch_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import '../widgets/ayah_share_card.dart';
@@ -105,6 +106,11 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
   void initState() {
     super.initState();
     _selectedLang = WordGlossaryService.selectedLang;
+    // Whatever surah the user opens gets processed next by the background
+    // prefetch pass (if it hasn't reached it yet) — this surah's own load
+    // below happens independently and instantly either way; this just
+    // helps nearby surahs become ready sooner too.
+    SurahPrefetchService.prioritize(widget.surah.id);
     _loadReadingPrefs();
     _initData();
     _itemPositionsListener.itemPositions.addListener(_onScroll);

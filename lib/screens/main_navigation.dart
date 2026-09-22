@@ -8,6 +8,7 @@ import 'profile_settings_screen.dart';
 import '../providers/learning_state_provider.dart';
 import '../services/analytics_service.dart';
 import '../services/announcement_service.dart';
+import '../services/surah_prefetch_service.dart';
 import '../services/sync_service.dart';
 
 class MainNavigation extends StatefulWidget {
@@ -54,6 +55,13 @@ class _MainNavigationState extends State<MainNavigation> with WidgetsBindingObse
       _learningInitDone = true;
       await context.read<LearningStateProvider>().init();
     }
+    // Silently pre-builds every surah's word data in the background so
+    // opening any surah later is instant. Delayed slightly so it never
+    // competes with the very first frames rendering, and runs with its own
+    // internal pauses so it stays invisible to the user throughout.
+    Future.delayed(const Duration(seconds: 2), () {
+      unawaited(SurahPrefetchService.start());
+    });
   }
 
   void _handleBackPressed() {
