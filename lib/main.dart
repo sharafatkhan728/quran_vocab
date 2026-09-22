@@ -88,8 +88,6 @@ Future<void> _runApp() async {
     WordGlossaryService.init(),
   ]);
 
-  await _initNotifications();
-
   runApp(
     MultiProvider(
       providers: [
@@ -101,6 +99,14 @@ Future<void> _runApp() async {
       child: const QuranAppRoot(),
     ),
   );
+
+  // Notification permission request & scheduling MUST happen AFTER the
+  // first frame is drawn — requesting it before runApp() means there's no
+  // Activity window ready yet, so Android silently skips/denies the
+  // permission dialog and NOTHING ever gets scheduled.
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    _initNotifications();
+  });
 }
 
 /// Root widget — always provides MaterialApp so SplashScreen has Directionality
