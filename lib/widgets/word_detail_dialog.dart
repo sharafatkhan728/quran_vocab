@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
+import '../services/audio_player_service.dart';
 import '../database/database_manager.dart';
 import '../models/word.dart';
 import '../providers/display_provider.dart';
@@ -43,7 +43,6 @@ class _WordDetailDialogState extends State<WordDetailDialog> {
   VocabWordRow? _vocab;
   int? _rootCount;
   bool _audioPlaying = false;
-  final AudioPlayer _audio = AudioPlayer();
 
   @override
   void initState() {
@@ -54,7 +53,6 @@ class _WordDetailDialogState extends State<WordDetailDialog> {
 
   @override
   void dispose() {
-    _audio.dispose();
     super.dispose();
   }
 
@@ -83,18 +81,13 @@ class _WordDetailDialogState extends State<WordDetailDialog> {
     final vocab = _vocab;
     if (vocab == null || vocab.firstSurahId == 0) return;
     HapticFeedback.lightImpact();
-    try {
-      setState(() => _audioPlaying = true);
-      final s = vocab.firstSurahId.toString().padLeft(3, '0');
-      final a = vocab.firstAyahNumber.toString().padLeft(3, '0');
-      final w = vocab.firstWordPosition.toString().padLeft(3, '0');
-      final url = 'https://audio.qurancdn.com/wbw/${s}_${a}_$w.mp3';
-      await _audio.setUrl(url);
-      await _audio.play();
-    } catch (_) {
-    } finally {
-      if (mounted) setState(() => _audioPlaying = false);
-    }
+    setState(() => _audioPlaying = true);
+    await AudioPlayerService.instance.playWordAudio(
+      vocab.firstSurahId,
+      vocab.firstAyahNumber,
+      vocab.firstWordPosition,
+    );
+    if (mounted) setState(() => _audioPlaying = false);
   }
 
   void _copyArabic() {

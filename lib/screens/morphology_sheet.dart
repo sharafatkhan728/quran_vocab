@@ -1,8 +1,8 @@
 // ignore_for_file: unused_local_variable, curly_braces_in_flow_control_structures, unnecessary_brace_in_string_interps
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
+import '../services/audio_player_service.dart';
 import '../models/word.dart';
 import '../providers/display_provider.dart';
 import '../services/morphology_service.dart';
@@ -11,7 +11,6 @@ import 'dart:async';
 import '../repositories/morphology_repository.dart';
 import '../repositories/content_repository.dart';
 
-StreamSubscription<PlayerState>? _audioSub;
 
 class MorphologySheet extends StatefulWidget {
   final QuranWord word;
@@ -59,7 +58,6 @@ class _MorphologySheetState extends State<MorphologySheet>
   bool _showUrdu = false;
 
   // Audio
-  final AudioPlayer _audio = AudioPlayer();
   String? _playingKey;
 
   @override
@@ -68,18 +66,11 @@ class _MorphologySheetState extends State<MorphologySheet>
     _tabs = TabController(length: 2, vsync: this);
     _selectedWord = widget.word;
     _loadForWord(widget.word, widget.wordPos);
-    _audioSub = _audio.playerStateStream.listen((state) {
-      if (state.processingState == ProcessingState.completed) {
-        if (mounted) setState(() => _playingKey = null);
-      }
-    });
   }
 
   @override
   void dispose() {
     _tabs.dispose();
-    _audioSub?.cancel();
-    _audio.dispose();
     super.dispose();
   }
 
@@ -175,16 +166,12 @@ class _MorphologySheetState extends State<MorphologySheet>
   Future<void> _playWordAudio(int surah, int ayah, int pos) async {
     final key = '$surah:$ayah:$pos';
     if (_playingKey == key) {
-      await _audio.stop();
+      await AudioPlayerService.instance.stop();
       if (mounted) setState(() => _playingKey = null);
       return;
     }
-    final s = surah.toString().padLeft(3, '0');
-    final a = ayah.toString().padLeft(3, '0');
-    final w = pos.toString().padLeft(3, '0');
     try {
-      await _audio.setUrl('https://audio.qurancdn.com/wbw/${s}_${a}_${w}.mp3');
-      await _audio.play();
+      await AudioPlayerService.instance.playWordAudio(surah, ayah, pos);
       if (mounted) setState(() => _playingKey = key);
     } catch (_) {}
   }

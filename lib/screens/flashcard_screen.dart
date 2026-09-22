@@ -5,8 +5,8 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
+import '../services/audio_player_service.dart';
 import '../providers/display_provider.dart';
 import '../providers/user_provider.dart';
 import '../services/srs_service.dart';
@@ -140,7 +140,6 @@ class _FlashcardScreenState extends State<FlashcardScreen>
   late Animation<double> _nextCardScale;
   late Animation<double> _nextCardOffset;
 
-  final AudioPlayer _audio = AudioPlayer();
 
   @override
   void initState() {
@@ -195,7 +194,6 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     _entryCtrl.dispose();
     _dismissCtrl.dispose();
     _nextCardCtrl.dispose();
-    _audio.dispose();
     super.dispose();
         TranslationLangService.langNotifier
         .removeListener(_onTranslationLangChanged);
@@ -579,14 +577,11 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     final card = _current;
     if (card.sampleSurah == 0) return;
     HapticFeedback.lightImpact();
-    try {
-      final s = card.sampleSurah.toString().padLeft(3, '0');
-      final a = card.sampleAyahNum.toString().padLeft(3, '0');
-      final w = card.wordPositionInAyah.toString().padLeft(3, '0');
-      final url = 'https://audio.qurancdn.com/wbw/${s}_${a}_$w.mp3';
-      await _audio.setUrl(url);
-      await _audio.play();
-    } catch (_) {}
+    await AudioPlayerService.instance.playWordAudio(
+      card.sampleSurah,
+      card.sampleAyahNum,
+      card.wordPositionInAyah,
+    );
   }
 
   void _openMorphology() {
