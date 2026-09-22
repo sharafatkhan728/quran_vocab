@@ -21,7 +21,7 @@ class AudioPlayerService {
     final s = surah.toString().padLeft(3, '0');
     final a = ayah.toString().padLeft(3, '0');
     final w = wordPos.toString().padLeft(3, '0');
-    final url = 'https://audio.qurancdn.com/wbw/$s _$a _$w.mp3';
+    final url = 'https://audio.qurancdn.com/wbw/${s}_${a}_$w.mp3';
     try {
       isPlaying.value = true;
       await _player.setUrl(url);

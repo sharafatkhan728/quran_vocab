@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:quran/quran.dart' as quran;
+import 'package:quran_vocab/widgets/known_word_text.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../data/ruku_data.dart';
 import '../models/surah.dart';
@@ -79,15 +80,23 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
   final ItemPositionsListener _itemPositionsListener =
       ItemPositionsListener.create();
 
-  // ── Continuous Mushaf mode: separate scroll controller (not index-based) ──
-  final ScrollController _mushafScrollController = ScrollController();
-  // ayahNumber → GlobalKey anchored to that ayah's first word, used to
-  // locate/scroll to a specific ayah inside the single continuous Wrap.
-  final Map<int, GlobalKey> _ayahAnchorKeys = {};
-  Timer? _mushafScrollDebounce;
-  // Anchors the actual scroll viewport (not the whole screen/AppBar) so
-  // _computeCurrentMushafAyah measures anchor positions from the right origin.
-  final GlobalKey _mushafViewportKey = GlobalKey();
+  // ── Continuous Mushaf mode: virtualized in chunks of ayahs so it still
+  // looks like a real, continuously-flowing Quran page, but only visible
+  // chunks are built (fixes the scroll lag). ─────────────────────────────
+  final ItemScrollController _mushafItemScrollController =
+      ItemScrollController();
+  final ItemPositionsListener _mushafItemPositionsListener =
+      ItemPositionsListener.create();
+  static const int _mushafChunkSize = 10; // ayahs per rendered chunk
+
+  int get _mushafChunkCount =>
+      _totalAyahs == 0 ? 0 : ((_totalAyahs - 1) ~/ _mushafChunkSize) + 1;
+
+  int _chunkIndexForAyah(int ayahNum) =>
+      ((ayahNum - 1) ~/ _mushafChunkSize) + 1; // +1 because item 0 = bismillah
+
+  int _firstAyahOfChunkItem(int itemIndex) =>
+      (itemIndex - 1) * _mushafChunkSize + 1;
 
   bool get _showBismillahHeader => widget.surah.id != 9 && widget.surah.id != 1;
 
@@ -114,7 +123,7 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
     _loadReadingPrefs();
     _initData();
     _itemPositionsListener.itemPositions.addListener(_onScroll);
-    _mushafScrollController.addListener(_onMushafScroll);
+    _mushafItemPositionsListener.itemPositions.addListener(_onMushafScroll);
     TranslationLangService.langNotifier.addListener(_onTranslationLangChanged);
   }
 
@@ -152,15 +161,13 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
 
   void _refreshAllKnownFlags() {
     if (!mounted || _ayahCache.isEmpty) return;
-    final learning = context.read<LearningStateProvider>();
-    setState(() {
-      for (final ayahNum in _ayahCache.keys) {
-        _ayahCache[ayahNum] = _ayahCache[ayahNum]!.map((w) {
-          final normalized = WordProgressService.normalizeArabic(w.arabic);
-          return w.copyWith(isKnown: learning.isKnown(normalized));
-        }).toList();
-      }
-    });
+    // Every render site (Card mode, Mushaf mode, word detail dialogs) reads
+    // known/unknown status LIVE from LearningStateProvider at build time —
+    // never from the cached QuranWord.isKnown field. So rewriting every
+    // word in every cached ayah here (creating thousands of new objects on
+    // every single tap) was pure wasted work that got worse the longer the
+    // surah. A plain setState is all that's needed to re-run those live reads.
+    setState(() {});
   }
 
   void _onTranslationLangChanged() {
@@ -171,9 +178,7 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
   void dispose() {
     _learning?.removeListener(_onLearningStateChanged);
     _itemPositionsListener.itemPositions.removeListener(_onScroll);
-    _mushafScrollController.removeListener(_onMushafScroll);
-    _mushafScrollController.dispose();
-    _mushafScrollDebounce?.cancel();
+    _mushafItemPositionsListener.itemPositions.removeListener(_onMushafScroll);
     TranslationLangService.langNotifier.removeListener(_onTranslationLangChanged);
     super.dispose();
   }
@@ -192,47 +197,27 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
 
   // ── Continuous Mushaf mode: position tracking ─────────────────────────────
 
-  GlobalKey _keyForAyah(int ayahNum) {
-    return _ayahAnchorKeys.putIfAbsent(
-        ayahNum, () => GlobalKey(debugLabel: 'ayah_anchor_$ayahNum'));
-  }
-
-  /// Finds the ayah whose anchor (first word) sits closest to the top of the
-  /// Mushaf viewport, using each anchor's live render position. This is the
-  /// continuous-flow equivalent of ItemPositionsListener for Card mode.
-  int? _computeCurrentMushafAyah() {
-    final viewportBox =
-        _mushafViewportKey.currentContext?.findRenderObject();
-    if (viewportBox is! RenderBox || !viewportBox.attached) return null;
-    final viewportTop = viewportBox.localToGlobal(Offset.zero).dy;
-
-    int? best;
-    double bestDy = double.infinity;
-    for (final entry in _ayahAnchorKeys.entries) {
-      final ctx = entry.value.currentContext;
-      if (ctx == null) continue;
-      final renderBox = ctx.findRenderObject();
-      if (renderBox is! RenderBox || !renderBox.attached) continue;
-      final relativeDy = renderBox.localToGlobal(Offset.zero).dy - viewportTop;
-      // Prefer the topmost anchor that is at or just above the viewport top
-      // (small negative tolerance so an ayah that just scrolled past still counts).
-      if (relativeDy >= -40 && relativeDy < bestDy) {
-        bestDy = relativeDy;
-        best = entry.key;
-      }
-    }
-    return best;
+  /// Topmost visible chunk in Mushaf mode → its first ayah number.
+  /// Same virtualization technique Card mode already uses, adapted to
+  /// chunk-sized items so lookup is O(visible items) not O(all words).
+  int? _currentMushafAyah() {
+    final positions = _mushafItemPositionsListener.itemPositions.value;
+    if (positions.isEmpty) return null;
+    final visible = positions.where((p) => p.itemLeadingEdge >= 0);
+    if (visible.isEmpty) return null;
+    final itemIndex = visible
+        .reduce((a, b) => a.itemLeadingEdge < b.itemLeadingEdge ? a : b)
+        .index;
+    if (itemIndex <= 0 || itemIndex > _mushafChunkCount) return null;
+    return _firstAyahOfChunkItem(itemIndex);
   }
 
   void _onMushafScroll() {
-    _mushafScrollDebounce?.cancel();
-    _mushafScrollDebounce = Timer(const Duration(milliseconds: 200), () {
-      if (!mounted || !_mushafMode) return;
-      final current = _computeCurrentMushafAyah();
-      if (current != null && current > 0 && current <= _totalAyahs) {
-        ContentRepository.saveLastReadAyah(widget.surah.id, current);
-      }
-    });
+    if (!mounted || !_mushafMode) return;
+    final current = _currentMushafAyah();
+    if (current != null && current > 0 && current <= _totalAyahs) {
+      ContentRepository.saveLastReadAyah(widget.surah.id, current);
+    }
   }
 
   /// Waits until a specific ayah's words have loaded into the cache (needed
@@ -253,14 +238,14 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
   Future<void> _scrollToAyah(int ayahNum, {bool animate = false}) async {
     if (ayahNum <= 0 || !mounted) return;
     if (_mushafMode) {
-      final ctx = _ayahAnchorKeys[ayahNum]?.currentContext;
-      if (ctx != null) {
-        await Scrollable.ensureVisible(
-          ctx,
-          alignment: 0.05,
-          duration: animate ? const Duration(milliseconds: 300) : Duration.zero,
-          curve: Curves.easeInOut,
-        );
+      if (_mushafItemScrollController.isAttached) {
+        final itemIndex = _chunkIndexForAyah(ayahNum);
+        if (animate) {
+          _mushafItemScrollController.scrollTo(
+              index: itemIndex, duration: const Duration(milliseconds: 300));
+        } else {
+          _mushafItemScrollController.jumpTo(index: itemIndex, alignment: 0.0);
+        }
       }
     } else {
       if (_itemScrollController.isAttached) {
@@ -875,7 +860,7 @@ Future<void> _onWordLongPress(QuranWord word) async {
               // whichever position-tracking mechanism the CURRENT mode uses.
               int savedAyah = _lastReadAyah;
               if (_mushafMode) {
-                savedAyah = _computeCurrentMushafAyah() ?? _lastReadAyah;
+                savedAyah = _currentMushafAyah() ?? _lastReadAyah;
               } else {
                 final positions = _itemPositionsListener.itemPositions.value;
                 if (positions.isNotEmpty) {
@@ -925,7 +910,10 @@ Future<void> _onWordLongPress(QuranWord word) async {
                   ? null
                   : () {
                       if (_mushafMode) {
-                        _mushafScrollController.jumpTo(0);
+                        if (_mushafItemScrollController.isAttached) {
+                          _mushafItemScrollController.jumpTo(
+                              index: 0, alignment: 0.0);
+                        }
                       } else if (_itemScrollController.isAttached) {
                         _itemScrollController.jumpTo(
                             index: 1, alignment: 0.0);
@@ -1186,60 +1174,63 @@ Future<void> _onWordLongPress(QuranWord word) async {
             color: const Color(0xFFD4AF37).withValues(alpha: 0.5), width: 1.5),
         borderRadius: BorderRadius.circular(4),
       ),
-      child: SingleChildScrollView(
-        key: _mushafViewportKey,
-        controller: _mushafScrollController,
+      // Virtualized by CHUNK (groups of ayahs), not by single ayah or by
+      // the whole surah — this keeps the true continuous-flow Mushaf look
+      // (multiple ayahs wrap together on the same line inside a chunk)
+      // while still only building the chunks near the viewport, which is
+      // what actually fixes the scroll lag.
+      child: ScrollablePositionedList.builder(
+        itemScrollController: _mushafItemScrollController,
+        itemPositionsListener: _mushafItemPositionsListener,
         padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (_showBismillahHeader) _BismillahHeader(surah: widget.surah, knownWords: context.read<LearningStateProvider>().knownCount),
-            Directionality(
-              textDirection: TextDirection.rtl,
-              child: Wrap(
-                alignment: WrapAlignment.center,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                textDirection: TextDirection.rtl,
-                children: _buildContinuousWords(isDark),
-              ),
-            ),
-            const SizedBox(height: 12),
-            _buildNavigation(),
-          ],
-        ),
+        itemCount: _mushafChunkCount + 2,
+        itemBuilder: (context, index) {
+          if (index == 0) {
+            return _showBismillahHeader
+                ? _BismillahHeader(
+                    surah: widget.surah,
+                    knownWords:
+                        context.read<LearningStateProvider>().knownCount)
+                : const SizedBox.shrink();
+          }
+          if (index == _mushafChunkCount + 1) return _buildNavigation();
+          return RepaintBoundary(child: _buildMushafChunk(index, isDark));
+        },
       ),
     );
   }
 
-  /// Flattens every loaded ayah's words into ONE list of inline widgets, so
-  /// they render as a single continuous Wrap — ayah 2 can start on the same
-  /// visual line where ayah 1 ends, exactly like a printed Mushaf. Each
-  /// ayah's first word carries a GlobalKey anchor (via _keyForAyah) so we can
-  /// later locate/scroll to that ayah with Scrollable.ensureVisible, since
-  /// there is no per-ayah list index to jump to anymore.
-  List<Widget> _buildContinuousWords(bool isDark) {
-    final children = <Widget>[];
-    for (int ayahNum = 1; ayahNum <= _totalAyahs; ayahNum++) {
-      final words = _ayahCache[ayahNum];
-      // Words load progressively in ayah order, so the first gap means
-      // everything after it isn't ready yet.
-      if (words == null) break;
+  /// Builds one chunk = a continuous Wrap covering [_mushafChunkSize] ayahs,
+  /// exactly like the original single-Wrap design — just scoped to a small
+  /// range instead of the entire surah, so ScrollablePositionedList can
+  /// virtualize across chunks.
+  Widget _buildMushafChunk(int itemIndex, bool isDark) {
+    final startAyah = _firstAyahOfChunkItem(itemIndex);
+    final endAyah = (startAyah + _mushafChunkSize - 1).clamp(0, _totalAyahs);
+    if (startAyah > _totalAyahs) return const SizedBox.shrink();
 
-      for (int i = 0; i < words.length; i++) {
-        final word = words[i];
+    final children = <Widget>[];
+    bool anyMissing = false;
+
+    for (int ayahNum = startAyah; ayahNum <= endAyah; ayahNum++) {
+      final words = _ayahCache[ayahNum];
+      if (words == null) {
+        anyMissing = true;
+        break; // words load in ayah order — stop at first gap
+      }
+
+      for (final word in words) {
         final normalized = WordProgressService.normalizeArabic(word.arabic);
-        final isKnown =
-            context.read<LearningStateProvider>().isKnown(normalized);
-        Widget wordWidget = GestureDetector(
-          onTap: () => _showWordDetail(word),
-          onLongPress: () => _onWordLongPress(word),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2),
-            child: 
-              Text(
-                word.arabic,
-                textDirection: TextDirection.rtl,
-                style: _mushafStyle(isDark).copyWith(
+        children.add(
+          GestureDetector(
+            onTap: () => _showWordDetail(word),
+            onLongPress: () => _onWordLongPress(word),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: KnownAwareText(
+                normalizedArabic: normalized,
+                text: word.arabic,
+                styleBuilder: (isKnown) => _mushafStyle(isDark).copyWith(
                   decoration: isKnown
                       ? TextDecoration.underline
                       : TextDecoration.none,
@@ -1249,17 +1240,12 @@ Future<void> _onWordLongPress(QuranWord word) async {
                   decorationThickness: 1.0,
                 ),
               ),
+            ),
           ),
         );
-        if (i == 0) {
-          // Anchor the ayah's first word so _scrollToAyah can find it later.
-          wordWidget =
-              KeyedSubtree(key: _keyForAyah(ayahNum), child: wordWidget);
-        }
-        children.add(wordWidget);
       }
 
-      // Ayah-end marker — plain English numeral in parentheses.
+      // Ayah-end marker
       children.add(Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4),
         child: Directionality(
@@ -1282,7 +1268,8 @@ Future<void> _onWordLongPress(QuranWord word) async {
           child: Directionality(
             textDirection: TextDirection.ltr,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
                 border: Border.all(
                     color: const Color(0xFFD4AF37).withValues(alpha: 0.6)),
@@ -1302,7 +1289,44 @@ Future<void> _onWordLongPress(QuranWord word) async {
         ));
       }
     }
-    return children;
+
+    if (children.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 14),
+        child: Center(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+                strokeWidth: 2, color: Color(0xFF1B4332)),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        Directionality(
+          textDirection: TextDirection.rtl,
+          child: Wrap(
+            alignment: WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            textDirection: TextDirection.rtl,
+            children: children,
+          ),
+        ),
+        if (anyMissing)
+          const Padding(
+            padding: EdgeInsets.only(top: 6),
+            child: SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: Color(0xFF1B4332)),
+            ),
+          ),
+      ],
+    );
   }
 
   TextStyle _mushafStyle(bool isDark) {
