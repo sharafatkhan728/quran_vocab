@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:quran/quran.dart' as quran;
+import 'package:quran_vocab/services/surah_list_cache.dart';
 import 'package:quran_vocab/widgets/known_word_text.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../data/ruku_data.dart';
@@ -594,6 +595,11 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
         await ContentRepository.getBookmarksForSurah(widget.surah.id);
     if (mounted) setState(() => _bookmarks = updated);
     HapticFeedback.lightImpact();
+    // Bookmarks aren't tracked by LearningStateProvider's listener (that's
+    // for known/unknown words only), so without this, closing the app
+    // right after bookmarking — without ever returning to the Surah List
+    // tab — would leave the disk cache stale until the next full reload.
+    unawaited(SurahListCache.refreshBookmarksOnly());
   }
 
 

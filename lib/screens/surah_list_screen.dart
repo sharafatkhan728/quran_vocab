@@ -1,9 +1,12 @@
 // ignore_for_file: curly_braces_in_flow_control_structures, unused_local_variable
 
+import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:quran/quran.dart' as quran;
 import 'package:quran_vocab/providers/user_provider.dart';
 import 'package:quran_vocab/screens/payment_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../data/surah_data.dart';
 import '../models/surah.dart';
 import '../services/word_progress_service.dart';
@@ -17,6 +20,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'flashcard_screen.dart';
 import '../providers/learning_state_provider.dart';
 import '../database/database_manager.dart';
+import '../services/surah_list_cache.dart';
 
 class SurahListScreen extends StatefulWidget {
   const SurahListScreen({super.key});
@@ -26,10 +30,8 @@ class SurahListScreen extends StatefulWidget {
 }
 
 class _SurahListScreenState extends State<SurahListScreen>
-    with SingleTickerProviderStateMixin {
-
-
-int _dueTodayCount = 0;   
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+  int _dueTodayCount = 0;
 
   // Built once instead of calling quran.getSurahName()/getSurahNameArabic()/
   // getVerseCount() repeatedly per card on every rebuild (scroll, theme
@@ -51,11 +53,77 @@ int _dueTodayCount = 0;
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _barCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 1200));
-    _barAnim = Tween<double>(begin: 0, end: 0).animate(
-        CurvedAnimation(parent: _barCtrl, curve: Curves.easeOutCubic));
+    _barAnim = Tween<double>(begin: 0, end: 0)
+        .animate(CurvedAnimation(parent: _barCtrl, curve: Curves.easeOutCubic));
+    // Show yesterday's last-known numbers instantly from disk while the
+    // real SQLite queries run in the background — so this screen never
+    // starts from a blank/0% state on a fresh app launch.
+    _loadCachedSnapshot();
     _loadProgress();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached) {
+      // Best-effort final save of whatever this screen currently holds —
+      // covers the case where a recent toggle's own save is still
+      // in-flight when the app gets backgrounded/killed.
+      unawaited(_saveCachedSnapshot());
+    }
+  }
+
+  Future<void> _loadCachedSnapshot() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(SurahListCache.cacheKey);
+      if (raw == null || !mounted) return;
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      setState(() {
+        _totalProgress = (data['totalProgress'] as num?)?.toDouble() ?? 0;
+        _knownCount = data['knownCount'] as int? ?? 0;
+        _streak = data['streak'] as int? ?? 0;
+        _dueTodayCount = data['dueTodayCount'] as int? ?? 0;
+        final sp = (data['surahProgress'] as Map?) ?? {};
+        _surahProgress = sp.map(
+            (k, v) => MapEntry(int.parse(k as String), (v as num).toDouble()));
+        final lr = (data['lastReadAyahs'] as Map?) ?? {};
+        _lastReadAyahs =
+            lr.map((k, v) => MapEntry(int.parse(k as String), v as int));
+        final bm = (data['bookmarks'] as List?) ?? [];
+        _bookmarks =
+            bm.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      });
+      // Pre-fill the progress bar at its cached value (no animating up
+      // from 0) — the real animation still plays once fresh data arrives.
+      _barAnim =
+          Tween<double>(begin: _totalProgress / 100, end: _totalProgress / 100)
+              .animate(_barCtrl);
+    } catch (_) {
+      // Missing/corrupt cache — harmless, _loadProgress() fills it fresh.
+    }
+  }
+
+  Future<void> _saveCachedSnapshot() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final data = {
+        'totalProgress': _totalProgress,
+        'knownCount': _knownCount,
+        'streak': _streak,
+        'dueTodayCount': _dueTodayCount,
+        'surahProgress': _surahProgress.map((k, v) => MapEntry('$k', v)),
+        'lastReadAyahs': _lastReadAyahs.map((k, v) => MapEntry('$k', v)),
+        'bookmarks': _bookmarks,
+      };
+      await prefs.setString(SurahListCache.cacheKey, jsonEncode(data));
+    } catch (_) {
+      // Non-fatal — worst case next launch just rebuilds from DB again.
+    }
   }
 
   @override
@@ -70,55 +138,68 @@ int _dueTodayCount = 0;
   }
 
   void _onLearningChanged() {
-    if (mounted) _loadProgress();
+    if (!mounted) return;
+    // Fast path first: LearningStateProvider.knownCount is already an
+    // in-memory value (no DB query), so update + persist it immediately.
+    // This is what guarantees the disk cache reflects a tap even if the
+    // app is killed a split-second later — before the fuller reload below
+    // (which needs several sequential DB queries for %, per-surah
+    // breakdown, streak, etc.) has a chance to finish.
+    final learning = context.read<LearningStateProvider>();
+    setState(() => _knownCount = learning.knownCount);
+    unawaited(_saveCachedSnapshot());
+
+    // Slow path: full recompute for the parts that DO need DB queries.
+    _loadProgress();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _barCtrl.dispose();
     _learning?.removeListener(_onLearningChanged);
     super.dispose();
   }
 
-
   Future<int> _loadDueTodayCount() async {
-  try {
-    final db = await DatabaseManager.db;
-    final sessionRows = await db.query('user_meta',
-        where: 'key = ?', whereArgs: ['srs_total_sessions'], limit: 1);
-    final currentSession = sessionRows.isEmpty
-        ? 0
-        : int.tryParse(sessionRows.first['value'] as String) ?? 0;
+    try {
+      final db = await DatabaseManager.db;
+      final sessionRows = await db.query('user_meta',
+          where: 'key = ?', whereArgs: ['srs_total_sessions'], limit: 1);
+      final currentSession = sessionRows.isEmpty
+          ? 0
+          : int.tryParse(sessionRows.first['value'] as String) ?? 0;
 
-    final dueRows = await db.rawQuery('''
+      final dueRows = await db.rawQuery('''
       SELECT COUNT(*) as cnt FROM srs_cards
       WHERE is_deleted = 0 AND total_reviews > 0 AND next_review_session <= ?
     ''', [currentSession]);
-    final due = (dueRows.first['cnt'] as int?) ?? 0;
+      final due = (dueRows.first['cnt'] as int?) ?? 0;
 
-    final failedRows = await db.rawQuery('''
+      final failedRows = await db.rawQuery('''
       SELECT COUNT(*) as cnt FROM srs_cards
       WHERE is_deleted = 0 AND fail_count > 0 AND stage = 0 AND next_review_session <= ?
     ''', [currentSession]);
-    final failed = (failedRows.first['cnt'] as int?) ?? 0;
+      final failed = (failedRows.first['cnt'] as int?) ?? 0;
 
-    final today = DateTime.now();
-    final todayKey =
-        '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
-    final todayRows = await db.query('daily_stats',
-        where: 'date_key = ?', whereArgs: [todayKey], limit: 1);
-    final learnedToday =
-        todayRows.isEmpty ? 0 : (todayRows.first['words_learned'] as int? ?? 0);
+      final today = DateTime.now();
+      final todayKey =
+          '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+      final todayRows = await db.query('daily_stats',
+          where: 'date_key = ?', whereArgs: [todayKey], limit: 1);
+      final learnedToday = todayRows.isEmpty
+          ? 0
+          : (todayRows.first['words_learned'] as int? ?? 0);
 
-    // ignore: use_build_context_synchronously
-    final goal = mounted ? context.read<UserProvider>().dailyGoal : 5;
-    final remainingNew = (goal - learnedToday).clamp(0, goal);
+      // ignore: use_build_context_synchronously
+      final goal = mounted ? context.read<UserProvider>().dailyGoal : 5;
+      final remainingNew = (goal - learnedToday).clamp(0, goal);
 
-    return due + failed + remainingNew;
-  } catch (_) {
-    return 0;
+      return due + failed + remainingNew;
+    } catch (_) {
+      return 0;
+    }
   }
-}
 
   Future<void> _loadProgress() async {
     final progressPercent = await WordProgressService.getProgressPercent();
@@ -139,16 +220,15 @@ int _dueTodayCount = 0;
       final cutoffKey =
           '${cutoff.year}-${cutoff.month.toString().padLeft(2, '0')}-'
           '${cutoff.day.toString().padLeft(2, '0')}';
-      final rows = await db.query('daily_stats',
-          where: 'date_key >= ?', whereArgs: [cutoffKey]);
+      final rows = await db
+          .query('daily_stats', where: 'date_key >= ?', whereArgs: [cutoffKey]);
       final dailyMap = <String, int>{
         for (final r in rows)
           r['date_key'] as String: (r['words_learned'] as int? ?? 0),
       };
       for (int d = 0; d < 365; d++) {
         final day = today.subtract(Duration(days: d));
-        final key =
-            '${day.year}-${day.month.toString().padLeft(2, '0')}-'
+        final key = '${day.year}-${day.month.toString().padLeft(2, '0')}-'
             '${day.day.toString().padLeft(2, '0')}';
         if ((dailyMap[key] ?? 0) > 0) {
           streak++;
@@ -164,8 +244,8 @@ int _dueTodayCount = 0;
     final Map<int, int> lastRead = {};
     try {
       final db = await DatabaseManager.db;
-      final rows = await db.query('reading_progress',
-          columns: ['surah_id', 'last_ayah']);
+      final rows = await db
+          .query('reading_progress', columns: ['surah_id', 'last_ayah']);
       for (final r in rows) {
         final ayah = r['last_ayah'] as int? ?? 0;
         if (ayah > 1) lastRead[r['surah_id'] as int] = ayah;
@@ -177,11 +257,8 @@ int _dueTodayCount = 0;
     final bmarks = await ContentRepository.getAllBookmarks();
     if (mounted) setState(() => _bookmarks = bmarks);
 
-    final dueCount = await _loadDueTodayCount();
-
     if (mounted) {
       setState(() {
-        _dueTodayCount = dueCount;
         _totalProgress = progressPercent;
         _surahProgress = sp;
         _knownCount = knownCount;
@@ -189,11 +266,28 @@ int _dueTodayCount = 0;
       });
 
       // Animate bar to new value
-      _barAnim = Tween<double>(begin: _barAnim.value, end: progressPercent / 100)
-          .animate(CurvedAnimation(parent: _barCtrl, curve: Curves.easeOutCubic));
+      _barAnim = Tween<double>(
+              begin: _barAnim.value, end: progressPercent / 100)
+          .animate(
+              CurvedAnimation(parent: _barCtrl, curve: Curves.easeOutCubic));
       _barCtrl
         ..reset()
         ..forward();
+
+      // Persist this freshly computed snapshot so the NEXT app launch can
+      // show it instantly instead of waiting on these same DB queries.
+      unawaited(_saveCachedSnapshot());
+
+      // Due-count is the least urgent of these — SRS/daily_stats queries
+      // right after a cold DB open are the slowest part of this whole
+      // reload (visible as GC pauses in logcat on emulators). Let it
+      // resolve separately so it never delays the rest of the screen
+      // (which the cache already displayed instantly anyway).
+      _loadDueTodayCount().then((dueCount) {
+        if (!mounted) return;
+        setState(() => _dueTodayCount = dueCount);
+        unawaited(_saveCachedSnapshot());
+      });
     }
   }
 
@@ -202,13 +296,14 @@ int _dueTodayCount = 0;
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-          leading: IconButton(
-            icon: const Icon(Icons.volunteer_activism, color: Color.fromARGB(255, 255, 254, 253)),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const PaymentScreen()),
-            ),
-          ),        
+        leading: IconButton(
+          icon: const Icon(Icons.volunteer_activism,
+              color: Color.fromARGB(255, 255, 254, 253)),
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const PaymentScreen()),
+          ),
+        ),
         title: const Column(
           children: [
             Text('القرآن الكريم', style: TextStyle(fontSize: 22)),
@@ -255,7 +350,7 @@ int _dueTodayCount = 0;
               onPressed: () => theme.toggleTheme(),
             ),
           ),
-IconButton(
+          IconButton(
             icon: const Icon(Icons.bar_chart),
             onPressed: () => Navigator.push(
               context,
@@ -436,8 +531,8 @@ IconButton(
                   decoration: BoxDecoration(
                     color: Colors.orange.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                        color: Colors.orange.withValues(alpha: 0.5)),
+                    border:
+                        Border.all(color: Colors.orange.withValues(alpha: 0.5)),
                   ),
                   child: Text('🔥 $_streak days',
                       style: const TextStyle(
@@ -448,8 +543,7 @@ IconButton(
               const Spacer(),
               // Comparison text
               Text(comparisonText,
-                  style: const TextStyle(
-                      fontSize: 10, color: Colors.white38)),
+                  style: const TextStyle(fontSize: 10, color: Colors.white38)),
             ],
           ),
 
@@ -507,7 +601,8 @@ IconButton(
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFF2ECC71).withValues(alpha: 0.4),
+                            color:
+                                const Color(0xFF2ECC71).withValues(alpha: 0.4),
                             blurRadius: 6,
                             offset: const Offset(0, 2),
                           ),
@@ -539,8 +634,7 @@ IconButton(
             const SizedBox(height: 8),
             Container(
               width: double.infinity,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
@@ -556,8 +650,7 @@ IconButton(
               ),
               child: Row(
                 children: [
-                  Text(milestone.$1,
-                      style: const TextStyle(fontSize: 18)),
+                  Text(milestone.$1, style: const TextStyle(fontSize: 18)),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Column(
@@ -595,7 +688,8 @@ IconButton(
   // ── Milestone detection ───────────────────────────────────────────────────
   // Returns (emoji, title, arabic phrase) for the nearest passed milestone
   (String, String, String)? _getMilestone(double pct) {
-    if (pct >= 75) return ('🏆', 'Three-Quarters of Quran!', 'ماشاء اللہ — أحسنت!');
+    if (pct >= 75)
+      return ('🏆', 'Three-Quarters of Quran!', 'ماشاء اللہ — أحسنت!');
     if (pct >= 50) return ('⭐', 'Half of Quran!', 'مبارك — نصف القرآن!');
     if (pct >= 25) return ('🌟', 'Quarter of Quran!', 'احسنت — ربع القرآن!');
     if (pct >= 10) return ('✨', 'First Milestone!', 'جزاك الله خيراً');
@@ -880,7 +974,6 @@ class _SurahCardState extends State<_SurahCard>
     );
   }
 }
-
 
 class _FlashcardEntryButton extends StatefulWidget {
   final VoidCallback onTap;

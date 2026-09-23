@@ -5,6 +5,7 @@ import '../providers/learning_state_provider.dart';
 /// Wraps a single Arabic word's Text so it only rebuilds when THIS word's
 /// known/unknown status changes — not on every known-word toggle anywhere
 /// in the app. Replaces the old pattern of calling
+// ignore: unintended_html_in_doc_comment
 /// context.read<LearningStateProvider>().isKnown(...) inside a big parent
 /// build() that gets fully rebuilt via _refreshAllKnownFlags()/setState().
 class KnownAwareText extends StatelessWidget {
