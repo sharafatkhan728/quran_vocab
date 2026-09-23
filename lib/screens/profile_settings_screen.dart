@@ -469,6 +469,8 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     return GestureDetector(
       onTap: () async {
         await WordGlossaryService.setLanguage(key);
+        // picking a language always turns word meanings back on
+        await context.read<DisplayProvider>().setShowWbw(true);
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),

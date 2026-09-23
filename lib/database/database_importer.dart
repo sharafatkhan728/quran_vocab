@@ -126,6 +126,29 @@ class DatabaseImporter {
 
   // ── Main entry point ────────────────────────────────────────────────────
 
+  /// Stages that will actually run on this launch, in execution order, with
+  /// their share (in %, totals 100) of the overall progress bar.
+  static Future<Map<ImportStep, double>> plannedWeights() async {
+    final db = await DatabaseManager.db;
+    final needCore = await _stored(db, 'v_core') < _vCore;
+    final needVocab = await _stored(db, 'v_vocab') < _vVocab || needCore;
+    final needMorph =
+        await _stored(db, 'v_morphology') < _vMorphology || needVocab;
+    final needTrans =
+        await _stored(db, 'v_translation') < _vTranslation || needCore;
+
+    final raw = <ImportStep, double>{ImportStep.preparing: 10};
+    if (needCore) raw[ImportStep.surahs] = 5;
+    if (needVocab) raw[ImportStep.words] = 35;
+    if (needMorph) raw[ImportStep.morphology] = 35;
+    if (needTrans) raw[ImportStep.translations] = 15;
+    // Only translations changed: word meanings are rebuilt after them.
+    if (needTrans && !needVocab) raw[ImportStep.words] = 10;
+
+    final total = raw.values.fold<double>(0, (a, b) => a + b);
+    return raw.map((k, v) => MapEntry(k, v / total * 100));
+  }
+
   static Stream<ImportProgress> runImport() async* {
     final db = await DatabaseManager.db;
 

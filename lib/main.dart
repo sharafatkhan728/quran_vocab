@@ -133,7 +133,7 @@ class QuranAppRoot extends StatelessWidget {
       title: 'Quran Kalima',
       theme: themeProvider.lightTheme,
       darkTheme: themeProvider.darkTheme,
-      themeMode: themeProvider.isDark ? ThemeMode.dark : ThemeMode.light,
+      themeMode: themeProvider.themeMode,
       navigatorKey: appNavigatorKey,
       navigatorObservers: [AnalyticsService.navigatorObserver],
       // SplashScreen handles DB init then shows _AppGate

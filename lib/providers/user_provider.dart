@@ -19,16 +19,18 @@ class UserProvider extends ChangeNotifier {
   String get email => _user?.email ?? '';
   String get photoUrl => _profile['photoUrl'] ?? _user?.photoURL ?? '';
   String get gender => _profile['gender'] ?? '';
-  int get dailyGoal {
-    final fromProfile = _profile['dailyGoal'];
-    if (fromProfile != null) return fromProfile as int;
-    return _localDailyGoal;
-  }
+  // Local prefs is the single source of truth for the daily goal.
+  int get dailyGoal => _localDailyGoal;
 
   int _localDailyGoal = 5;
+  // true once the user has explicitly chosen a goal on this device
+  // (onboarding or profile settings) — this value must never be
+  // overwritten by cloud data.
+  bool _hasExplicitGoal = false;
+  late final Future<void> _localGoalReady;
 
   UserProvider() {
-    _loadLocalGoal();
+    _localGoalReady = _loadLocalGoal();
     FirebaseAuth.instance.authStateChanges().listen((user) async {
       final previousUid = _user?.uid;
       _user = user;
@@ -64,10 +66,28 @@ class UserProvider extends ChangeNotifier {
     try {
       final doc =
           await FirebaseFirestore.instance.collection('users').doc(uid).get();
-      if (doc.exists && _user?.uid == uid) {
-        _profile = doc.data() ?? {};
-        notifyListeners();
+      await _localGoalReady;
+      if (_user?.uid != uid) return;
+      _profile = doc.exists ? (doc.data() ?? {}) : {};
+
+      final cloudGoal = _profile['dailyGoal'];
+      if (_hasExplicitGoal) {
+        // User already chose a goal on this device — it wins.
+        if (cloudGoal != _localDailyGoal) {
+          _profile['dailyGoal'] = _localDailyGoal;
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(uid)
+              .set({'dailyGoal': _localDailyGoal}, SetOptions(merge: true));
+        }
+      } else if (cloudGoal is int) {
+        // No local choice yet (e.g. fresh install) — adopt the cloud value.
+        _localDailyGoal = cloudGoal;
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('daily_goal', cloudGoal);
+        _hasExplicitGoal = true;
       }
+      notifyListeners();
     } catch (e, stack) {
       debugPrint('UserProvider._loadProfile failed: $e');
       CrashlyticsService.recordError(e, stack,
@@ -75,10 +95,12 @@ class UserProvider extends ChangeNotifier {
     }
   }
   Future<void> updateProfile(Map<String, dynamic> data) async {
+    await _localGoalReady; // prevents the startup race that overwrote the goal
     _profile.addAll(data);
     // Save daily goal locally so it works offline and without login
     if (data.containsKey('dailyGoal')) {
       _localDailyGoal = data['dailyGoal'] as int;
+      _hasExplicitGoal = true;
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt('daily_goal', _localDailyGoal);
     }
@@ -101,7 +123,10 @@ class UserProvider extends ChangeNotifier {
 
   Future<void> _loadLocalGoal() async {
     final prefs = await SharedPreferences.getInstance();
-    _localDailyGoal = prefs.getInt('daily_goal') ?? 5;
+    if (prefs.containsKey('daily_goal')) {
+      _localDailyGoal = prefs.getInt('daily_goal') ?? 5;
+      _hasExplicitGoal = true;
+    }
     notifyListeners();
   }
 }

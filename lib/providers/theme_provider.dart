@@ -1,13 +1,46 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-class ThemeProvider extends ChangeNotifier {
+class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   ThemeProvider() {
+    WidgetsBinding.instance.addObserver(this);
     _loadFuture = _loadTheme();
   }
 
-  bool _isDark = false;
-  bool get isDark => _isDark;
+  // 'light' | 'dark' | 'system'
+  String _themeChoice = 'light';
+  String get themeChoice => _themeChoice;
+
+  ThemeMode get themeMode {
+    switch (_themeChoice) {
+      case 'dark':
+        return ThemeMode.dark;
+      case 'system':
+        return ThemeMode.system;
+      default:
+        return ThemeMode.light;
+    }
+  }
+
+  /// Effective brightness (resolves 'system' to the phone's real setting).
+  bool get isDark {
+    if (_themeChoice == 'system') {
+      return WidgetsBinding.instance.platformDispatcher.platformBrightness ==
+          Brightness.dark;
+    }
+    return _themeChoice == 'dark';
+  }
+
+  @override
+  void didChangePlatformBrightness() {
+    if (_themeChoice == 'system') notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
 
   bool _isLoaded = false;
   bool get isLoaded => _isLoaded;
@@ -16,18 +49,30 @@ class ThemeProvider extends ChangeNotifier {
 
   Future<void> _loadTheme() async {
     final prefs = await SharedPreferences.getInstance();
-    _isDark = prefs.getBool('is_dark_mode') ?? false;
-
+    final saved = prefs.getString('theme_choice');
+    if (saved != null &&
+        (saved == 'light' || saved == 'dark' || saved == 'system')) {
+      _themeChoice = saved;
+    } else if (prefs.containsKey('is_dark_mode')) {
+      // legacy users
+      _themeChoice =
+          (prefs.getBool('is_dark_mode') ?? false) ? 'dark' : 'light';
+    } else {
+      _themeChoice =
+          prefs.getString('theme_mode') == 'system' ? 'system' : 'light';
+    }
     _isLoaded = true;
     notifyListeners();
   }
 
-  Future<void> toggleTheme() async {
-    _isDark = !_isDark;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('is_dark_mode', _isDark);
+  Future<void> setThemeChoice(String choice) async {
+    _themeChoice = choice;
     notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('theme_choice', choice);
   }
+
+  Future<void> toggleTheme() => setThemeChoice(isDark ? 'light' : 'dark');
 
   static const _seed = Color(0xFF1B4332);
 
@@ -78,7 +123,5 @@ class ThemeProvider extends ChangeNotifier {
       );
 
   /// Wait for the same initial load started by the constructor.
-  /// This prevents startup from racing an empty placeholder method or loading
-  /// preferences twice.
   Future<void> loadSettings() => _loadFuture;
 }

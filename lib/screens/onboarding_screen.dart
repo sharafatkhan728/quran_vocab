@@ -46,15 +46,12 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   String _translationLang = 'ur';
   String _wbwLang = 'ur';
   int _dailyGoal = 10;
-  bool _showBismillah = true;
-  bool _showWbw = true;
-  bool _showAyahTranslation = true;
-  final bool _mushafMode = false;
+ 
 
   late AnimationController _fadeCtrl;
   late Animation<double> _fadeAnim;
 
-  static const int _totalPages = 8;
+  static const int _totalPages = 7;
 
   @override
   void initState() {
@@ -98,21 +95,19 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     final theme = context.read<ThemeProvider>();
     final display = context.read<DisplayProvider>();
     final user = context.read<UserProvider>();
-    final prefs = await SharedPreferences.getInstance();
 
     // Theme
-    if (_themeChoice == 'dark') {
-      if (!theme.isDark) theme.toggleTheme();
-    } else if (_themeChoice == 'light') {
-      if (theme.isDark) theme.toggleTheme();
-    }
-    await prefs.setString('theme_mode', _themeChoice);
+    await theme.setThemeChoice(_themeChoice);
 
     // Arabic font
     await display.setArabicFont(_arabicFont);
 
     // WBW language
-    await WordGlossaryService.setLanguage(_wbwLang);
+    // "Off" hides the meanings; any language turns them on
+    await display.setShowWbw(_wbwLang != 'off');
+    if (_wbwLang != 'off') {
+      await WordGlossaryService.setLanguage(_wbwLang);
+    }
 
     // Translation language — keys must match TranslationService.scholars map
     final scholarKey = _translationLang == 'en'
@@ -125,11 +120,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     // Daily goal
     await user.updateProfile({'dailyGoal': _dailyGoal});
 
-    // Reading preferences
-    await prefs.setBool('show_bismillah', _showBismillah);
-    await prefs.setBool('show_wbw', _showWbw);
-    await prefs.setBool('show_ayah_translation', _showAyahTranslation);
-    await prefs.setBool('mushaf_mode_default', _mushafMode);
+ 
   }
 
   @override
@@ -231,16 +222,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                       selected: _dailyGoal,
                       onSelect: (v) => setState(() => _dailyGoal = v),
                     ),
-                    _ReadingPrefsPage(
-                      isDark: isDark,
-                      showBismillah: _showBismillah,
-                      showWbw: _showWbw,
-                      showAyahTranslation: _showAyahTranslation,
-                      onBismillah: (v) => setState(() => _showBismillah = v),
-                      onWbw: (v) => setState(() => _showWbw = v),
-                      onAyahTranslation: (v) =>
-                          setState(() => _showAyahTranslation = v),
-                    ),
+  
                     _FinishPage(
                       isDark: isDark,
                       themeChoice: _themeChoice,
@@ -991,89 +973,6 @@ class _GoalPage extends StatelessWidget {
   }
 }
 
-// ── Page 7: Reading Preferences ───────────────────────────────────────────────
-class _ReadingPrefsPage extends StatelessWidget {
-  final bool isDark;
-  final bool showBismillah;
-  final bool showWbw;
-  final bool showAyahTranslation;
-  // final bool mushafMode;
-  final Function(bool) onBismillah;
-  final Function(bool) onWbw;
-  final Function(bool) onAyahTranslation;
-  // final Function(bool) onMushaf;
-
-  const _ReadingPrefsPage({
-    required this.isDark,
-    required this.showBismillah,
-    required this.showWbw,
-    required this.showAyahTranslation,
-    // required this.mushafMode,
-    required this.onBismillah,
-    required this.onWbw,
-    required this.onAyahTranslation,
-    // required this.onMushaf,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return _PageBase(
-      isDark: isDark,
-      emoji: '📖',
-      title: 'Reading\npreferences',
-      subtitle: 'Customise how the Quran appears while you read.',
-      content: Container(
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1A2E1F) : Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-              color: const Color(0xFFD4AF37).withValues(alpha: 0.3)),
-        ),
-        child: Column(
-          children: [
-            _prefTile('Show Bismillah header',
-                'Display بسم الله before each surah', showBismillah,
-                onBismillah, isDark, true),
-            _divider(),
-            _prefTile('Word-by-word translation',
-                'Show meaning under each Arabic word', showWbw, onWbw, isDark,
-                false),
-            _divider(),
-            _prefTile('Ayah translation',
-                'Show full ayah translation below', showAyahTranslation,
-                onAyahTranslation, isDark, false),
-            // _divider(),
-            // _prefTile('Mushaf mode',
-            //     'Continuous flow instead of cards', mushafMode, onMushaf,
-            //     isDark, false),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _prefTile(String title, String subtitle, bool value,
-      Function(bool) onChanged, bool isDark, bool isFirst) {
-    return SwitchListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      title: Text(title,
-          style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: isDark ? Colors.white : Colors.black87)),
-      subtitle: Text(subtitle,
-          style: TextStyle(
-              fontSize: 12,
-              color: isDark ? Colors.white54 : Colors.grey.shade500)),
-      value: value,
-      onChanged: onChanged,
-      activeThumbColor: const Color(0xFF1B4332),
-      activeTrackColor: const Color(0xFF1B4332).withValues(alpha: 0.4),
-    );
-  }
-
-  Widget _divider() => const Divider(height: 1, indent: 16, endIndent: 16);
-}
 
 // ── Page 8: Finish ────────────────────────────────────────────────────────────
 class _FinishPage extends StatelessWidget {

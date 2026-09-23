@@ -19,7 +19,8 @@ class WordGlossaryService {
 
   static Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
-    _selectedLang = prefs.getString('word_gloss_lang') ?? 'ur';
+    final saved = prefs.getString('word_gloss_lang') ?? 'ur';
+    _selectedLang = glossaries.containsKey(saved) ? saved : 'ur';
     langNotifier.value = _selectedLang;
   }
 

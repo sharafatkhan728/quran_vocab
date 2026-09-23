@@ -76,3 +76,4 @@
 -keep class com.yalantis.ucrop.UCropActivity { *; }
 -keep class com.yalantis.ucrop.** { *; }
 -dontwarn com.yalantis.ucrop.**
+-dontwarn com.google.android.gms.common.annotation.NoNullnessRewrite

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../database/database_importer.dart';
@@ -19,8 +20,25 @@ class SplashScreen extends StatefulWidget {
 class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
   String _label = 'Starting...';
-  double _progress = 0;
   bool _done = false;
+
+  // ── Import percentage tracking ────────────────────────────────────────────
+  Map<ImportStep, double> _weights = {};
+  final Set<ImportStep> _finished = {};
+  ImportStep? _current;
+  bool _importing = false;
+  double _shown = 0; // % currently displayed (0..100)
+  double _floor = 0; // % already guaranteed (finished stages)
+  double _ceil = 0; // % the running stage may creep up to
+  Timer? _creep;
+
+  static const Map<ImportStep, String> _stageNames = {
+    ImportStep.preparing: 'Loading assets',
+    ImportStep.surahs: 'Importing Surahs',
+    ImportStep.words: 'Building vocabulary',
+    ImportStep.morphology: 'Analysing word roots & grammar',
+    ImportStep.translations: 'Importing translations',
+  };
   bool _hasError = false;
   bool _showOnboarding = false;
 
@@ -115,6 +133,7 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   void dispose() {
+    _creep?.cancel();
     _logoCtrl.dispose();
     super.dispose();
   }
@@ -128,22 +147,31 @@ class _SplashScreenState extends State<SplashScreen>
       final needs = await DatabaseImporter.needsImport();
       if (needs) {
         bool importFailed = false;
+        _weights = await DatabaseImporter.plannedWeights();
+        if (mounted) setState(() => _importing = true);
+        _creep = Timer.periodic(
+            const Duration(milliseconds: 100), (_) => _tick());
         await for (final p in DatabaseImporter.runImport()) {
           if (!mounted) return;
           if (p.step == ImportStep.error) {
+            _creep?.cancel();
             setState(() {
               _label = p.label;
-              _progress = 0;
               _hasError = true;
             });
             importFailed = true;
             break;
           }
-          setState(() {
-            _label = p.label;
-            _progress = p.fraction;
-          });
+          setState(() => _onImportEvent(p));
           if (p.step == ImportStep.done) break;
+        }
+        _creep?.cancel();
+        if (!importFailed && mounted) {
+          setState(() {
+            _shown = 100;
+            _label = 'Setup complete ✓';
+          });
+          await Future.delayed(const Duration(milliseconds: 350));
         }
         // If import failed, show error and wait for user to retry or dismiss
         // Do NOT silently continue with old data
@@ -161,8 +189,8 @@ class _SplashScreenState extends State<SplashScreen>
     } catch (e, stack) {
       if (mounted) {
         setState(() {
+          _creep?.cancel();
           _label = 'Startup error: $e';
-          _progress = 0;
           _hasError = true;
         });
       }
@@ -192,6 +220,88 @@ class _SplashScreenState extends State<SplashScreen>
         });
       }
     }
+  }
+
+  // ── Percentage helpers ────────────────────────────────────────────────────
+
+  double _stageStart(ImportStep s) {
+    double sum = 0;
+    for (final e in _weights.entries) {
+      if (e.key == s) break;
+      sum += e.value;
+    }
+    return sum;
+  }
+
+  void _onImportEvent(ImportProgress p) {
+    _label = p.label;
+    final w = _weights[p.step];
+    if (w == null ||
+        p.step == ImportStep.done ||
+        p.step == ImportStep.error) {
+      return;
+    }
+    // e.g. the later "Restoring progress..." event reuses ImportStep.preparing
+    if (_finished.contains(p.step)) return;
+
+    final start = _stageStart(p.step);
+    final end = start + w;
+    _current = p.step;
+    if (p.total > 0 && p.done >= p.total) {
+      _finished.add(p.step);
+      _floor = end;
+      _ceil = end;
+    } else {
+      _floor = start;
+      _ceil = (end - 1.0) < start ? start : end - 1.0;
+    }
+  }
+
+  void _tick() {
+    if (!mounted || _done) return;
+    double next = _shown;
+    if (next < _floor) {
+      // a stage just finished — catch up quickly
+      next += ((_floor - next) * 0.3).clamp(0.3, 100.0);
+      if (next > _floor) next = _floor;
+    } else if (next < _ceil) {
+      // stage is running — creep forward, never claiming it is finished
+      next += (_ceil - next) * 0.02;
+    }
+    next = next.clamp(0.0, 99.0);
+    if (next != _shown) setState(() => _shown = next);
+  }
+
+  Widget _stageRow(ImportStep s) {
+    final finished = _finished.contains(s);
+    final active = _current == s && !finished;
+    const gold = Color(0xFFD4AF37);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 18,
+            height: 18,
+            child: finished
+                ? const Icon(Icons.check_circle, size: 18, color: gold)
+                : active
+                    ? const CircularProgressIndicator(
+                        strokeWidth: 2, color: gold)
+                    : const Icon(Icons.radio_button_unchecked,
+                        size: 18, color: Colors.white24),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            _stageNames[s] ?? '',
+            style: TextStyle(
+                fontSize: 13,
+                color: (finished || active) ? Colors.white : Colors.white38),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showErrorDialog(String title, String message) {
@@ -229,8 +339,8 @@ class _SplashScreenState extends State<SplashScreen>
     return Scaffold(
       backgroundColor: const Color(0xFF1B4332),
       body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(48),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(32),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -244,10 +354,21 @@ class _SplashScreenState extends State<SplashScreen>
               const Text('کلمۂ قرآن',
                   style: TextStyle(fontSize: 16, color: Color(0xFFD4AF37))),
               const SizedBox(height: 48),
+              if (_importing) ...[
+                Text('${_shown.floor()}%',
+                    style: const TextStyle(
+                        fontSize: 34,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFFD4AF37))),
+                Text('${(100 - _shown).ceil()}% remaining',
+                    style: const TextStyle(
+                        fontSize: 12, color: Colors.white54)),
+                const SizedBox(height: 12),
+              ],
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: LinearProgressIndicator(
-                  value: _progress > 0 ? _progress : null,
+                  value: _importing ? _shown / 100 : null,
                   backgroundColor: Colors.white24,
                   valueColor: AlwaysStoppedAnimation(
                       _hasError ? Colors.red : const Color(0xFFD4AF37)),
@@ -262,6 +383,17 @@ class _SplashScreenState extends State<SplashScreen>
                     color: _hasError ? Colors.red.shade300 : Colors.white70,
                     fontSize: 13),
               ),
+              if (_importing) ...[
+                const SizedBox(height: 20),
+                ..._weights.keys.map(_stageRow),
+                const SizedBox(height: 16),
+                const Text(
+                  'First-time setup — happens only once.\n'
+                  'Please keep the app open.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 11, color: Colors.white38),
+                ),
+              ],
             ],
           ),
         ),
