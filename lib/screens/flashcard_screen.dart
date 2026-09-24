@@ -960,18 +960,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                             fontWeight: FontWeight.w600)),
                   ]),
                 ),
-                GestureDetector(
-                  onTap: _deleteCard,
-                  child: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle, //
-                      color: Colors.red.withValues(alpha: 0.1), 
-                    ),
-                    child: const Icon(Icons.delete, size: 40, color: Colors.red),
-                  ),
-                ),
+ 
               ],
             ),
             const SizedBox(height: 55),
@@ -1104,6 +1093,26 @@ class _FlashcardScreenState extends State<FlashcardScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // Delete card — only available after the card is flipped
+            Align(
+              alignment: Alignment.centerRight,
+              child: GestureDetector(
+                onTap: _deleteCard,
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.red.withValues(alpha: 0.1),
+                    border:
+                        Border.all(color: Colors.red.withValues(alpha: 0.4)),
+                  ),
+                  child: const Icon(Icons.delete_outline,
+                      size: 20, color: Colors.red),
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,

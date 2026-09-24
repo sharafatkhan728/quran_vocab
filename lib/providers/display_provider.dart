@@ -29,8 +29,8 @@ class DisplayProvider extends ChangeNotifier {
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
-    _arabicFontSize = prefs.getDouble('arabic_size') ?? 26;
-    _urduFontSize = prefs.getDouble('urdu_size') ?? 13;
+    _arabicFontSize = prefs.getDouble('arabic_size') ?? 45;
+    _urduFontSize = prefs.getDouble('urdu_size') ?? 18;
     _arabicFont = prefs.getString('arabic_font') ?? 'uthmani';
     _grammarColorEnabled = prefs.getBool('grammar_color_enabled') ?? true;
     _enableWordColors = prefs.getBool('enable_word_colors') ?? true;
