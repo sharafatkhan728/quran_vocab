@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import '../services/crashlytics_service.dart';
 import '../services/sync_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -38,6 +40,11 @@ class UserProvider extends ChangeNotifier {
         if (previousUid != user.uid) {
           _profile = {};
         }
+        // Tags every subsequent crash report with this uid, so a crash you
+        // see in Crashlytics can be matched to a specific user's Firestore
+        // diagnostics doc (users/{uid}/diagnostics/current) when they
+        // report a problem.
+        unawaited(FirebaseCrashlytics.instance.setUserIdentifier(user.uid));
         _loadProfile(user.uid);
         // Restore data from cloud on first login or account switch
 
@@ -123,10 +130,20 @@ class UserProvider extends ChangeNotifier {
 
   Future<void> _loadLocalGoal() async {
     final prefs = await SharedPreferences.getInstance();
-    if (prefs.containsKey('daily_goal')) {
-      _localDailyGoal = prefs.getInt('daily_goal') ?? 5;
-      _hasExplicitGoal = true;
-    }
+    _localDailyGoal = prefs.getInt('daily_goal') ?? 5;
     notifyListeners();
+  }
+
+  /// A short, shareable ID the user can read out or paste into a support
+  /// email — lets you look up their Crashlytics install + Firestore
+  /// diagnostics without asking for their full email/uid.
+  Future<String> getSupportId() async {
+    try {
+      final crashId =
+          await FirebaseCrashlytics.instance.getInstallationId() ?? '';
+      return crashId.isEmpty ? (_user?.uid ?? 'unknown') : crashId;
+    } catch (_) {
+      return _user?.uid ?? 'unknown';
+    }
   }
 }

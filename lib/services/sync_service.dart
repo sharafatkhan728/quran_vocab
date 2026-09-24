@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import '../database/database_manager.dart';
 import 'crashlytics_service.dart';
+import 'diagnostics_service.dart';
 
 class SyncService {
   SyncService._();
@@ -157,6 +158,7 @@ class SyncService {
       );
 
       _emit(SyncStatus.done);
+      DiagnosticsService.requestWrite();
     } catch (e, stack) {
       debugPrint('SyncService.syncUp error: $e\n$stack');
       lastError = e.toString().length > 80
@@ -164,6 +166,7 @@ class SyncService {
           : e.toString();
       CrashlyticsService.recordError(e, stack, context: 'SyncService.syncUp');
       _emit(SyncStatus.error);
+      DiagnosticsService.requestWrite();
     } finally {
       _syncing = false;
       if (_syncQueued) {

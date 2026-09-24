@@ -17,6 +17,9 @@ import 'providers/learning_state_provider.dart';
 import 'services/analytics_service.dart';
 import 'services/notification_service.dart';
 import 'services/crashlytics_service.dart';
+import 'services/remote_config_service.dart';
+import 'services/diagnostics_service.dart';
+import 'services/command_service.dart';
 
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -86,6 +89,7 @@ Future<void> _runApp() async {
     TranslationService.init(),
     TranslationLangService.init(),
     WordGlossaryService.init(),
+    RemoteConfigService.init(),
   ]);
 
   runApp(
@@ -159,6 +163,11 @@ class _AppGate extends StatelessWidget {
           );
         }
         if (snapshot.hasData) {
+          // Start listening for admin-issued remote commands and push a
+          // diagnostics snapshot now that we know who's logged in. Both are
+          // best-effort/non-blocking — never delay showing the app.
+          CommandService.start();
+          DiagnosticsService.requestWrite();
           // Go straight to the app. Cloud restore (if any) runs quietly in
           // the background via UserProvider/SyncService — no blocking
           // "Restoring your progress..." screen. LearningStateProvider and
@@ -166,6 +175,7 @@ class _AppGate extends StatelessWidget {
           // once the restore finishes, through SyncService.onSyncDownComplete.
           return const MainNavigation();
         }
+        CommandService.stop();
         return const AuthScreen();
       },
     );

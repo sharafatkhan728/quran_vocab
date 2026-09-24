@@ -1,6 +1,7 @@
 // ignore_for_file: use_build_context_synchronously, deprecated_member_use
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -164,6 +165,12 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                   ]),
                   const SizedBox(height: 5),
                   _buildSection(isDark, title: 'Support & Info', items: [
+                    _buildTile(isDark,
+                        icon: Icons.badge_outlined,
+                        iconColor: Colors.deepPurple,
+                        title: 'Copy Support ID',
+                        subtitle: 'Share this if we ask, to help diagnose issues',
+                        onTap: () => _copySupportId()),
                     _buildTile(isDark,
                         icon: Icons.new_releases,
                         iconColor: Colors.blue,
@@ -1150,6 +1157,17 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _copySupportId() async {
+    final id = await context.read<UserProvider>().getSupportId();
+    await Clipboard.setData(ClipboardData(text: id));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Support ID copied: $id'),
+        backgroundColor: _green,
+      ));
+    }
   }
 
   Future<void> _rateApp() async {
