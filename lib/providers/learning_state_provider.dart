@@ -295,6 +295,56 @@ class LearningStateProvider extends ChangeNotifier {
     return toggle(id);
   }
 
+  // ── Bulk operations (used by the per-ayah "mark all known" toggle) ─────────
+  // Ek hi DB batch + ek hi notifyListeners — taake 20 words ke liye 20 baar
+  // poori app rebuild / SurahList reload na ho.
+
+  /// Diye gaye words (aur unke compound-group members) ko Known mark karta hai.
+  /// Sirf wahi cleans return karta hai jo sach mein Unknown -> Known hue,
+  /// taake caller baad mein exact undo kar sake.
+  Future<List<String>> markManyKnownByClean(Iterable<String> cleans) async {
+    await loadMorphologyDerivation();
+    final toMark = <String>{};
+    for (final c in cleans) {
+      for (final member in _groupFor(c)) {
+        final id = _cleanToId[member];
+        if (id == null) continue;
+        if (_knownIds[id] == true) continue;
+        toMark.add(member);
+      }
+    }
+    if (toMark.isEmpty) return [];
+    await _batchMarkKnown(toMark.map((c) => _cleanToId[c]!).toList());
+    return toMark.toList();
+  }
+
+  /// Diye gaye words (aur unke group members) ko Unknown karta hai.
+  /// Group expand isliye hota hai ke "any member known -> all known" wala
+  /// invariant na toote (warna next reload par stem dobara Known ho jata).
+  Future<void> markManyUnknownByClean(Iterable<String> cleans) async {
+    await loadMorphologyDerivation();
+    final ids = <int>{};
+    for (final c in cleans) {
+      for (final member in _groupFor(c)) {
+        final id = _cleanToId[member];
+        if (id != null && _knownIds[id] == true) ids.add(id);
+      }
+    }
+    if (ids.isEmpty) return;
+    final db = await DatabaseManager.db;
+    final batch = db.batch();
+    for (final id in ids) {
+      batch.delete('known_words',
+          where: 'vocab_word_id = ?', whereArgs: [id]);
+    }
+    await batch.commit(noResult: true);
+    for (final id in ids) {
+      _knownIds.remove(id);
+    }
+    notifyListeners();
+    SyncService.scheduleSyncUp();
+  }
+
   /// All known arabic_clean strings (for progress calculation).
   Set<String> get allKnownCleans {
     final result = <String>{};

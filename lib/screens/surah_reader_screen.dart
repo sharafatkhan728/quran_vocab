@@ -112,6 +112,9 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
 
   LearningStateProvider? _learning;
 
+  // Double-tap / race se bachne ke liye — jis ayah ka bulk toggle chal raha hai
+  final Set<int> _bulkBusy = {};
+
   @override
   void initState() {
     super.initState();
@@ -629,6 +632,145 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
     );
   }
 
+// ── Per-ayah "mark all known" toggle ──────────────────────────────────────
+
+  // Undo record SharedPreferences mein arabic_clean strings ke roop mein
+  // (vocab ids nahi — woh re-import par badal jaate hain).
+  String _bulkKey(int ayahNum) => 'ayah_bulk_known_${widget.surah.id}_$ayahNum';
+
+  /// Ayah ke woh unique words jo vocab_words mein maujood hain.
+  List<String> _ayahCleans(List<QuranWord> words, LearningStateProvider lp) {
+    final out = <String>{};
+    for (final w in words) {
+      if (w.isWaqf) continue;
+      final c = WordProgressService.normalizeArabic(w.arabic);
+      if (c.isEmpty || lp.vocabIdForClean(c) == null) continue;
+      out.add(c);
+    }
+    return out.toList();
+  }
+
+  /// Toggle ki state DERIVED hai (provider se) — alag se store nahi hoti,
+  /// isliye har screen ke saath hamesha sync rehti hai.
+  bool _isAyahFullyKnown(List<QuranWord> words, LearningStateProvider lp) {
+    final cleans = _ayahCleans(words, lp);
+    return cleans.isNotEmpty && cleans.every(lp.isKnown);
+  }
+
+  String _ayahCountLabel(List<QuranWord> words) {
+    final lp = context.read<LearningStateProvider>();
+    final real = words.where((w) => !w.isWaqf).toList();
+    final known = real
+        .where((w) => lp.isKnown(WordProgressService.normalizeArabic(w.arabic)))
+        .length;
+    return '$known/${real.length}';
+  }
+
+
+  Widget _buildAyahKnownIcon(
+      int ayahNum, List<QuranWord> words, bool isDark) {
+    final lp = context.read<LearningStateProvider>();
+    final on = _isAyahFullyKnown(words, lp);
+    return Tooltip(
+      message: on
+          ? 'Sab words Known — undo karne ke liye tap karo'
+          : 'Is ayah ke sab words Known karo',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _toggleAyahKnown(ayahNum, !on),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: on ? Colors.green : Colors.transparent,
+          ),
+          child: Icon(
+            Icons.done_all,
+            size: 16,
+            color: on ? Colors.white : Colors.grey,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _toggleAyahKnown(int ayahNum, bool turnOn) async {
+    final words = _ayahCache[ayahNum];
+    if (words == null || _bulkBusy.contains(ayahNum)) return;
+    final lp = context.read<LearningStateProvider>();
+    final cleans = _ayahCleans(words, lp);
+    if (cleans.isEmpty) return;
+
+    _bulkBusy.add(ayahNum);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = _bulkKey(ayahNum);
+
+      if (turnOn) {
+        // Sirf jo Unknown the wahi mark honge; unki list undo ke liye save.
+        final newly = await lp.markManyKnownByClean(cleans);
+        final merged = <String>{
+          ...(prefs.getStringList(key) ?? const <String>[]),
+          ...newly,
+        };
+        await prefs.setStringList(key, merged.toList());
+        if (!mounted) return;
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(
+            content: Text('✓ آیت $ayahNum کے ${newly.length} الفاظ یاد ہو گئے'),
+            duration: const Duration(seconds: 1),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Colors.green.shade800,
+          ));
+      } else {
+        final recorded = prefs.getStringList(key);
+        if (recorded == null || recorded.isEmpty) {
+          // Koi undo record nahi (words pehle se / flashcards se known the,
+          // ya doosre device se aaye) — poora ayah unknown karne se pehle poocho.
+          final ok = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Sab words Unknown karein?'),
+              content: Text(
+                  'Ayah $ayahNum ke sab words Known hain (yeh toggle se mark nahi hue the). '
+                  'Kya aap in sab ko Unknown karna chahte hain?'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('Cancel')),
+                ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange),
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text('Haan, Unknown karo',
+                        style: TextStyle(color: Colors.white))),
+              ],
+            ),
+          );
+          if (ok != true || !mounted) return;
+          await lp.markManyUnknownByClean(cleans);
+        } else {
+          // Exact undo — sirf woh words jo is toggle ne Known kiye the.
+          await lp.markManyUnknownByClean(recorded);
+        }
+        await prefs.remove(key);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(
+            content: Text('آیت $ayahNum پہلے جیسی ہو گئی'),
+            duration: const Duration(seconds: 1),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Colors.grey.shade700,
+          ));
+      }
+    } finally {
+      _bulkBusy.remove(ayahNum);
+    }
+  }
+
 Future<void> _onWordLongPress(QuranWord word) async {
     final normalized = WordProgressService.normalizeArabic(word.arabic);
     final learning = context.read<LearningStateProvider>();
@@ -1029,7 +1171,7 @@ Future<void> _onWordLongPress(QuranWord word) async {
             child: Row(children: [
               if (words != null)
                 Text(
-                  '${words.where((w) => w.isKnown && !w.isWaqf).length}/${words.where((w) => !w.isWaqf).length}',
+                  _ayahCountLabel(words),
                   style: TextStyle(
                       fontSize: 10,
                       color: isDark ? Colors.white38 : Colors.grey.shade400),
@@ -1048,7 +1190,9 @@ Future<void> _onWordLongPress(QuranWord word) async {
                   size: 18,
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 4),
+              if (words != null) _buildAyahKnownIcon(ayahNum, words, isDark),
+              const SizedBox(width: 4),
               GestureDetector(
                 onTap: () => _shareAyah(ayahNum),
                 child: const Icon(Icons.share_outlined,
