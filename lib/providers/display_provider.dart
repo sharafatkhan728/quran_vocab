@@ -73,6 +73,20 @@ class DisplayProvider extends ChangeNotifier {
     await _saveBool('enable_word_colors', value);
   }
 
+  /// Live size change (no disk write) — used while pinching / dragging a slider.
+  void setSizesLive({double? arabic, double? urdu}) {
+    if (arabic != null) _arabicFontSize = arabic;
+    if (urdu != null) _urduFontSize = urdu;
+    notifyListeners();
+  }
+
+  /// Persist the current sizes — call when the pinch / slider ends.
+  Future<void> saveSizes() async {
+    final p = await SharedPreferences.getInstance();
+    await p.setDouble('arabic_size', _arabicFontSize);
+    await p.setDouble('urdu_size', _urduFontSize);
+  }
+
   Future<void> setArabicSize(double v) async {
     await _ready;
     _arabicFontSize = v;

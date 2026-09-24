@@ -63,16 +63,27 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
   String get _wordCacheKey =>
       '${widget.surah.id}_${_selectedLang}_${DatabaseImporter.contentCacheVersion}';
 
-  double _arabicFontSize = 32;
-  double _urduFontSize = 16;
+  // Font sizes live in DisplayProvider (single source of truth), so Arabic,
+  // word-by-word meanings and translation all scale together.
+  double get _arabicFontSize => context.read<DisplayProvider>().arabicFontSize;
+  double get _urduFontSize => context.read<DisplayProvider>().urduFontSize;
 
   // ayahNumber → translation text
   final Map<int, String> _ayahTranslations = {};
   bool _showTranslation = true;
 
   Set<String> _bookmarks = {};
-  double _pinchScale = 1.0;
-  double _lastScale = 1.0;
+  // Pinch-to-zoom bookkeeping
+  double _pinchBaseArabic = 26;
+  double _pinchBaseUrdu = 13;
+  int _pinchPointers = 0;
+
+  void _pinchCapture(int pointers) {
+    final d = context.read<DisplayProvider>();
+    _pinchBaseArabic = d.arabicFontSize;
+    _pinchBaseUrdu = d.urduFontSize;
+    _pinchPointers = pointers;
+  }
 
   int _totalAyahs = 0;
   String _selectedLang = 'ur';
@@ -869,29 +880,30 @@ Future<void> _onWordLongPress(QuranWord word) async {
                       fontWeight: FontWeight.bold,
                       color: Theme.of(context).colorScheme.onSurface)),
               const SizedBox(height: 20),
-              Text('Arabic size: ${_arabicFontSize.round()}'),
-              Slider(
-                value: _arabicFontSize,
-                min: 18,
-                max: 50,
-                divisions: 16,
-                activeColor: const Color(0xFF1B4332),
-                onChanged: (v) {
-                  setModal(() => _arabicFontSize = v);
-                  setState(() => _arabicFontSize = v);
-                },
-              ),
-              Text('Urdu size: ${_urduFontSize.round()}'),
-              Slider(
-                value: _urduFontSize,
-                min: 10,
-                max: 30,
-                divisions: 10,
-                activeColor: const Color(0xFF1B4332),
-                onChanged: (v) {
-                  setModal(() => _urduFontSize = v);
-                  setState(() => _urduFontSize = v);
-                },
+              Consumer<DisplayProvider>(
+                builder: (_, d, __) => Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Arabic size: ${d.arabicFontSize.round()}'),
+                    Slider(
+                      value: d.arabicFontSize.clamp(18.0, 80.0).toDouble(),
+                      min: 18,
+                      max: 80,
+                      activeColor: const Color(0xFF1B4332),
+                      onChanged: (v) => d.setSizesLive(arabic: v),
+                      onChangeEnd: (_) => d.saveSizes(),
+                    ),
+                    Text('Meaning & translation size: ${d.urduFontSize.round()}'),
+                    Slider(
+                      value: d.urduFontSize.clamp(10.0, 40.0).toDouble(),
+                      min: 10,
+                      max: 40,
+                      activeColor: const Color(0xFF1B4332),
+                      onChanged: (v) => d.setSizesLive(urdu: v),
+                      onChangeEnd: (_) => d.saveSizes(),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 8),
               Text('Arabic Font',
@@ -985,6 +997,8 @@ Future<void> _onWordLongPress(QuranWord word) async {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    // Rebuild whenever font sizes change (pinch / settings sheet)
+    context.watch<DisplayProvider>();
 
     return Scaffold(
       backgroundColor:
@@ -1108,15 +1122,27 @@ Future<void> _onWordLongPress(QuranWord word) async {
                   ),
                 Expanded(
                   child: GestureDetector(
-                    onScaleStart: (_) => _lastScale = _pinchScale,
+                    onScaleStart: (d) => _pinchCapture(d.pointerCount),
                     onScaleUpdate: (d) {
-                      if (d.pointerCount < 2) return;
-                      setState(() {
-                        _pinchScale = (_lastScale * d.scale).clamp(0.7, 2.0);
-                        _arabicFontSize = (26 * _pinchScale).clamp(14, 52);
-                        _urduFontSize = (13 * _pinchScale).clamp(10, 26);
-                      });
+                      if (d.pointerCount < 2) {
+                        _pinchPointers = d.pointerCount;
+                        return;
+                      }
+                      // finger count changed mid-gesture -> scale restarts at 1.0
+                      if (d.pointerCount != _pinchPointers) {
+                        _pinchCapture(d.pointerCount);
+                      }
+                      context.read<DisplayProvider>().setSizesLive(
+                            arabic: (_pinchBaseArabic * d.scale)
+                                .clamp(18.0, 80.0)
+                                .toDouble(),
+                            urdu: (_pinchBaseUrdu * d.scale)
+                                .clamp(10.0, 40.0)
+                                .toDouble(),
+                          );
                     },
+                    onScaleEnd: (_) =>
+                        context.read<DisplayProvider>().saveSizes(),
                   child: _mushafMode
                       ? _buildMushafContinuous(isDark)
                       : _buildCardList(isDark),

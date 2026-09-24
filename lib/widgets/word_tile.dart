@@ -95,7 +95,7 @@ class WordTile extends StatelessWidget {
             const SizedBox(height: 2),
             if (display.showWbw && word.urduMeaning.isNotEmpty && !word.isKnown)
               SizedBox(
-                width: 50,
+                width: (urduFontSize * 3.85).clamp(50.0, 170.0),
                 child: Align(
                   alignment: Alignment.topCenter,
                   child: _buildMeaning(isDark, urduFontSize),

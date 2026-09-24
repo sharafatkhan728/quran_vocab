@@ -4,6 +4,7 @@ import 'package:sqflite/sqflite.dart';
 import '../database/database_manager.dart';
 import '../services/word_progress_service.dart';
 import 'package:quran/quran.dart' as quran;
+import '../widgets/progress_share_card.dart';
 
 class ProgressScreen extends StatefulWidget {
   const ProgressScreen({super.key});
@@ -194,6 +195,13 @@ class _ProgressScreenState extends State<ProgressScreen>
         centerTitle: true,
         backgroundColor: _green,
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            tooltip: 'Share my progress',
+            icon: const Icon(Icons.share),
+            onPressed: _loading ? null : _shareProgress,
+          ),
+        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: _gold))
@@ -226,6 +234,24 @@ class _ProgressScreenState extends State<ProgressScreen>
   }
 
   // ── Main ring ─────────────────────────────────────────────────────────────
+  void _shareProgress() {
+    if (_knownCount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Pehle kuch words Known karo, phir progress share karo'),
+        behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
+    ProgressShareCard.share(
+      context: context,
+      percent: _percent,
+      knownCount: _knownCount,
+      totalVocab: _totalVocab,
+      streak: _currentStreak,
+      completedSurahs: _completedSurahs.length,
+    );
+  }
+
   Widget _buildMainRing(bool isDark) {
     return AnimatedBuilder(
       animation: _ringAnim,
