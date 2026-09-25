@@ -482,6 +482,15 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     await _animateDismiss(toRight: true);
     if (!mounted) return;
 
+    // Reset every controller the same way _nextCard() does — delete only
+    // happens from the back face, so _flipCtrl is sitting at its "flipped"
+    // (value == 1.0) position and _dismissCtrl is stuck at its finished
+    // (value == 1.0) position. Without resetting both here, the next card
+    // renders starting on its back face instead of its front.
+    _flipCtrl.reset();
+    _dismissCtrl.reset();
+    _dragX = 0;
+
     // Remove from in-memory list so the deleted card is never saved/restored.
     setState(() {
       _cards.removeAt(_currentIndex);
@@ -498,7 +507,9 @@ class _FlashcardScreenState extends State<FlashcardScreen>
       setState(() => _sessionDone = true);
     } else if (_currentIndex < _cards.length) {
       _entryCtrl.reset();
+      _nextCardCtrl.reset();
       _entryCtrl.forward();
+      _nextCardCtrl.forward();
       _preloadCards(_currentIndex);
     }
   }
@@ -854,7 +865,12 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                       animation: _flipAnim,
                       builder: (_, __) {
                         final angle = _flipAnim.value * pi;
-                        final showFront = angle < pi / 2;
+                        // Guard with _hasBeenFlipped, not just the raw animation
+                        // value — after delete/next-card, _hasBeenFlipped is
+                        // reset to false via setState, so this guarantees the
+                        // front always shows for a fresh card even if the
+                        // flip controller's value hasn't settled yet.
+                        final showFront = !_hasBeenFlipped || angle < pi / 2;
                         return Transform(
                           alignment: Alignment.center,
                           transform: Matrix4.identity()
