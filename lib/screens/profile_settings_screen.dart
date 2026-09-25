@@ -1000,6 +1000,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   }
 
   Widget _wtnHeading(String emoji, String title) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.only(top: 4, bottom: 6),
       child: Row(
@@ -1008,10 +1009,10 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
           const SizedBox(width: 8),
           Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.bold,
-                color: _green),
+                color: isDark ? _gold : _green),
           ),
         ],
       ),
@@ -1052,14 +1053,16 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     );
   }
   void _showFAQ() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.help_outline, color: Color(0xFF1B4332)),
-            SizedBox(width: 8),
-            Text('FAQ'),
+            Icon(Icons.help_outline,
+                color: isDark ? _gold : const Color(0xFF1B4332)),
+            const SizedBox(width: 8),
+            const Text('FAQ'),
           ],
         ),
         content: SingleChildScrollView(
@@ -1137,6 +1140,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   }
 
   Widget _faqItem(String question, String answer) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Column(
@@ -1144,15 +1148,18 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
         children: [
           Text(
             question,
-            style: const TextStyle(
+            style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 13,
-                color: Color(0xFF1B4332)),
+                color: isDark ? _gold : const Color(0xFF1B4332)),
           ),
           const SizedBox(height: 6),
           Text(
             answer,
-            style: const TextStyle(fontSize: 12, height: 1.5),
+            style: TextStyle(
+                fontSize: 12,
+                height: 1.5,
+                color: isDark ? Colors.white70 : Colors.black87),
           ),
         ],
       ),
@@ -1160,7 +1167,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   }
 
   Future<void> _copySupportId() async {
-    final id = await context.read<UserProvider>().getSupportId();
+    final id = context.read<UserProvider>().getSupportId();
     await Clipboard.setData(ClipboardData(text: id));
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(

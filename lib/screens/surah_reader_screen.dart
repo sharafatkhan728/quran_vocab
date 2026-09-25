@@ -741,6 +741,7 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
           // Koi undo record nahi (words pehle se / flashcards se known the,
           // ya doosre device se aaye) — poora ayah unknown karne se pehle poocho.
           final ok = await showDialog<bool>(
+            // ignore: use_build_context_synchronously
             context: context,
             builder: (ctx) => AlertDialog(
               title: const Text('Sab words Unknown karein?'),

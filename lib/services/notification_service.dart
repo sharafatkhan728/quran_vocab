@@ -34,6 +34,7 @@ class NotificationService {
   static const _chDaily  = 'quran_daily';
   static const _chStreak = 'quran_streak';
   static const _chWeekly = 'quran_weekly';
+  static const _chEngagement = 'quran_engagement';
 
   // ── Notification IDs ─────────────────────────────────────────────────────
   static const _idReview   = 1;
@@ -41,6 +42,11 @@ class NotificationService {
   static const _idNewVocab = 3;
   static const _idStreak   = 4;
   static const _idWeekly   = 5;
+  static const _idEngagement = 6;
+
+  static const _allIds = [
+    _idReview, _idDaily, _idNewVocab, _idStreak, _idWeekly, _idEngagement,
+  ];
 
   // ── Reasonable daytime window for reminders. This IS the "quiet hours"
   // equivalent — just fixed and not user-configurable, like a standard app.
@@ -91,7 +97,7 @@ class NotificationService {
       // Channels only need to be created once, ever — recreating them on
       // every app launch is a harmless no-op to Android but still an
       // unnecessary round-trip. Skip it once we know they already exist.
-      if (prefs.getBool('notif_channels_created') != true) {
+      if (prefs.getBool('notif_channels_created_v2') != true) {
         final android = _plugin
             .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
         await android?.createNotificationChannel(const AndroidNotificationChannel(
@@ -114,7 +120,12 @@ class NotificationService {
           description: 'Weekly progress summary',
           importance: Importance.low,
         ));
-        await prefs.setBool('notif_channels_created', true);
+        await android?.createNotificationChannel(const AndroidNotificationChannel(
+          _chEngagement, 'Score & Vocabulary Boost',
+          description: 'Reminders to increase your score and learn more words',
+          importance: Importance.defaultImportance,
+        ));
+        await prefs.setBool('notif_channels_created_v2', true);
       }
     }
 
@@ -181,9 +192,53 @@ class NotificationService {
   /// that are actually relevant right now — nothing is scheduled "just to
   /// fill a slot". Actual delivery is still gated by the OS-level
   /// notification permission/settings, exactly like a standard app.
+  /// Cancels only notifications that haven't been delivered yet — leaves
+  /// anything already sitting in the notification tray untouched. Plain
+  /// cancelAll() removes BOTH pending AND already-shown notifications,
+  /// which was silently wiping notifications out of the tray the moment
+  /// the app was reopened (rescheduleAll runs on every launch).
+  static Future<void> _cancelPendingOnly() async {
+    List<int> activeIds = [];
+    try {
+      final active = await _plugin.getActiveNotifications();
+      activeIds = active.map((n) => n.id).whereType<int>().toList();
+    } catch (_) {
+      // Not supported on this device/OS version — safest fallback is to
+      // leave everything alone rather than risk wiping shown notifications.
+      return;
+    }
+    for (final id in _allIds) {
+      if (!activeIds.contains(id)) {
+        await _plugin.cancel(id);
+      }
+    }
+  }
+
   static Future<void> rescheduleAll() async {
     try {
-      await _plugin.cancelAll();
+      await _cancelPendingOnly();
+
+      // ── 0. Unconditional daily engagement reminder (3 PM – 7 PM) ─────────
+      {
+        const messages = [
+          'Increase your score! Learn a few more words now 📈',
+          'Your Quran vocabulary is waiting — boost your score today! ✨',
+          'A few more words = a higher score. Keep going! 🌟',
+          'Keep the momentum — review some words and grow your score! 🔥',
+        ];
+        final msg = messages[DateTime.now().day % messages.length];
+        final time =
+            await _reminderTimeFor('engagement', minHour: 15, maxHour: 19);
+        await _scheduleDaily(
+          id: _idEngagement,
+          channelId: _chEngagement,
+          title: 'Boost Your Score!',
+          body: msg,
+          hour: time.$1,
+          minute: time.$2,
+          payload: 'flashcards',
+        );
+      }
 
       final db = await DatabaseManager.db;
 

@@ -135,15 +135,9 @@ class UserProvider extends ChangeNotifier {
   }
 
   /// A short, shareable ID the user can read out or paste into a support
-  /// email — lets you look up their Crashlytics install + Firestore
-  /// diagnostics without asking for their full email/uid.
-  Future<String> getSupportId() async {
-    try {
-      final crashId =
-          await FirebaseCrashlytics.instance.getInstallationId() ?? '';
-      return crashId.isEmpty ? (_user?.uid ?? 'unknown') : crashId;
-    } catch (_) {
-      return _user?.uid ?? 'unknown';
-    }
-  }
+  /// email. This is their Firebase Auth uid — since setUserIdentifier()
+  /// above already tags every crash report with this same uid, it's all
+  /// that's needed to cross-reference Crashlytics and the Firestore
+  /// diagnostics doc for a specific user.
+  String getSupportId() => _user?.uid ?? 'unknown';
 }

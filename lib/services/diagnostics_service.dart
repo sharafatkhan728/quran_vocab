@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:device_info_plus/device_info_plus.dart';
@@ -68,11 +67,11 @@ class DiagnosticsService {
         for (final r in metaRows) r['key'] as String: r['value'] as String
       };
 
-      String crashlyticsId = '';
-      try {
-        crashlyticsId =
-            await FirebaseCrashlytics.instance.getInstallationId() ?? '';
-      } catch (_) {}
+      // Crashlytics crashes are tagged with this same uid via
+      // setUserIdentifier() in UserProvider, so the uid itself is the
+      // cross-reference key between Crashlytics and this diagnostics doc —
+      // no separate installation-ID lookup is needed.
+      final crashlyticsId = uid;
 
       final data = {
         'appVersion': info.version,

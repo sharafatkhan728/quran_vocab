@@ -158,6 +158,7 @@ Category: $catLabel
   }
 
   void _showSuccessDialog() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -167,16 +168,18 @@ Category: $catLabel
           children: [
             const Text('✅', style: TextStyle(fontSize: 48)),
             const SizedBox(height: 12),
-            const Text('Thank you!',
+            Text('Thank you!',
                 style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
-                    color: _green)),
+                    color: isDark ? Colors.white : _green)),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'Your message has been sent. We will review it and respond to you.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: Colors.grey),
+              style: TextStyle(
+                  fontSize: 13,
+                  color: isDark ? Colors.white70 : Colors.grey.shade700),
             ),
             const SizedBox(height: 16),
             Container(
