@@ -15,6 +15,9 @@ import '../services/translation_service.dart';
 import '../services/notification_service.dart';
 import 'morphology_sheet.dart';
 import '../repositories/vocabulary_repository.dart';
+import '../repositories/content_repository.dart';
+import '../repositories/morphology_repository.dart';
+import '../services/morphology_service.dart';
 import '../models/word.dart';
 import '../providers/learning_state_provider.dart';
 import '../services/analytics_service.dart';
@@ -36,6 +39,8 @@ class FlashWord {
   bool ayahLoaded = false;
   bool rootLoaded = false;
   int wordPositionInAyah = 1;
+  List<WordSegment> mainSegments = [];
+  List<QuranWord> sampleAyahWords = [];
 
   FlashWord({
     required this.arabic,
@@ -65,7 +70,24 @@ class FlashWord {
       if (source != null) {
         sampleAyahTranslation = await TranslationService.getAyahTranslation(
                 sampleSurah, sampleAyahNum,
-                scholar: scholarKey) ?? '';
+                scholar: scholarKey) ??
+            '';
+      }
+
+      final ayahRow =
+          await ContentRepository.getAyah(sampleSurah, sampleAyahNum);
+      if (ayahRow != null) {
+        final wordRows = await ContentRepository.getWordsForAyah(ayahRow.id);
+        final segMap = await ContentRepository.getSegmentsForAyah(ayahRow.id);
+        sampleAyahWords = wordRows.map((wr) {
+          final segRows = segMap[wr.id] ?? [];
+          return QuranWord(
+            id: '$sampleSurah:$sampleAyahNum:${wr.position}',
+            arabic: wr.arabicText,
+            isWaqf: wr.isWaqf == 1,
+            segments: segRows.map(WordSegment.fromRow).toList(),
+          );
+        }).toList();
       }
 
       ayahLoaded = true;
@@ -76,20 +98,17 @@ class FlashWord {
     if (rootLoaded || root.isNotEmpty) return;
     rootLoaded = true;
     try {
-      // Root is already stored in vocab_words JOIN roots — no in-memory
-      // corpus needed. VocabularyRepository.getByArabicClean() returns it
-      // directly from the SQLite query.
-      //
-      // IMPORTANT: use normalizedForLookup, not a re-derived normalizedArabic.
-      // normalizedForLookup IS the exact vocab_words.arabic_clean value this
-      // card was built from (it came straight from the frequency map's key),
-      // so this guarantees the root is fetched for the SAME row the rest of
-      // this card's data (meaning, frequency) already came from — no risk
-      // of an indirect re-normalization drifting onto a different row.
       final vocab =
           await VocabularyRepository.getByArabicClean(normalizedForLookup);
       if (vocab != null && vocab.root.isNotEmpty) {
         root = vocab.root;
+      }
+      if (sampleSurah > 0 && sampleAyahNum > 0 && wordPositionInAyah > 0) {
+        final segmentRows = await MorphologyRepository.getSegmentsByPosition(
+            sampleSurah, sampleAyahNum, wordPositionInAyah);
+        mainSegments = segmentRows
+            .map((row) => WordSegment.fromRow(row as dynamic))
+            .toList();
       }
     } catch (_) {}
   }
@@ -140,7 +159,6 @@ class _FlashcardScreenState extends State<FlashcardScreen>
   late Animation<double> _nextCardScale;
   late Animation<double> _nextCardOffset;
 
-
   @override
   void initState() {
     super.initState();
@@ -156,8 +174,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
         CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOutCubic));
     _entryFade = Tween<double>(begin: 0, end: 1)
         .animate(CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOut));
-    _dismissFade = Tween<double>(begin: 1, end: 0)
-        .animate(CurvedAnimation(parent: _dismissCtrl, curve: Curves.easeInCubic));
+    _dismissFade = Tween<double>(begin: 1, end: 0).animate(
+        CurvedAnimation(parent: _dismissCtrl, curve: Curves.easeInCubic));
     // DON'T initialize _dismissOffset here - create it in _animateDismiss() instead
     _dismissOffset = Tween<Offset>(begin: Offset.zero, end: Offset.zero)
         .animate(_dismissCtrl); // Dummy, will be replaced
@@ -169,8 +187,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     _nextCardOffset = Tween<double>(begin: 12.0, end: 0.0).animate(
         CurvedAnimation(parent: _nextCardCtrl, curve: Curves.easeOutCubic));
     _loadSession();
-    TranslationLangService.langNotifier
-        .addListener(_onTranslationLangChanged);
+    TranslationLangService.langNotifier.addListener(_onTranslationLangChanged);
   }
 
   void _onTranslationLangChanged() {
@@ -195,7 +212,7 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     _dismissCtrl.dispose();
     _nextCardCtrl.dispose();
     super.dispose();
-        TranslationLangService.langNotifier
+    TranslationLangService.langNotifier
         .removeListener(_onTranslationLangChanged);
   }
 
@@ -230,11 +247,9 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     if (confirm == true && mounted) {
       setState(() => _loading = true);
       final freq = await WordProgressService.getWordFrequencies();
-      final knownCleans =
-          context.read<LearningStateProvider>().allKnownCleans;
+      final knownCleans = context.read<LearningStateProvider>().allKnownCleans;
       final extra = await SrsService.buildExtraSession(
-          freq.keys.where((w) => !_hiddenStandalone.contains(w)).toList(),
-          10,
+          freq.keys.where((w) => !_hiddenStandalone.contains(w)).toList(), 10,
           knownCleans: knownCleans);
       if (extra.isEmpty) {
         setState(() => _loading = false);
@@ -304,10 +319,9 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     final dailyGoal = context.read<UserProvider>().dailyGoal;
     final allWords =
         freq.keys.where((w) => !_hiddenStandalone.contains(w)).toList();
-    final knownCleans =
-        context.read<LearningStateProvider>().allKnownCleans;
-    final result =
-        await SrsService.buildSession(allWords, dailyGoal, knownCleans: knownCleans);
+    final knownCleans = context.read<LearningStateProvider>().allKnownCleans;
+    final result = await SrsService.buildSession(allWords, dailyGoal,
+        knownCleans: knownCleans);
 
     if (result.isEmpty) {
       if (mounted) {
@@ -775,7 +789,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                   // Resting: scale 0.92, top offset 14px, side inset 8px
                   // Revealed: scale 1.0, top offset 20px (matches main card padding), side inset 0
                   final scale = 0.92 + 0.08 * p;
-                  final topOffset = 14.0 - (14.0 - 20.0) * p; // 14→20 (Padding.only(top:20))
+                  final topOffset =
+                      14.0 - (14.0 - 20.0) * p; // 14→20 (Padding.only(top:20))
                   final sideInset = 8.0 * (1.0 - p);
                   final nextCard = _cards[_currentIndex + 1];
                   return Positioned(
@@ -790,20 +805,26 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                         child: Container(
                           width: double.infinity,
                           constraints: BoxConstraints(
-                            minHeight: MediaQuery.of(context).size.height * 0.70,
-                            maxHeight: MediaQuery.of(context).size.height * 0.72,
+                            minHeight:
+                                MediaQuery.of(context).size.height * 0.70,
+                            maxHeight:
+                                MediaQuery.of(context).size.height * 0.72,
                           ),
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(24),
                             gradient: LinearGradient(
                               colors: isDark
-                                  ? [const Color(0xFF1A2E1F), const Color(0xFF0D1B12)]
+                                  ? [
+                                      const Color(0xFF1A2E1F),
+                                      const Color(0xFF0D1B12)
+                                    ]
                                   : [Colors.white, const Color(0xFFFDF9F0)],
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                             ),
                             border: Border.all(
-                                color: _gold.withValues(alpha: 0.30), width: 1.5),
+                                color: _gold.withValues(alpha: 0.30),
+                                width: 1.5),
                             boxShadow: [
                               BoxShadow(
                                 color: Colors.black.withValues(alpha: 0.18),
@@ -852,8 +873,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                   return Transform(
                     alignment: Alignment.center,
                     transform: Matrix4.identity()
-                     // ignore: deprecated_member_use
-                     ..translate(tx, 0.0)        
+                      // ignore: deprecated_member_use
+                      ..translate(tx, 0.0)
                       ..rotateZ(rot),
                     child: ScaleTransition(
                       scale: _entryScale,
@@ -978,19 +999,14 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                             fontWeight: FontWeight.w600)),
                   ]),
                 ),
- 
               ],
             ),
             const SizedBox(height: 55),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(
-                  _current.arabic,
-                  textDirection: TextDirection.rtl,
-                  textAlign: TextAlign.center,
-                  style: _arabicStyle(display, isDark, 60), 
-                ),
+                _buildColoredWord(display, isDark, _current.arabic,
+                    _current.mainSegments, 60),
                 const SizedBox(width: 10),
                 GestureDetector(
                   onTap: _playAudio,
@@ -1058,15 +1074,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
             const SizedBox(height: 12),
             if (_current.sampleAyahArabic.isNotEmpty)
               Flexible(
-                child: Text(
-                  _current.sampleAyahArabic,
-                  textDirection: TextDirection.rtl,
-                  textAlign: TextAlign.center,
-                  style:
-                      _arabicStyle(display, isDark, 25).copyWith(height: 1.9),
-                  maxLines: 5,
-                  overflow: TextOverflow.ellipsis,
-                ),
+                child: _buildColoredAyah(display, isDark,
+                    _current.sampleAyahWords, _current.sampleAyahArabic, 25),
               )
             else
               Text('Loading ayah...',
@@ -1158,11 +1167,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                     ]),
                   ),
                 const SizedBox(width: 10),
-                Text(
-                  _current.arabic,
-                  textDirection: TextDirection.rtl,
-                  style: _arabicStyle(display, isDark, 36),
-                ),
+                _buildColoredWord(display, isDark, _current.arabic,
+                    _current.mainSegments, 36),
                 const SizedBox(width: 10),
                 GestureDetector(
                   onTap: _playAudio,
@@ -1211,13 +1217,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
                   border: Border.all(color: _green.withValues(alpha: 0.2)),
                 ),
                 child: Column(children: [
-                  Text(
-                    _current.sampleAyahArabic,
-                    textDirection: TextDirection.rtl,
-                    textAlign: TextAlign.center,
-                    style:
-                        _arabicStyle(display, isDark, 23).copyWith(height: 1.9),
-                  ),
+                  _buildColoredAyah(display, isDark, _current.sampleAyahWords,
+                      _current.sampleAyahArabic, 23),
                   const SizedBox(height: 8),
                   if (_current.sampleAyahTranslation.isEmpty)
                     const SizedBox(
@@ -1515,7 +1516,8 @@ class _FlashcardScreenState extends State<FlashcardScreen>
               style: OutlinedButton.styleFrom(
                 foregroundColor: _green,
                 side: BorderSide(color: _green.withValues(alpha: 0.6)),
-                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14)),
               ),
@@ -1712,22 +1714,112 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     );
   }
 
-  TextStyle _arabicStyle(DisplayProvider d, bool isDark, double size) {
-    final color = isDark ? Colors.white : const Color(0xFF1A1A1A);
+  TextStyle _arabicStyle(DisplayProvider d, bool isDark, double size,
+      {Color? color}) {
+    final c = color ?? (isDark ? Colors.white : const Color(0xFF1A1A1A));
     switch (d.arabicFont) {
       case 'indopak':
         return TextStyle(
-            fontFamily: 'IndoPak', fontSize: size, color: color, height: 1.4);
+            fontFamily: 'IndoPak', fontSize: size, color: c, height: 1.4);
       case 'noorehuda':
         return TextStyle(
-            fontFamily: 'NoorehudaFont',
-            fontSize: size,
-            color: color,
-            height: 1.4);
+            fontFamily: 'NoorehudaFont', fontSize: size, color: c, height: 1.4);
       default:
-        return GoogleFonts.amiri(
-            fontSize: size, color: color, height: 1.4);
+        return GoogleFonts.amiri(fontSize: size, color: c, height: 1.4);
     }
+  }
+
+  static Color _posColor(String pos, bool isDark) {
+    switch (pos) {
+      case 'V':
+        return Colors.red.shade400;
+      case 'N':
+        return Colors.blue.shade400;
+      case 'PN':
+        return Colors.blue.shade600;
+      case 'P':
+        return Colors.green.shade500;
+      case 'CONJ':
+        return Colors.green.shade400;
+      case 'PRON':
+        return Colors.orange.shade400;
+      case 'DEM':
+        return Colors.orange.shade300;
+      case 'REL':
+        return Colors.purple.shade400;
+      case 'ADJ':
+        return Colors.teal.shade400;
+      case 'NEG':
+        return Colors.red.shade300;
+      default:
+        return isDark ? Colors.white70 : Colors.grey.shade700;
+    }
+  }
+
+  static Color _segColor(WordSegment? seg, bool isDark) {
+    final hex = seg?.colorHex ?? '';
+    if (hex.isNotEmpty && hex != '#888888') {
+      try {
+        return Color(int.parse(hex.replaceFirst('#', '0xFF')));
+      } catch (_) {}
+    }
+    return _posColor(seg?.pos ?? '', isDark);
+  }
+
+  Widget _buildColoredWord(DisplayProvider display, bool isDark, String arabic,
+      List<WordSegment> segments, double size) {
+    if (segments.length <= 1) {
+      final color = segments.isNotEmpty
+          ? _segColor(segments.first, isDark)
+          : (isDark ? Colors.white : const Color(0xFF1A1A1A));
+      return Text(arabic,
+          textDirection: TextDirection.rtl,
+          textAlign: TextAlign.center,
+          style: _arabicStyle(display, isDark, size, color: color));
+    }
+    final segTexts = MorphologyService.extractSegmentTexts(arabic, segments);
+    return RichText(
+      textDirection: TextDirection.rtl,
+      text: TextSpan(
+        children: segTexts.map((st) {
+          final color = _segColor(st.seg, isDark);
+          return TextSpan(
+              text: st.text,
+              style: _arabicStyle(display, isDark, size, color: color));
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildColoredAyah(DisplayProvider display, bool isDark,
+      List<QuranWord> words, String fallbackText, double size) {
+    if (words.isEmpty) {
+      return Text(fallbackText,
+          textDirection: TextDirection.rtl,
+          textAlign: TextAlign.center,
+          style: _arabicStyle(display, isDark, size).copyWith(height: 1.9),
+          maxLines: 5,
+          overflow: TextOverflow.ellipsis);
+    }
+    return Wrap(
+      alignment: WrapAlignment.center,
+      textDirection: TextDirection.rtl,
+      children: words.map((w) {
+        if (w.isWaqf) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 1),
+            child: Text(w.arabic,
+                textDirection: TextDirection.rtl,
+                style: _arabicStyle(display, isDark, size * 0.7,
+                    color: isDark ? Colors.white38 : Colors.grey.shade400)),
+          );
+        }
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          child: _buildColoredWord(display, isDark, w.arabic, w.segments, size),
+        );
+      }).toList(),
+    );
   }
 }
 
