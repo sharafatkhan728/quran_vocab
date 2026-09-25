@@ -413,8 +413,10 @@ class _FlashcardScreenState extends State<FlashcardScreen>
 
     if (wasNew) await SrsService.recordNewCardReviewed();
 
-    // Reschedule notifications after marking word as known
-    unawaited(NotificationService.rescheduleAll());
+    // Reschedule notifications after marking word as known — debounced so
+    // rapid successive swipes don't each trigger the full (DB-heavy)
+    // rescheduleAll() and compete with the next card's own loading.
+    NotificationService.scheduleReschedule();
 
     if (mounted) {
       setState(() {

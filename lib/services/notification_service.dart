@@ -1,4 +1,5 @@
 // ignore_for_file: unused_local_variable, use_build_context_synchronously
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
@@ -28,6 +29,21 @@ import '../screens/main_navigation.dart';
 class NotificationService {
   static final _plugin = FlutterLocalNotificationsPlugin();
   static bool _initialized = false;
+  static Timer? _rescheduleDebounce;
+
+  /// Debounced version of [rescheduleAll] — call this from hot paths (like
+  /// a single flashcard swipe) instead of calling rescheduleAll() directly.
+  /// rescheduleAll() runs several SQLite queries (including a 365-day streak
+  /// scan) on the app's single shared DB connection; calling it on every
+  /// swipe made it compete with the next card's own data loading and caused
+  /// visible lag. This collapses rapid, repeated calls into one, 3 seconds
+  /// after the last one — same pattern as SyncService.scheduleSyncUp().
+  static void scheduleReschedule() {
+    _rescheduleDebounce?.cancel();
+    _rescheduleDebounce = Timer(const Duration(seconds: 3), () {
+      unawaited(rescheduleAll());
+    });
+  }
 
   // ── Channel IDs ───────────────────────────────────────────────────────────
   static const _chReview = 'quran_review';

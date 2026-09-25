@@ -135,7 +135,14 @@ class SrsRepository {
       INSERT INTO user_meta(key, value) VALUES('srs_total_points', ?)
       ON CONFLICT(key) DO UPDATE SET value = CAST(CAST(value AS INTEGER) + ? AS TEXT)
     ''', ['$pts', pts]);
-    await SyncService.syncUp();
+    // Debounced, non-blocking — same pattern already used everywhere else
+    // (upsertCard, saveLastReadAyah, LearningStateProvider.setKnown, etc).
+    // The previous direct `await SyncService.syncUp()` here forced every
+    // single "Known" swipe to block on a full Firestore round-trip before
+    // the next flashcard could appear — this is what caused the lag.
+    // Points are already durably saved to SQLite above; only the cloud
+    // push is deferred a few seconds, exactly like every other write path.
+    SyncService.scheduleSyncUp();
   }
 
   static Future<int> getCurrentSession() async {
