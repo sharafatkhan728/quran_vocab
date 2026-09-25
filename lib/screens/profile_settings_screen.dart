@@ -1436,9 +1436,42 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
         ],
       ),
     );
-    if (confirm == true) {
-      await context.read<UserProvider>().signOut();
-    }
+    if (confirm != true || !mounted) return;
+
+    // signOut() intentionally waits for the final cloud sync to finish
+    // before actually signing out — that part must stay as-is so progress
+    // is never lost. This dialog is purely visual: it tells the user
+    // something is happening on a slow connection instead of the screen
+    // looking frozen, and closes itself the moment signOut() resolves.
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const PopScope(
+        canPop: false,
+        child: Center(
+          child: Padding(
+            padding: EdgeInsets.all(20),
+            child: Card(
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 28, vertical: 22),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(color: Color(0xFF1B4332)),
+                    SizedBox(height: 14),
+                    Text('Logging out...'),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await context.read<UserProvider>().signOut();
+
+    if (mounted) Navigator.pop(context); // close the loading dialog
   }
 
   Future<void> _deleteAccount() async {
