@@ -824,11 +824,11 @@ class _SurahCardState extends State<_SurahCard>
                               value: widget.surahProgress / 100,
                               strokeWidth: 4,
                               backgroundColor:
-                                  Colors.grey.withValues(alpha: 0.2),
+                                  const Color.fromARGB(255, 211, 212, 204).withValues(alpha: 0.2),
                               valueColor: AlwaysStoppedAnimation(
                                 widget.surahProgress >= 100
                                     ? _gold
-                                    : _green.withValues(alpha: 0.7),
+                                    : const Color.fromARGB(255, 92, 179, 105).withValues(alpha: 0.7),
                               ),
                             ),
                             Text(
