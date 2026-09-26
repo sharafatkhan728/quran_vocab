@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../data/country_list.dart';
 import '../models/leaderboard_models.dart';
 import '../providers/user_provider.dart';
@@ -284,6 +285,23 @@ class _LeaderboardProfileScreenState extends State<LeaderboardProfileScreen> {
                 ],
               ),
             ),
+          if (_friendCode != null && _friendCode!.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => SharePlus.instance.share(ShareParams(
+                  text: 'Add me as a friend on Quran Kalima! 🕌\n\n'
+                      'My friend code: $_friendCode\n\n'
+                      'Open the app → Community → Friends → tap "Add Friend" → enter this code.',
+                )),
+                icon: const Icon(Icons.share, size: 16, color: Colors.white),
+                label: const Text('Share My Code',
+                    style: TextStyle(color: Colors.white)),
+                style: ElevatedButton.styleFrom(backgroundColor: _gold),
+              ),
+            ),
+          ],
           const SizedBox(height: 20),
           ElevatedButton(
             onPressed: _saving ? null : _save,

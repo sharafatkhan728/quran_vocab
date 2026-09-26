@@ -8,6 +8,12 @@ import 'leaderboard_profile_screen.dart';
 
 class LeaderboardBody extends StatefulWidget {
   const LeaderboardBody({super.key});
+
+  /// Bumped by CommunityScreen after the user returns from the Settings
+  /// (profile) screen, so the leaderboard tabs refresh with the new
+  /// country/city/visibility choices without needing a manual pull-to-refresh.
+  static final ValueNotifier<int> refreshNotifier = ValueNotifier<int>(0);
+
   @override
   State<LeaderboardBody> createState() => _LeaderboardBodyState();
 }
@@ -27,11 +33,13 @@ class _LeaderboardBodyState extends State<LeaderboardBody>
   void initState() {
     super.initState();
     _tabs = TabController(length: 4, vsync: this);
+    LeaderboardBody.refreshNotifier.addListener(_check);
     _check();
   }
 
   @override
   void dispose() {
+    LeaderboardBody.refreshNotifier.removeListener(_check);
     _tabs.dispose();
     super.dispose();
   }
@@ -98,31 +106,17 @@ class _LeaderboardBodyState extends State<LeaderboardBody>
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-          child: Row(
-            children: [
-              Expanded(
-                child: TabBar(
-                  controller: _tabs,
-                  isScrollable: true,
-                  indicatorColor: _gold,
-                  labelColor: _green,
-                  unselectedLabelColor: Colors.grey,
-                  tabs: const [
-                    Tab(text: '🌍 Global'),
-                    Tab(text: '🇮🇳 Country'),
-                    Tab(text: '🏙️ City'),
-                    Tab(text: '👥 Friends'),
-                  ],
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.settings, color: _green),
-                onPressed: () async {
-                  await Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => const LeaderboardProfileScreen()));
-                  _check();
-                },
-              ),
+          child: TabBar(
+            controller: _tabs,
+            isScrollable: true,
+            indicatorColor: _gold,
+            labelColor: _green,
+            unselectedLabelColor: Colors.grey,
+            tabs: const [
+              Tab(text: '🌍 Global'),
+              Tab(text: '🇮🇳 Country'),
+              Tab(text: '🏙️ City'),
+              Tab(text: '👥 Friends'),
             ],
           ),
         ),
@@ -204,7 +198,14 @@ class _LbListState extends State<_LbList> {
     _future = widget.fetcher();
   }
 
-  void _retry() => setState(() => _future = widget.fetcher());
+  /// Forces an immediate push of the current user's latest score before
+  /// refetching — this is what makes "pull to refresh" show your own
+  /// up-to-date score right away instead of waiting for the periodic sync.
+  Future<void> _retry() async {
+    await LeaderboardService.pushNow(force: true);
+    if (!mounted) return;
+    setState(() => _future = widget.fetcher());
+  }
 
   @override
   Widget build(BuildContext context) {

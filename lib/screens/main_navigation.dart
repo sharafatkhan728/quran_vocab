@@ -12,6 +12,7 @@ import '../services/announcement_service.dart';
 import '../services/surah_prefetch_service.dart';
 import '../services/sync_service.dart';
 import '../services/leaderboard_service.dart';
+import '../services/social_service.dart';
 
 class MainNavigation extends StatefulWidget {
   const MainNavigation({super.key});
@@ -65,11 +66,15 @@ class _MainNavigationState extends State<MainNavigation> with WidgetsBindingObse
     Future.delayed(const Duration(seconds: 2), () {
       unawaited(SurahPrefetchService.start());
     });
-    // Leaderboard sync — throttled internally to min 10 min gap, safe to
+    // Leaderboard sync — throttled internally to min gap, safe to
     // call this often (e.g. every 15 min while app is foreground).
     LeaderboardService.scheduleSync();
+    SocialService.refreshPendingRequestCount();
     Timer.periodic(const Duration(minutes: 15), (_) {
-      if (mounted) LeaderboardService.scheduleSync();
+      if (mounted) {
+        LeaderboardService.scheduleSync();
+        SocialService.refreshPendingRequestCount();
+      }
     });
   }
 
@@ -153,23 +158,37 @@ class _MainNavigationState extends State<MainNavigation> with WidgetsBindingObse
             if (i == 1) VocabularyScreen.notifyVisited();
           },
           backgroundColor: Theme.of(context).cardColor,
-          destinations: const [
-            NavigationDestination(
+          destinations: [
+            const NavigationDestination(
               icon: Icon(Icons.menu_book_outlined),
               selectedIcon: Icon(Icons.menu_book),
               label: 'Quran',
             ),
-            NavigationDestination(
+            const NavigationDestination(
               icon: Icon(Icons.abc_outlined),
               selectedIcon: Icon(Icons.abc),
               label: 'Vocabulary',
             ),
             NavigationDestination(
-              icon: Icon(Icons.groups_outlined),
-              selectedIcon: Icon(Icons.groups),
+              icon: ValueListenableBuilder<int>(
+                valueListenable: SocialService.pendingRequestCount,
+                builder: (_, count, __) => Badge(
+                  isLabelVisible: count > 0,
+                  label: Text('$count'),
+                  child: const Icon(Icons.groups_outlined),
+                ),
+              ),
+              selectedIcon: ValueListenableBuilder<int>(
+                valueListenable: SocialService.pendingRequestCount,
+                builder: (_, count, __) => Badge(
+                  isLabelVisible: count > 0,
+                  label: Text('$count'),
+                  child: const Icon(Icons.groups),
+                ),
+              ),
               label: 'Community',
             ),
-            NavigationDestination(
+            const NavigationDestination(
               icon: Icon(Icons.person_outline),
               selectedIcon: Icon(Icons.person),
               label: 'Profile',

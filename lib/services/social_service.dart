@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
 import '../models/leaderboard_models.dart';
 import 'leaderboard_service.dart';
 
@@ -12,6 +13,31 @@ class SocialService {
 
   static final _db = FirebaseFirestore.instance;
   static String? get _uid => FirebaseAuth.instance.currentUser?.uid;
+
+  /// How many friend requests are currently waiting for this user.
+  /// Refreshed periodically (see MainNavigation) since we have no push
+  /// notifications on the free Firestore tier — this is the closest
+  /// free substitute: a badge that catches up within ~15 minutes.
+  static final ValueNotifier<int> pendingRequestCount = ValueNotifier<int>(0);
+
+  static Future<void> refreshPendingRequestCount() async {
+    final uid = _uid;
+    if (uid == null) {
+      pendingRequestCount.value = 0;
+      return;
+    }
+    try {
+      final agg = await _db
+          .collection('friend_requests')
+          .doc(uid)
+          .collection('incoming')
+          .count()
+          .get();
+      pendingRequestCount.value = agg.count ?? 0;
+    } catch (_) {
+      // Non-fatal — badge just stays at its last known value.
+    }
+  }
 
   // ── Friend requests ──────────────────────────────────────────────────────
 

@@ -1,6 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 import '../database/database_manager.dart';
 import '../services/sync_service.dart';
+import '../services/leaderboard_service.dart';
 
 class SrsCardRow {
   final int vocabWordId;
@@ -143,6 +144,9 @@ class SrsRepository {
     // Points are already durably saved to SQLite above; only the cloud
     // push is deferred a few seconds, exactly like every other write path.
     SyncService.scheduleSyncUp();
+    // Also queue a leaderboard score refresh — respects its own throttle,
+    // so this never spams Firestore even on rapid flashcard swipes.
+    LeaderboardService.scheduleSync();
   }
 
   static Future<int> getCurrentSession() async {

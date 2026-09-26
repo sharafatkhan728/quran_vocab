@@ -15,7 +15,7 @@ class LeaderboardService {
   LeaderboardService._();
 
   static final _db = FirebaseFirestore.instance;
-  static const _minPushInterval = Duration(minutes: 10);
+  static const _minPushInterval = Duration(minutes: 3);
   static const _lastPushKey = 'leaderboard_last_push_ms';
   static const _hasProfileKey = 'leaderboard_has_profile';
 

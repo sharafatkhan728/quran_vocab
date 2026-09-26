@@ -78,6 +78,31 @@ class _AuthScreenState extends State<AuthScreen>
     }
   }
 
+  Future<void> _resetPassword() async {
+    final email = _emailCtrl.text.trim();
+    if (email.isEmpty) {
+      setState(() => _error = 'Pehle apna email field mein likhein.');
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Password reset link $email pe bhej di gayi hai.'),
+          duration: const Duration(seconds: 4),
+        ));
+      }
+    } on FirebaseAuthException catch (e) {
+      setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
   Future<void> _registerEmail() async {
     setState(() {
       _loading = true;
@@ -89,6 +114,15 @@ class _AuthScreenState extends State<AuthScreen>
         password: _passCtrl.text.trim(),
       );
       await cred.user?.updateDisplayName(_nameCtrl.text.trim());
+      // Naya account bane ke turant baad verification email bhej do —
+      // isse fake/typo emails filter ho jate hain.
+      await cred.user?.sendEmailVerification();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Verification email bhej di gayi hai — apna inbox check karein.'),
+          duration: Duration(seconds: 4),
+        ));
+      }
     } on FirebaseAuthException catch (e) {
       setState(() => _error = e.message);
     } finally {
@@ -226,6 +260,7 @@ class _AuthScreenState extends State<AuthScreen>
                             buttonLabel: 'Sign In',
                             onSubmit: _signInEmail,
                             loading: _loading,
+                            onForgotPassword: _resetPassword,
                             isDark: isDark,
                           ),
                           _EmailForm(
@@ -238,6 +273,7 @@ class _AuthScreenState extends State<AuthScreen>
                             buttonLabel: 'Create Account',
                             onSubmit: _registerEmail,
                             loading: _loading,
+                            onForgotPassword: _resetPassword,
                             isDark: isDark,
                           ),
                         ],
@@ -334,6 +370,7 @@ class _EmailForm extends StatelessWidget {
   final String buttonLabel;
   final VoidCallback onSubmit;
   final bool loading;
+  final VoidCallback onForgotPassword;
   final bool isDark;
 
   const _EmailForm({
@@ -345,6 +382,7 @@ class _EmailForm extends StatelessWidget {
     required this.buttonLabel,
     required this.onSubmit,
     required this.loading,
+    required this.onForgotPassword,
     required this.isDark,
   });
 
@@ -387,6 +425,16 @@ class _EmailForm extends StatelessWidget {
               fillColor: fillColor,
             ),
           ),
+          if (buttonLabel == 'Sign In') ...[
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: onForgotPassword,
+                child: const Text('Forgot Password?',
+                    style: TextStyle(color: Color(0xFF1B4332), fontSize: 13)),
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
