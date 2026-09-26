@@ -106,9 +106,7 @@ class FlashWord {
       if (sampleSurah > 0 && sampleAyahNum > 0 && wordPositionInAyah > 0) {
         final segmentRows = await MorphologyRepository.getSegmentsByPosition(
             sampleSurah, sampleAyahNum, wordPositionInAyah);
-        mainSegments = segmentRows
-            .map((row) => WordSegment.fromRow(row as dynamic))
-            .toList();
+        mainSegments = segmentRows.map(WordSegment.fromRow).toList();
       }
     } catch (_) {}
   }

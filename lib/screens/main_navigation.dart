@@ -140,6 +140,7 @@ class _MainNavigationState extends State<MainNavigation> with WidgetsBindingObse
               _currentIndex = i;
             });
             unawaited(AnalyticsService.logScreenView(_tabNames[i]));
+            if (i == 1) VocabularyScreen.notifyVisited();
           },
           backgroundColor: Theme.of(context).cardColor,
           destinations: const [

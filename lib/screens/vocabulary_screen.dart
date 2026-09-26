@@ -12,6 +12,14 @@ import '../services/word_glossary_service.dart';
 class VocabularyScreen extends StatefulWidget {
   const VocabularyScreen({super.key});
 
+  // Bumped by MainNavigation whenever the user taps the Vocabulary bottom
+  // nav destination — VocabularyScreen stays alive inside an IndexedStack,
+  // so its own initState only ever runs once at app startup, before the
+  // tab is ever actually visible. Listening for this counter is how the
+  // swipe-hint animation knows to replay only when the tab is opened.
+  static final ValueNotifier<int> visitNotifier = ValueNotifier<int>(0);
+  static void notifyVisited() => visitNotifier.value++;
+
   @override
   State<VocabularyScreen> createState() => _VocabularyScreenState();
 }
@@ -30,16 +38,39 @@ class _VocabularyScreenState extends State<VocabularyScreen>
   // hidden from every tab — their known/unknown status no longer gates
   // compound-word derivation, so listing them separately just adds noise.
   static const _hiddenStandalone = {'و', 'ف', 'ال'};
-  String _sortBy = 'frequency';
+  String _sortBy = 'freq_desc';
   final TextEditingController _searchController = TextEditingController();
+  double _overallPercent = 0;
+  int _swipeDemoKey = 0;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 3, vsync: this, initialIndex: 2);
+    _tabController.addListener(_onTabChangedForSwipeDemo);
+    VocabularyScreen.visitNotifier.addListener(_onScreenVisited);
     _initLoad();
     // Reload when WBW language changes
     WordGlossaryService.langNotifier.addListener(_onLangChanged);
+  }
+
+  // Fires only when the user actually taps into the Vocabulary tab from
+  // the bottom nav — this is what makes the swipe hint play when the
+  // screen becomes visible, instead of once at app startup while hidden.
+  void _onScreenVisited() {
+    if (!mounted) return;
+    if (_tabController.index == 1 || _tabController.index == 2) {
+      setState(() => _swipeDemoKey++);
+    }
+  }
+
+  // Replays the swipe-hint animation on the top card whenever the user
+  // lands on the Known or Unknown tab (where swipe-to-mark is available).
+  void _onTabChangedForSwipeDemo() {
+    if (_tabController.indexIsChanging) return;
+    if (_tabController.index == 1 || _tabController.index == 2) {
+      setState(() => _swipeDemoKey++);
+    }
   }
 
   void _onLangChanged() {
@@ -70,6 +101,12 @@ class _VocabularyScreenState extends State<VocabularyScreen>
   void _onLearningChanged() {
     if (!mounted || _allWords.isEmpty) return;
     _reclassifyWords();
+    _refreshOverallPercent();
+  }
+
+  Future<void> _refreshOverallPercent() async {
+    final percent = await WordProgressService.getProgressPercent();
+    if (mounted) setState(() => _overallPercent = percent);
   }
 
   void _reclassifyWords() {
@@ -97,6 +134,8 @@ class _VocabularyScreenState extends State<VocabularyScreen>
   void dispose() {
     _learning?.removeListener(_onLearningChanged);
     WordGlossaryService.langNotifier.removeListener(_onLangChanged);
+    _tabController.removeListener(_onTabChangedForSwipeDemo);
+    VocabularyScreen.visitNotifier.removeListener(_onScreenVisited);
     _tabController.dispose();
     _searchController.dispose();
     super.dispose();
@@ -106,6 +145,7 @@ class _VocabularyScreenState extends State<VocabularyScreen>
     setState(() => _isLoading = true);
     final learning = context.read<LearningStateProvider>();
     final wordFreq = await WordProgressService.getWordFrequencies();
+    final percent = await WordProgressService.getProgressPercent();
 
     final all = wordFreq.entries
         .where((e) => !_hiddenStandalone.contains(e.key))
@@ -126,16 +166,26 @@ class _VocabularyScreenState extends State<VocabularyScreen>
         _allWords = all;
         _knownWords = all.where((w) => w.isKnown).toList();
         _unknownWords = all.where((w) => !w.isKnown).toList();
+        _overallPercent = percent;
         _isLoading = false;
       });
     }
   }
 
   void _applySort(List<WordEntry> list) {
-    if (_sortBy == 'frequency') {
-      list.sort((a, b) => b.frequency.compareTo(a.frequency));
-    } else {
-      list.sort((a, b) => a.arabic.compareTo(b.arabic));
+    switch (_sortBy) {
+      case 'freq_asc':
+        list.sort((a, b) => a.frequency.compareTo(b.frequency));
+        break;
+      case 'alpha_asc':
+        list.sort((a, b) => a.arabic.compareTo(b.arabic));
+        break;
+      case 'alpha_desc':
+        list.sort((a, b) => b.arabic.compareTo(a.arabic));
+        break;
+      case 'freq_desc':
+      default:
+        list.sort((a, b) => b.frequency.compareTo(a.frequency));
     }
   }
 
@@ -206,12 +256,18 @@ class _VocabularyScreenState extends State<VocabularyScreen>
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.volunteer_activism, color: Color.fromARGB(255, 250, 248, 248)),
-          onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const PaymentScreen()),
-          ),
+        leadingWidth: 108,
+        leading: Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.volunteer_activism, color: Color.fromARGB(255, 250, 248, 248)),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const PaymentScreen()),
+              ),
+            ),
+            _buildHeaderProgressRing(),
+          ],
         ),
         title: const Column(
           children: [
@@ -253,9 +309,13 @@ class _VocabularyScreenState extends State<VocabularyScreen>
             },
             itemBuilder: (_) => [
               const PopupMenuItem(
-                  value: 'frequency', child: Text('By Frequency')),
+                  value: 'freq_desc', child: Text('Frequency: High to Low')),
               const PopupMenuItem(
-                  value: 'alphabetical', child: Text('Alphabetical')),
+                  value: 'freq_asc', child: Text('Frequency: Low to High')),
+              const PopupMenuItem(
+                  value: 'alpha_asc', child: Text('Alphabetical (A → Z)')),
+              const PopupMenuItem(
+                  value: 'alpha_desc', child: Text('Alphabetical (Z → A)')),
             ],
           ),
         ],
@@ -329,6 +389,7 @@ class _VocabularyScreenState extends State<VocabularyScreen>
                         swipeLabel: 'Forgot',
                         swipeColor: Colors.red,
                         swipeIcon: Icons.close,
+                        swipeDemoKey: _swipeDemoKey,
                         onSwipe: _markUnknown,
                         onTap: (w) => _openOccurrences(w),
                         onMarkKnown: _markKnown,
@@ -340,6 +401,7 @@ class _VocabularyScreenState extends State<VocabularyScreen>
                         swipeLabel: 'Remembered',
                         swipeColor: Colors.green,
                         swipeIcon: Icons.check,
+                        swipeDemoKey: _swipeDemoKey,
                         onSwipe: _markKnown,
                         onTap: (w) => _openOccurrences(w),
                         onMarkKnown: _markKnown,
@@ -356,6 +418,39 @@ class _VocabularyScreenState extends State<VocabularyScreen>
   void _openOccurrences(WordEntry word) {
     Navigator.push(context,
         MaterialPageRoute(builder: (_) => WordOccurrencesScreen(word: word)));
+  }
+
+  Widget _buildHeaderProgressRing() {
+    return Padding(
+      padding: const EdgeInsets.only(right: 4),
+      child: SizedBox(
+        width: 36,
+        height: 36,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            SizedBox(
+              width: 36,
+              height: 36,
+              child: CircularProgressIndicator(
+                value: (_overallPercent / 100).clamp(0.0, 1.0),
+                strokeWidth: 3,
+                backgroundColor: Colors.white24,
+                valueColor: const AlwaysStoppedAnimation(Color(0xFFD4AF37)),
+              ),
+            ),
+            Text(
+              '${_overallPercent.toStringAsFixed(0)}%',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 9,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -408,6 +503,7 @@ class _WordList extends StatelessWidget {
   final String? swipeLabel;
   final Color? swipeColor;
   final IconData? swipeIcon;
+  final int swipeDemoKey;
   final Function(WordEntry)? onSwipe;
   final Function(WordEntry) onTap;
   final Function(WordEntry) onMarkKnown;
@@ -420,6 +516,7 @@ class _WordList extends StatelessWidget {
     this.swipeLabel,
     this.swipeColor,
     this.swipeIcon,
+    this.swipeDemoKey = 0,
     this.onSwipe,
     required this.onTap,
     required this.onMarkKnown,
@@ -458,7 +555,7 @@ class _WordList extends StatelessWidget {
           return tile;
         }
 
-        return Dismissible(
+        final dismissible = Dismissible(
           key: Key('${word.arabic}_${word.isKnown}_$index'),
           direction: swipeDirection == SwipeDirection.toRight
               ? DismissDirection.startToEnd
@@ -499,7 +596,134 @@ class _WordList extends StatelessWidget {
           onDismissed: (_) => onSwipe!(word),
           child: tile,
         );
+
+        // Only the very top card gets the auto-playing swipe hint — it
+        // replays whenever swipeDemoKey changes (see
+        // _onTabChangedForSwipeDemo in the parent screen).
+        if (index == 0) {
+          return _TopSwipeHint(
+            key: ValueKey('swipe_demo_$swipeDemoKey'),
+            toRight: swipeDirection == SwipeDirection.toRight,
+            color: swipeColor!,
+            icon: swipeIcon!,
+            label: swipeLabel!,
+            child: dismissible,
+          );
+        }
+        return dismissible;
       },
+    );
+  }
+}
+
+// ── One-shot swipe-hint animation ───────────────────────────────────────────
+// Nudges the wrapped card sideways and back once. Wraps the Dismissible
+// FROM THE OUTSIDE so it never touches the Dismissible's own drag/dismiss
+// gesture logic — purely visual, real swipe-to-mark keeps working exactly
+// as before. Giving this widget a new `key` (via swipeDemoKey) makes
+// Flutter treat it as a brand-new instance each time, which is what makes
+// the animation replay.
+class _TopSwipeHint extends StatefulWidget {
+  final Widget child;
+  final bool toRight;
+  final Color color;
+  final IconData icon;
+  final String label;
+  const _TopSwipeHint({
+    super.key,
+    required this.child,
+    required this.toRight,
+    required this.color,
+    required this.icon,
+    required this.label,
+  });
+
+  @override
+  State<_TopSwipeHint> createState() => _TopSwipeHintState();
+}
+
+class _TopSwipeHintState extends State<_TopSwipeHint>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _slide;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1600));
+    _slide = TweenSequence<double>([
+      TweenSequenceItem(
+          tween: Tween(begin: 0.0, end: 1.0)
+              .chain(CurveTween(curve: Curves.easeOutCubic)),
+          weight: 40),
+      TweenSequenceItem(tween: ConstantTween(1.0), weight: 15),
+      TweenSequenceItem(
+          tween: Tween(begin: 1.0, end: 0.0)
+              .chain(CurveTween(curve: Curves.easeInCubic)),
+          weight: 45),
+    ]).animate(_ctrl);
+    // Small delay so it plays after the tab-switch transition settles.
+    Future.delayed(const Duration(milliseconds: 200), () {
+      if (mounted) _ctrl.forward(from: 0);
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Mirrors the exact background Container from _WordList's real
+    // Dismissible — same margin, color, radius, alignment, padding, and
+    // the same Icon+Text row/order/style — so the hint looks identical to
+    // an actual swipe reveal, just played automatically once.
+    return AnimatedBuilder(
+      animation: _slide,
+      builder: (_, child) {
+        final dx = (widget.toRight ? 1 : -1) * 52.0 * _slide.value;
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: Container(
+                margin: const EdgeInsets.symmetric(vertical: 6),
+                decoration: BoxDecoration(
+                  color: widget.color,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                alignment:
+                    widget.toRight ? Alignment.centerLeft : Alignment.centerRight,
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (!widget.toRight)
+                      Text(widget.label,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16)),
+                    if (!widget.toRight) const SizedBox(width: 8),
+                    Icon(widget.icon, color: Colors.white, size: 28),
+                    if (widget.toRight) const SizedBox(width: 8),
+                    if (widget.toRight)
+                      Text(widget.label,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16)),
+                  ],
+                ),
+              ),
+            ),
+            Transform.translate(offset: Offset(dx, 0), child: child),
+          ],
+        );
+      },
+      child: widget.child,
     );
   }
 }
@@ -572,17 +796,21 @@ class _WordCard extends StatelessWidget {
                 height: 44,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: const Color(0xFF1B4332).withValues(alpha: 0.1),
+                  color: isDark
+                      ? const Color(0xFFD4AF37).withValues(alpha: 0.15)
+                      : const Color(0xFF1B4332).withValues(alpha: 0.1),
                   border: Border.all(
                       color: const Color(0xFFD4AF37).withValues(alpha: 0.5)),
                 ),
                 child: Center(
                   child: Text(
                     '${word.frequency}×',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.bold,
-                      color: Color(0xFF1B4332),
+                      color: isDark
+                          ? const Color(0xFFD4AF37)
+                          : const Color(0xFF1B4332),
                     ),
                   ),
                 ),
