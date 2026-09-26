@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:world_csc_picker/country_state_city_picker.dart';
+import '../data/country_list.dart';
 import '../models/leaderboard_models.dart';
 import '../providers/user_provider.dart';
 import '../services/leaderboard_service.dart';
@@ -17,13 +17,13 @@ class _LeaderboardProfileScreenState extends State<LeaderboardProfileScreen> {
   static const _green = Color(0xFF1B4332);
   static const _gold = Color(0xFFD4AF37);
 
-  String _country = '';
-  String _city = '';
+  final _countryCtrl = TextEditingController();
+  final _cityCtrl = TextEditingController();
   String _avatar = kAvatarEmojis.first;
   bool _visGlobal = true, _visCountry = true, _visCity = true;
-  bool _loading = true, _saving = false, _pickerReady = false;
+  bool _loading = true, _saving = false;
   String? _friendCode;
-  CountryStateCityData? _cscData;
+  String? _loadError;
 
   @override
   void initState() {
@@ -31,94 +31,47 @@ class _LeaderboardProfileScreenState extends State<LeaderboardProfileScreen> {
     _load();
   }
 
-  Future<void> _load() async {
-    // Bundled local JSON load — one-time, offline, no network involved.
-    final data = CountryStateCityData();
-    await data.load();
-
-    final doc = await LeaderboardService.getMyProfile();
-    if (doc != null && doc.exists) {
-      final d = doc.data()!;
-      _country = (d['country'] ?? '').toString();
-      _city = (d['city'] ?? '').toString();
-      _avatar = (d['avatarEmoji'] ?? kAvatarEmojis.first).toString();
-      _visGlobal = d['visibleGlobal'] ?? true;
-      _visCountry = d['visibleCountry'] ?? true;
-      _visCity = d['visibleCity'] ?? true;
-      _friendCode = (d['friendCode'] ?? '').toString();
-    }
-    if (mounted) {
-      setState(() {
-        _cscData = data;
-        _loading = false;
-        _pickerReady = true;
-      });
-    }
+  @override
+  void dispose() {
+    _countryCtrl.dispose();
+    _cityCtrl.dispose();
+    super.dispose();
   }
 
-  Future<void> _openLocationPicker() async {
-    if (_cscData == null) return;
-    String? tempCountry;
-    String? tempCity;
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => Container(
-        height: MediaQuery.of(ctx).size.height * 0.75,
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            const Text('Select your Country & City',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            const SizedBox(height: 12),
-            Expanded(
-              child: CountryStateCityPicker(
-                data: _cscData!,
-                onSelection: (country, state, city) {
-                  tempCountry = country;
-                  tempCity = city.name;
-                },
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: _green),
-                onPressed: () {
-                  if (tempCountry != null && tempCity != null) {
-                    setState(() {
-                      _country = tempCountry!;
-                      _city = tempCity!;
-                    });
-                  }
-                  Navigator.pop(ctx);
-                },
-                child: const Text('Confirm', style: TextStyle(color: Colors.white)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+  Future<void> _load() async {
+    try {
+      final doc = await LeaderboardService.getMyProfile();
+      if (doc != null && doc.exists) {
+        final d = doc.data()!;
+        _countryCtrl.text = (d['country'] ?? '').toString();
+        _cityCtrl.text = (d['city'] ?? '').toString();
+        _avatar = (d['avatarEmoji'] ?? kAvatarEmojis.first).toString();
+        _visGlobal = d['visibleGlobal'] ?? true;
+        _visCountry = d['visibleCountry'] ?? true;
+        _visCity = d['visibleCity'] ?? true;
+        _friendCode = (d['friendCode'] ?? '').toString();
+      }
+    } catch (e) {
+      _loadError = e.toString();
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   Future<void> _save() async {
-    if (_country.isEmpty || _city.isEmpty) {
+    if (_countryCtrl.text.trim().isEmpty || _cityCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Country aur City select karo pehle')));
+          const SnackBar(content: Text('Country aur City daalo pehle')));
       return;
     }
     setState(() => _saving = true);
     try {
-      // Naam hamesha Profile (UserProvider) se hi aata hai — alag se nahi
-      // pucha jaata, taaki dono jagah same naam dikhe.
       final myName = context.read<UserProvider>().displayName;
       final code = await LeaderboardService.saveProfile(
         displayName: myName,
         avatarEmoji: _avatar,
-        country: _country,
-        city: _city,
+        country: _countryCtrl.text,
+        city: _cityCtrl.text,
         visibleGlobal: _visGlobal,
         visibleCountry: _visCountry,
         visibleCity: _visCity,
@@ -130,8 +83,18 @@ class _LeaderboardProfileScreenState extends State<LeaderboardProfileScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Error: $e')));
+        showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Save failed'),
+            content: SelectableText(e.toString()),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('OK')),
+            ],
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -155,6 +118,21 @@ class _LeaderboardProfileScreenState extends State<LeaderboardProfileScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          if (_loadError != null)
+            Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+              ),
+              child: SelectableText(
+                'Load warning (profile still usable): $_loadError',
+                style: const TextStyle(fontSize: 11, color: Colors.red),
+              ),
+            ),
+
           // Naam — Profile se auto-liya, edit yahan se nahi hota
           Container(
             padding: const EdgeInsets.all(14),
@@ -172,8 +150,10 @@ class _LeaderboardProfileScreenState extends State<LeaderboardProfileScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(myName,
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                      const Text('Aapka Profile ka naam (leaderboard pe bhi yehi dikhega)',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 15)),
+                      const Text(
+                          'Aapka Profile ka naam (leaderboard pe bhi yehi dikhega)',
                           style: TextStyle(fontSize: 11, color: Colors.grey)),
                     ],
                   ),
@@ -197,11 +177,14 @@ class _LeaderboardProfileScreenState extends State<LeaderboardProfileScreen> {
                   height: 48,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: sel ? _gold.withValues(alpha: 0.25) : Colors.grey.shade100,
+                    color: sel
+                        ? _gold.withValues(alpha: 0.25)
+                        : Colors.grey.shade100,
                     border: Border.all(
                         color: sel ? _gold : Colors.grey.shade300, width: 2),
                   ),
-                  child: Center(child: Text(e, style: const TextStyle(fontSize: 22))),
+                  child: Center(
+                      child: Text(e, style: const TextStyle(fontSize: 22))),
                 ),
               );
             }).toList(),
@@ -211,36 +194,42 @@ class _LeaderboardProfileScreenState extends State<LeaderboardProfileScreen> {
           const Text('Location', style: TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 4),
           const Text(
-            'Dropdown se select karo — isse har user ka same city sahi se match hoga',
+            'Country list se select karo — spelling hamesha consistent rahegi',
             style: TextStyle(fontSize: 11, color: Colors.grey),
           ),
           const SizedBox(height: 8),
-          GestureDetector(
-            onTap: _pickerReady ? _openLocationPicker : null,
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey.shade400),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.location_on_outlined, color: _green),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      (_country.isEmpty && _city.isEmpty)
-                          ? 'Tap to select Country & City'
-                          : '$_city, $_country',
-                      style: TextStyle(
-                          color: (_country.isEmpty) ? Colors.grey : Colors.black87,
-                          fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  const Icon(Icons.chevron_right, color: Colors.grey),
-                ],
-              ),
+          Autocomplete<String>(
+            initialValue: TextEditingValue(text: _countryCtrl.text),
+            optionsBuilder: (v) {
+              if (v.text.isEmpty) return kCountryNames;
+              return kCountryNames.where((c) =>
+                  c.toLowerCase().contains(v.text.toLowerCase()));
+            },
+            onSelected: (v) => _countryCtrl.text = v,
+            fieldViewBuilder: (context, ctrl, focus, onSubmit) {
+              // Keep our own controller in sync with the Autocomplete's
+              // internal field controller so free typing also counts.
+              ctrl.text = _countryCtrl.text.isEmpty ? ctrl.text : ctrl.text;
+              ctrl.addListener(() => _countryCtrl.text = ctrl.text);
+              return TextField(
+                controller: ctrl,
+                focusNode: focus,
+                decoration: const InputDecoration(
+                  labelText: 'Country',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.public),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _cityCtrl,
+            decoration: const InputDecoration(
+              labelText: 'City',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.location_city),
+              helperText: 'e.g. Surat — same spelling as friends for best matching',
             ),
           ),
           const SizedBox(height: 20),
@@ -280,14 +269,16 @@ class _LeaderboardProfileScreenState extends State<LeaderboardProfileScreen> {
                       style: TextStyle(fontWeight: FontWeight.bold)),
                   Text(_friendCode!,
                       style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold, color: _gold)),
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: _gold)),
                   const Spacer(),
                   IconButton(
                     icon: const Icon(Icons.copy, size: 18),
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: _friendCode!));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Copied!')));
+                      ScaffoldMessenger.of(context)
+                          .showSnackBar(const SnackBar(content: Text('Copied!')));
                     },
                   ),
                 ],
@@ -302,8 +293,10 @@ class _LeaderboardProfileScreenState extends State<LeaderboardProfileScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 14)),
             child: _saving
                 ? const SizedBox(
-                    width: 20, height: 20,
-                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                        color: Colors.white, strokeWidth: 2))
                 : const Text('Save'),
           ),
         ],

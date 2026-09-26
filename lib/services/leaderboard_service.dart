@@ -24,19 +24,26 @@ class LeaderboardService {
   static String? get _uid => FirebaseAuth.instance.currentUser?.uid;
 
   // ── Profile existence (cached locally so we don't re-check every launch) ──
+  // CRITICAL: the cache key is scoped by uid. Without this, switching
+  // accounts on the same device (logout -> login with a different email)
+  // would reuse account A's "has profile" flag for account B, silently
+  // skipping profile setup and leaving account B with no leaderboard doc.
 
   static Future<bool> hasProfile() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (prefs.getBool(_hasProfileKey) == true) return true;
     final uid = _uid;
     if (uid == null) return false;
+    final prefs = await SharedPreferences.getInstance();
+    final key = '${_hasProfileKey}_$uid';
+    if (prefs.getBool(key) == true) return true;
     try {
       final doc = await _db.collection('leaderboard').doc(uid).get();
       if (doc.exists) {
-        await prefs.setBool(_hasProfileKey, true);
+        await prefs.setBool(key, true);
         return true;
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('LeaderboardService.hasProfile failed: $e');
+    }
     return false;
   }
 
@@ -91,7 +98,7 @@ class LeaderboardService {
     }, SetOptions(merge: true));
 
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_hasProfileKey, true);
+    await prefs.setBool('${_hasProfileKey}_$uid', true);
     return friendCode;
   }
 
@@ -204,37 +211,52 @@ class LeaderboardService {
   // ── Fetch (one-time reads, capped, no live listeners) ───────────────────
 
   static Future<List<LeaderboardEntry>> fetchGlobal({int limit = 100}) async {
-    final snap = await _db
-        .collection('leaderboard')
-        .where('visibleGlobal', isEqualTo: true)
-        .orderBy('points', descending: true)
-        .limit(limit)
-        .get();
-    return snap.docs.map(LeaderboardEntry.fromDoc).toList();
+    try {
+      final snap = await _db
+          .collection('leaderboard')
+          .where('visibleGlobal', isEqualTo: true)
+          .orderBy('points', descending: true)
+          .limit(limit)
+          .get();
+      return snap.docs.map(LeaderboardEntry.fromDoc).toList();
+    } catch (e) {
+      debugPrint('LeaderboardService.fetchGlobal failed: $e');
+      rethrow;
+    }
   }
 
   static Future<List<LeaderboardEntry>> fetchCountry(String country,
       {int limit = 100}) async {
-    final snap = await _db
-        .collection('leaderboard')
-        .where('visibleCountry', isEqualTo: true)
-        .where('countryKey', isEqualTo: country.trim().toLowerCase())
-        .orderBy('points', descending: true)
-        .limit(limit)
-        .get();
-    return snap.docs.map(LeaderboardEntry.fromDoc).toList();
+    try {
+      final snap = await _db
+          .collection('leaderboard')
+          .where('visibleCountry', isEqualTo: true)
+          .where('countryKey', isEqualTo: country.trim().toLowerCase())
+          .orderBy('points', descending: true)
+          .limit(limit)
+          .get();
+      return snap.docs.map(LeaderboardEntry.fromDoc).toList();
+    } catch (e) {
+      debugPrint('LeaderboardService.fetchCountry failed: $e');
+      rethrow;
+    }
   }
 
   static Future<List<LeaderboardEntry>> fetchCity(String city,
       {int limit = 100}) async {
-    final snap = await _db
-        .collection('leaderboard')
-        .where('visibleCity', isEqualTo: true)
-        .where('cityKey', isEqualTo: city.trim().toLowerCase())
-        .orderBy('points', descending: true)
-        .limit(limit)
-        .get();
-    return snap.docs.map(LeaderboardEntry.fromDoc).toList();
+    try {
+      final snap = await _db
+          .collection('leaderboard')
+          .where('visibleCity', isEqualTo: true)
+          .where('cityKey', isEqualTo: city.trim().toLowerCase())
+          .orderBy('points', descending: true)
+          .limit(limit)
+          .get();
+      return snap.docs.map(LeaderboardEntry.fromDoc).toList();
+    } catch (e) {
+      debugPrint('LeaderboardService.fetchCity failed: $e');
+      rethrow;
+    }
   }
 
   static Future<List<LeaderboardEntry>> fetchByUids(List<String> uids) async {

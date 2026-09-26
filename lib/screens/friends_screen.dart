@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../models/leaderboard_models.dart';
 import '../services/social_service.dart';
@@ -22,9 +23,19 @@ class _FriendsBodyState extends State<FriendsBody> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final r = await SocialService.getIncomingRequests();
-    final f = await SocialService.getFriendsRaw();
-    if (mounted) setState(() { _requests = r; _friends = f; _loading = false; });
+    try {
+      final r = await SocialService.getIncomingRequests();
+      final f = await SocialService.getFriendsRaw();
+      if (mounted) setState(() { _requests = r; _friends = f; });
+    } catch (e) {
+      debugPrint('FriendsBody._load failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Failed to load: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   Future<void> _addByCode() async {

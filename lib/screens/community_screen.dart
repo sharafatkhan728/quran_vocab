@@ -51,10 +51,10 @@ class _CommunityScreenState extends State<CommunityScreen>
       ),
       body: TabBarView(
         controller: _tabs,
-        children: const [
-          LeaderboardScreen(),
-          FriendsBody(),
-          GroupsBody(),
+        children: [
+          const LeaderboardBody(),
+          const FriendsBody(),
+          const GroupsBody(),
         ],
       ),
     );

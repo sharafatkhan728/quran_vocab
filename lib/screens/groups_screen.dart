@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../models/leaderboard_models.dart';
 import '../services/leaderboard_service.dart';
@@ -25,8 +26,18 @@ class _GroupsBodyState extends State<GroupsBody> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final list = await SocialService.getMyGroups();
-    if (mounted) setState(() { _groups = list; _loading = false; });
+    try {
+      final list = await SocialService.getMyGroups();
+      if (mounted) setState(() => _groups = list);
+    } catch (e) {
+      debugPrint('GroupsBody._load failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Failed to load: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   Future<void> _ensureProfileThen(Future<void> Function() action) async {
