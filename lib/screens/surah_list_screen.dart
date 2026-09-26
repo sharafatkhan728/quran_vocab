@@ -35,6 +35,8 @@ class SurahListScreen extends StatefulWidget {
 class _SurahListScreenState extends State<SurahListScreen>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   int _dueTodayCount = 0;
+  Set<int> _favorites = {};
+  static const String _favKey = 'favorite_surahs';
   SurahListViewMode _viewMode = SurahListViewMode.surah;
 
   // Built once instead of calling quran.getSurahName()/getSurahNameArabic()/
@@ -67,6 +69,30 @@ class _SurahListScreenState extends State<SurahListScreen>
     // starts from a blank/0% state on a fresh app launch.
     _loadCachedSnapshot();
     _loadProgress();
+    _loadFavorites();
+  }
+
+  Future<void> _loadFavorites() async {
+    final prefs = await SharedPreferences.getInstance();
+    final ids = prefs.getStringList(_favKey) ?? [];
+    if (mounted) {
+      setState(() {
+        _favorites = ids.map((e) => int.tryParse(e) ?? 0).toSet();
+      });
+    }
+  }
+
+  Future<void> _toggleFavorite(int surahId) async {
+    setState(() {
+      if (_favorites.contains(surahId)) {
+        _favorites.remove(surahId);
+      } else {
+        _favorites.add(surahId);
+      }
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+        _favKey, _favorites.map((e) => '$e').toList());
   }
 
   @override
@@ -367,6 +393,74 @@ class _SurahListScreenState extends State<SurahListScreen>
         children: [
           Column(
             children: [
+              if (_favorites.isNotEmpty)
+                Container(
+                  color: const Color(0xFF1B4332),
+                  padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('⭐ Favorites',
+                          style:
+                              TextStyle(color: Colors.white70, fontSize: 11)),
+                      const SizedBox(height: 6),
+                      SizedBox(
+                        height: 34,
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: _favorites.length,
+                          itemBuilder: (_, i) {
+                            final id = _favorites.elementAt(i);
+                            final surah = _surahs.firstWhere((s) => s.id == id,
+                                orElse: () => _surahs[0]);
+                            return GestureDetector(
+                              onTap: () async {
+                                await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => SurahReaderScreen(
+                                      surah: surah,
+                                      jumpToAyah: _lastReadAyahs[id],
+                                    ),
+                                  ),
+                                );
+                                _loadProgress();
+                              },
+                              child: Container(
+                                margin: const EdgeInsets.only(right: 8),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFD4AF37)
+                                      .withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(
+                                      color: const Color(0xFFD4AF37)
+                                          .withValues(alpha: 0.5)),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.star,
+                                        size: 12, color: Color(0xFFD4AF37)),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '${surah.id}. ${surah.englishName}',
+                                      style: const TextStyle(
+                                          color: Color(0xFFD4AF37),
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               if (_bookmarks.isNotEmpty)
                 Container(
                   color: const Color(0xFF1B4332),
@@ -445,6 +539,8 @@ class _SurahListScreenState extends State<SurahListScreen>
                             surah: surah,
                             surahProgress: _surahProgress[id] ?? 0,
                             lastReadAyah: _lastReadAyahs[id],
+                            isFavorite: _favorites.contains(id),
+                            onToggleFavorite: () => _toggleFavorite(id),
                             onTap: () async {
                               await Navigator.push(
                                 context,
@@ -632,7 +728,7 @@ class _SurahListScreenState extends State<SurahListScreen>
 
     return Container(
       color: const Color(0xFF1B4332),
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -689,7 +785,7 @@ class _SurahListScreenState extends State<SurahListScreen>
             ],
           ),
 
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
 
           // ── Row 2: Percentage + known count ───────────────────────────
           Row(
@@ -709,7 +805,7 @@ class _SurahListScreenState extends State<SurahListScreen>
             ],
           ),
 
-          const SizedBox(height: 8),
+          const SizedBox(height: 5),
 
           // ── Row 3: Animated gradient bar ──────────────────────────────
           AnimatedBuilder(
@@ -773,10 +869,10 @@ class _SurahListScreenState extends State<SurahListScreen>
 
           // ── Row 4: Milestone badge (shown when at/past a milestone) ───
           if (milestone != null) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 5),
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
@@ -853,10 +949,14 @@ class _SurahCard extends StatefulWidget {
   final double surahProgress;
   final int? lastReadAyah;
   final VoidCallback onTap;
+  final bool isFavorite;
+  final VoidCallback onToggleFavorite;
   const _SurahCard({
     required this.surah,
     required this.surahProgress,
     required this.onTap,
+    required this.isFavorite,
+    required this.onToggleFavorite,
     this.lastReadAyah,
   });
 
@@ -1102,7 +1202,21 @@ class _SurahCardState extends State<_SurahCard>
                           ],
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 4),
+                      GestureDetector(
+                        onTap: widget.onToggleFavorite,
+                        child: Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: Icon(
+                            widget.isFavorite ? Icons.star : Icons.star_border,
+                            color: widget.isFavorite
+                                ? _gold
+                                : (isDark ? Colors.white38 : Colors.grey.shade400),
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
                       Icon(Icons.chevron_right,
                           color: _gold.withValues(alpha: 0.5), size: 20),
                     ],
