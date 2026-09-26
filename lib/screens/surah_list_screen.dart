@@ -393,138 +393,7 @@ class _SurahListScreenState extends State<SurahListScreen>
         children: [
           Column(
             children: [
-              if (_favorites.isNotEmpty)
-                Container(
-                  color: const Color(0xFF1B4332),
-                  padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('⭐ Favorites',
-                          style:
-                              TextStyle(color: Colors.white70, fontSize: 11)),
-                      const SizedBox(height: 6),
-                      SizedBox(
-                        height: 34,
-                        child: ListView.builder(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: _favorites.length,
-                          itemBuilder: (_, i) {
-                            final id = _favorites.elementAt(i);
-                            final surah = _surahs.firstWhere((s) => s.id == id,
-                                orElse: () => _surahs[0]);
-                            return GestureDetector(
-                              onTap: () async {
-                                await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => SurahReaderScreen(
-                                      surah: surah,
-                                      jumpToAyah: _lastReadAyahs[id],
-                                    ),
-                                  ),
-                                );
-                                _loadProgress();
-                              },
-                              child: Container(
-                                margin: const EdgeInsets.only(right: 8),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFD4AF37)
-                                      .withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(18),
-                                  border: Border.all(
-                                      color: const Color(0xFFD4AF37)
-                                          .withValues(alpha: 0.5)),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(Icons.star,
-                                        size: 12, color: Color(0xFFD4AF37)),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      '${surah.id}. ${surah.englishName}',
-                                      style: const TextStyle(
-                                          color: Color(0xFFD4AF37),
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              if (_bookmarks.isNotEmpty)
-                Container(
-                  color: const Color(0xFF1B4332),
-                  padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Bookmarks',
-                          style:
-                              TextStyle(color: Colors.white70, fontSize: 11)),
-                      const SizedBox(height: 6),
-                      SizedBox(
-                        height: 36,
-                        child: ListView.builder(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: _bookmarks.length,
-                          itemBuilder: (_, i) {
-                            final b = _bookmarks[i];
-                            return GestureDetector(
-                              onTap: () async {
-                                final surah = Surah(
-                                  id: b['surahId'],
-                                  englishName: quran.getSurahName(b['surahId']),
-                                  arabicName:
-                                      quran.getSurahNameArabic(b['surahId']),
-                                  urduName: quran.getSurahName(b['surahId']),
-                                  verseCount: quran.getVerseCount(b['surahId']),
-                                );
-                                await Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                        builder: (_) => SurahReaderScreen(
-                                              surah: surah,
-                                              jumpToAyahRequested: b['ayahId'],
-                                            )));
-                                _loadProgress();
-                              },
-                              child: Container(
-                                margin: const EdgeInsets.only(right: 8),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFD4AF37)
-                                      .withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(18),
-                                  border: Border.all(
-                                      color: const Color(0xFFD4AF37)
-                                          .withValues(alpha: 0.5)),
-                                ),
-                                child: Text(
-                                  '${b['name']} ${b['ayahId']}',
-                                  style: const TextStyle(
-                                      color: Color(0xFFD4AF37),
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600),
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              _buildQuickAccessRow(),
               _buildProgressHeader(context),
               _buildViewModeSelector(),
               Expanded(
@@ -716,199 +585,205 @@ class _SurahListScreenState extends State<SurahListScreen>
     );
   }
 
+  Widget _buildQuickAccessRow() {
+    if (_favorites.isEmpty && _bookmarks.isEmpty) return const SizedBox.shrink();
+    return Container(
+      color: const Color(0xFF1B4332),
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_favorites.isNotEmpty)
+            SizedBox(
+              height: 22,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: _favorites.map((id) {
+                  final surah = _surahs.firstWhere((s) => s.id == id,
+                      orElse: () => _surahs[0]);
+                  return _quickChip(
+                    icon: Icons.star,
+                    label: '${surah.id}. ${surah.englishName}',
+                    color: const Color(0xFFD4AF37),
+                    onTap: () async {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => SurahReaderScreen(
+                            surah: surah,
+                            jumpToAyah: _lastReadAyahs[id],
+                          ),
+                        ),
+                      );
+                      _loadProgress();
+                    },
+                  );
+                }).toList(),
+              ),
+            ),
+          if (_favorites.isNotEmpty && _bookmarks.isNotEmpty)
+            const SizedBox(height: 4),
+          if (_bookmarks.isNotEmpty)
+            SizedBox(
+              height: 22,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: _bookmarks.map((b) => _quickChip(
+                      icon: Icons.bookmark,
+                      label: '${b['name']} ${b['ayahId']}',
+                      color: const Color(0xFF7EC8A0),
+                      onTap: () async {
+                        final surah = Surah(
+                          id: b['surahId'],
+                          englishName: quran.getSurahName(b['surahId']),
+                          arabicName: quran.getSurahNameArabic(b['surahId']),
+                          urduName: quran.getSurahName(b['surahId']),
+                          verseCount: quran.getVerseCount(b['surahId']),
+                        );
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => SurahReaderScreen(
+                              surah: surah,
+                              jumpToAyahRequested: b['ayahId'],
+                            ),
+                          ),
+                        );
+                        _loadProgress();
+                      },
+                    )).toList(),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _quickChip({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(right: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.5)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 9, color: color),
+            const SizedBox(width: 3),
+            Text(label,
+                style: TextStyle(
+                    color: color, fontSize: 9.5, fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildProgressHeader(BuildContext context) {
-    // ── Level system ──────────────────────────────────────────────────────
     final (levelEn, levelAr, levelColor) = _getLevel(_totalProgress);
-
-    // ── Milestone detection ───────────────────────────────────────────────
     final milestone = _getMilestone(_totalProgress);
-
-    // ── Comparison text ───────────────────────────────────────────────────
-    final comparisonText = _getComparisonText(_totalProgress, _knownCount);
 
     return Container(
       color: const Color(0xFF1B4332),
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 2, 16, 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Row 1: Level badge + streak + comparison ──────────────────
           Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              // Level badge
+              Text('${_totalProgress.toStringAsFixed(1)}%',
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                      height: 1)),
+              const SizedBox(width: 6),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text('of Quran',
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.55),
+                        fontSize: 11)),
+              ),
+              const Spacer(),
               Container(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: levelColor.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: levelColor.withValues(alpha: 0.6)),
+                  color: levelColor.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: levelColor.withValues(alpha: 0.5)),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(levelAr,
-                        style: TextStyle(
-                            fontSize: 13,
-                            color: levelColor,
-                            fontWeight: FontWeight.bold)),
-                    const SizedBox(width: 5),
-                    Text(levelEn,
-                        style: TextStyle(
-                            fontSize: 10,
-                            color: levelColor.withValues(alpha: 0.85))),
-                  ],
-                ),
+                child: Text(levelEn,
+                    style: TextStyle(
+                        fontSize: 10,
+                        color: levelColor,
+                        fontWeight: FontWeight.bold)),
               ),
-              const SizedBox(width: 8),
-              // Streak
-              if (_streak > 0)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(10),
-                    border:
-                        Border.all(color: Colors.orange.withValues(alpha: 0.5)),
-                  ),
-                  child: Text('🔥 $_streak days',
-                      style: const TextStyle(
-                          fontSize: 11,
-                          color: Colors.orange,
-                          fontWeight: FontWeight.w600)),
-                ),
-              const Spacer(),
-              // Comparison text
-              Text(comparisonText,
-                  style: const TextStyle(fontSize: 10, color: Colors.white38)),
+              if (_streak > 0) ...[
+                const SizedBox(width: 6),
+                const Icon(Icons.local_fire_department,
+                    size: 15, color: Colors.orange),
+                const SizedBox(width: 2),
+                Text('$_streak',
+                    style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.orange,
+                        fontWeight: FontWeight.bold)),
+              ],
             ],
           ),
-
           const SizedBox(height: 6),
-
-          // ── Row 2: Percentage + known count ───────────────────────────
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                '${_totalProgress.toStringAsFixed(1)}% of Quran',
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold),
-              ),
-              Text(
-                '$_knownCount words known',
-                style: const TextStyle(color: Colors.white54, fontSize: 11),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 5),
-
-          // ── Row 3: Animated gradient bar ──────────────────────────────
           AnimatedBuilder(
             animation: _barAnim,
-            builder: (_, __) {
-              return Stack(
+            builder: (_, __) => ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: Stack(
                 children: [
-                  // Background track
-                  Container(
-                    height: 10,
-                    decoration: BoxDecoration(
-                      color: Colors.white12,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                  ),
-                  // Filled gradient bar
+                  Container(height: 6, color: Colors.white12),
                   FractionallySizedBox(
                     widthFactor: _barAnim.value.clamp(0.0, 1.0),
                     child: Container(
-                      height: 10,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(6),
+                      height: 6,
+                      decoration: const BoxDecoration(
                         gradient: LinearGradient(
-                          colors: [
-                            const Color(0xFFD4AF37),
-                            const Color(0xFF2ECC71),
-                          ],
-                          stops: const [0.0, 1.0],
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color:
-                                const Color(0xFF2ECC71).withValues(alpha: 0.4),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  // Milestone tick marks
-                  ...[10, 25, 50, 75].map((pct) {
-                    return FractionallySizedBox(
-                      widthFactor: pct / 100,
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: Container(
-                          width: 2,
-                          height: 10,
-                          color: Colors.white24,
+                          colors: [Color(0xFFD4AF37), Color(0xFF2ECC71)],
                         ),
                       ),
-                    );
-                  }),
-                ],
-              );
-            },
-          ),
-
-          // ── Row 4: Milestone badge (shown when at/past a milestone) ───
-          if (milestone != null) ...[
-            const SizedBox(height: 5),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    const Color(0xFFD4AF37).withValues(alpha: 0.15),
-                    const Color(0xFF1B4332),
-                  ],
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                ),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                    color: const Color(0xFFD4AF37).withValues(alpha: 0.4)),
-              ),
-              child: Row(
-                children: [
-                  Text(milestone.$1, style: const TextStyle(fontSize: 18)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(milestone.$2,
-                            style: const TextStyle(
-                                color: Color(0xFFD4AF37),
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold)),
-                        Text(milestone.$3,
-                            style: const TextStyle(
-                                color: Colors.white54, fontSize: 10)),
-                      ],
                     ),
                   ),
                 ],
               ),
             ),
-          ],
+          ),
+          const SizedBox(height: 5),
+          Row(
+            children: [
+              Text('$_knownCount words known',
+                  style: TextStyle(
+                      fontSize: 10, color: Colors.white.withValues(alpha: 0.5))),
+              if (milestone != null) ...[
+                const Spacer(),
+                Text('${milestone.$1} ${milestone.$2}',
+                    style: const TextStyle(
+                        fontSize: 10,
+                        color: Color(0xFFD4AF37),
+                        fontWeight: FontWeight.w600)),
+              ],
+            ],
+          ),
         ],
       ),
     );
