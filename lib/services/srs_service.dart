@@ -127,6 +127,27 @@ class SrsService {
   static Future<int> getTotalPoints() => SrsRepository.getTotalPoints();
   static Future<void> recordNewCardReviewed() =>
       SrsRepository.recordWordLearned();
+  static Future<void> addPoints(int pts) => SrsRepository.addPoints(pts);
+  static Future<void> unrecordWordLearned() =>
+      SrsRepository.unrecordWordLearned();
+
+  /// Restores a card to exactly the state captured by [getCard] before a
+  /// review action ran — used by "Undo" so re-swiping afterwards can't
+  /// double-apply points/stage. A null [snapshot] means the card had no
+  /// row yet (never reviewed), so it's removed again.
+  static Future<void> restoreCard(
+      String normalizedArabic, SrsCardRow? snapshot) async {
+    await _ensureVocabCache();
+    final id = _cleanToId![normalizedArabic];
+    if (id == null) return;
+    if (snapshot == null) {
+      final db = await DatabaseManager.db;
+      await db.delete('srs_cards',
+          where: 'vocab_word_id = ?', whereArgs: [id]);
+    } else {
+      await SrsRepository.upsertCard(snapshot);
+    }
+  }
 
   // ── Session persistence ───────────────────────────────────────────────────
 

@@ -144,12 +144,16 @@ class WordImporter {
     }
     await batch.commit(noResult: true);
 
-    // ── Pass 3: build clean→id lookup ───────────────────────────────────────
-    final cleanToId = <String, int>{};
+    // ── Pass 3: build (clean+lemma)→id lookup ─────────────────────────────
+    // Composite key matches Pass 1's vocab identity — plain arabic_clean is
+    // NOT unique (homographs share it), so keying by clean alone silently
+    // collapsed different lemmas onto one vocab_word_id.
+    final cleanLemmaToId = <String, int>{};
     final allVocab = await txn.rawQuery(
-        'SELECT id, arabic_clean FROM vocab_words');
+        'SELECT id, arabic_clean, lemma FROM vocab_words');
     for (final r in allVocab) {
-      cleanToId[r['arabic_clean'] as String] = r['id'] as int;
+      final key = '${r['arabic_clean']}\x00${r['lemma'] ?? ''}';
+      cleanLemmaToId[key] = r['id'] as int;
     }
 
     // ── Pass 4: ayah_words + word_translations ──────────────────────────────
@@ -220,7 +224,11 @@ class WordImporter {
         final clean  = WordProgressService.normalizeArabic(arabic);
         if (clean.isEmpty) continue;
 
-        final vocabWordId = cleanToId[clean];
+        // Same composite identity used in Pass 1 — clean alone isn't
+        // enough to pick the correct homograph's vocab_word_id.
+        final rawLemma  = morphLemma[key] ?? '';
+        final normLemma = WordProgressService.normalizeArabic(rawLemma);
+        final vocabWordId = cleanLemmaToId['$clean\x00$normLemma'];
         if (vocabWordId == null) continue;
 
         final display = displayText[key] ?? arabic;

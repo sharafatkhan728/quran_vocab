@@ -72,7 +72,7 @@ class TranslationService {
 
   static Future<String?> getAyahTranslation(int surah, int ayah,
       {String? scholar}) async {
-    final s = scholar ?? 'selected_Scholar';
+    final s = scholar ?? selectedScholar;
     final source = scholars[s];
     if (source == null) return null;
     return ContentRepository.getAyahTranslation(

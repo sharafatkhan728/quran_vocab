@@ -244,6 +244,18 @@ class SrsRepository {
     SyncService.scheduleSyncUp();
   }
 
+  /// Inverse of [recordWordLearned] — used to revert an Undo'd "new card
+  /// learned today" count so daily/streak stats stay accurate.
+  static Future<void> unrecordWordLearned() async {
+    final today = _todayKey();
+    final db = await DatabaseManager.db;
+    await db.rawUpdate('''
+      UPDATE daily_stats SET words_learned = MAX(0, words_learned - 1)
+      WHERE date_key = ?
+    ''', [today]);
+    SyncService.scheduleSyncUp();
+  }
+
   static String _todayKey() {
     final now = DateTime.now();
     return '${now.year}-'

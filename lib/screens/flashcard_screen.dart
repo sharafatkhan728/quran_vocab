@@ -141,6 +141,13 @@ class _FlashcardScreenState extends State<FlashcardScreen>
   FlashWord? _lastCard;
   int _lastIndex = 0;
   bool _canUndo = false;
+  // Snapshot of state right before the last swipe — lets Undo fully revert
+  // the SRS card / points / known-flag instead of only rewinding the UI.
+  SrsCardRow? _undoCardSnapshot;
+  bool _undoPreviousKnown = false;
+  int _undoPointsAwarded = 0;
+  bool _undoWasNewCardReview = false;
+  int? _undoRequeueIndex;
   String? _swipeHint;
   double _dragX = 0;
   bool _isDragging = false;
@@ -408,13 +415,22 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     }
     HapticFeedback.mediumImpact();
 
+    // Snapshot pre-swipe state so Undo can fully revert it (not just the
+    // UI position) — without this, undo+reswipe double-applies points/stage.
+    _undoCardSnapshot = await SrsService.getCard(_current.normalizedForLookup);
+    _undoPreviousKnown = context
+        .read<LearningStateProvider>()
+        .isKnown(_current.normalizedForLookup);
+    _undoRequeueIndex = null;
+
     // Start animation IMMEDIATELY (don't await DB operations first)
     final animationFuture = _animateDismiss(toRight: true);
 
     // Run DB operations in parallel (don't block animation)
-    final existingCard = await SrsService.getCard(_current.normalizedForLookup);
-    final wasNew = existingCard?.totalReviews == 0;
+    final wasNew = _undoCardSnapshot?.totalReviews == 0;
+    _undoWasNewCardReview = wasNew;
     final pts = await SrsService.markKnown(_current.normalizedForLookup);
+    _undoPointsAwarded = pts;
 
     if (mounted) {
       await context
@@ -450,6 +466,14 @@ class _FlashcardScreenState extends State<FlashcardScreen>
     }
     HapticFeedback.mediumImpact();
 
+    // Snapshot pre-swipe state so Undo can fully revert it.
+    _undoCardSnapshot = await SrsService.getCard(_current.normalizedForLookup);
+    _undoPreviousKnown = context
+        .read<LearningStateProvider>()
+        .isKnown(_current.normalizedForLookup);
+    _undoPointsAwarded = 0;
+    _undoWasNewCardReview = false;
+
     // Start animation IMMEDIATELY
     final animationFuture = _animateDismiss(toRight: false);
 
@@ -469,6 +493,9 @@ class _FlashcardScreenState extends State<FlashcardScreen>
           _currentIndex + 1 + Random().nextInt(remaining.clamp(1, 5));
       final card = _cards[_currentIndex];
       _cards.insert(insertAt.clamp(0, _cards.length), card);
+      _undoRequeueIndex = insertAt.clamp(0, _cards.length - 1);
+    } else {
+      _undoRequeueIndex = null;
     }
 
     // Wait for animation to finish
@@ -584,15 +611,48 @@ class _FlashcardScreenState extends State<FlashcardScreen>
   Future<void> _undoLastSwipe() async {
     if (!_canUndo || _lastCard == null) return;
     HapticFeedback.lightImpact();
+
+    final card = _lastCard!;
+
+    // Revert the actual data changes the swipe made — not just the UI —
+    // so re-swiping afterwards can't double-apply points/SRS stage/known.
+    await SrsService.restoreCard(card.normalizedForLookup, _undoCardSnapshot);
+    if (_undoPointsAwarded != 0) {
+      await SrsService.addPoints(-_undoPointsAwarded);
+    }
+    if (_undoWasNewCardReview) {
+      await SrsService.unrecordWordLearned();
+    }
+    if (mounted) {
+      final learning = context.read<LearningStateProvider>();
+      if (_undoPreviousKnown) {
+        await learning.setKnownByClean(card.normalizedForLookup);
+      } else {
+        await learning.setUnknownByClean(card.normalizedForLookup);
+      }
+    }
+    // Remove the duplicate re-queue entry the Unknown swipe may have added,
+    // so undoing doesn't leave the word to appear twice more.
+    if (_undoRequeueIndex != null &&
+        _undoRequeueIndex! < _cards.length &&
+        _cards[_undoRequeueIndex!].normalizedForLookup ==
+            card.normalizedForLookup) {
+      _cards.removeAt(_undoRequeueIndex!);
+    }
+
     // Go back to previous card
     setState(() {
       _currentIndex = _lastIndex;
+      _sessionPoints -= _undoPointsAwarded;
+      _totalPoints -= _undoPointsAwarded;
       _isFlipped = false;
       _hasBeenFlipped = false;
       _swipeHint = null;
       _canUndo = false;
       _lastCard = null;
     });
+    _undoCardSnapshot = null;
+    _undoRequeueIndex = null;
     _flipCtrl.reset();
     _entryCtrl.reset();
     _entryCtrl.forward();
