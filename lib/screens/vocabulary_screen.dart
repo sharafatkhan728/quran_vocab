@@ -6,6 +6,7 @@ import 'word_occurrences_screen.dart';
 import '../providers/display_provider.dart';
 import 'package:provider/provider.dart';
 import 'vocabulary_search_screen.dart';
+import 'progress_screen.dart';
 import '../providers/learning_state_provider.dart';
 import '../services/word_glossary_service.dart';
 
@@ -42,6 +43,7 @@ class _VocabularyScreenState extends State<VocabularyScreen>
   final TextEditingController _searchController = TextEditingController();
   double _overallPercent = 0;
   int _swipeDemoKey = 0;
+  final GlobalKey _progressRingKey = GlobalKey();
 
   @override
   void initState() {
@@ -421,34 +423,75 @@ class _VocabularyScreenState extends State<VocabularyScreen>
   }
 
   Widget _buildHeaderProgressRing() {
-    return Padding(
-      padding: const EdgeInsets.only(right: 4),
-      child: SizedBox(
-        width: 36,
-        height: 36,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            SizedBox(
-              width: 36,
-              height: 36,
-              child: CircularProgressIndicator(
-                value: (_overallPercent / 100).clamp(0.0, 1.0),
-                strokeWidth: 3,
-                backgroundColor: Colors.white24,
-                valueColor: const AlwaysStoppedAnimation(Color(0xFFD4AF37)),
+    return GestureDetector(
+      key: _progressRingKey,
+      onTap: _openProgressScreen,
+      child: Padding(
+        padding: const EdgeInsets.only(right: 4),
+        child: SizedBox(
+          width: 36,
+          height: 36,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              SizedBox(
+                width: 36,
+                height: 36,
+                child: CircularProgressIndicator(
+                  value: (_overallPercent / 100).clamp(0.0, 1.0),
+                  strokeWidth: 3,
+                  backgroundColor: Colors.white24,
+                  valueColor: const AlwaysStoppedAnimation(Color(0xFFD4AF37)),
+                ),
               ),
-            ),
-            Text(
-              '${_overallPercent.toStringAsFixed(0)}%',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 9,
-                fontWeight: FontWeight.bold,
+              Text(
+                '${_overallPercent.toStringAsFixed(0)}%',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 9,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
+      ),
+    );
+  }
+
+  // Finds the ring's exact position on screen, then pushes ProgressScreen
+  // with a custom circular-reveal transition that expands outward from
+  // that point — matches the effect of the screen "coming out of the logo".
+  void _openProgressScreen() {
+    final renderBox =
+        _progressRingKey.currentContext?.findRenderObject() as RenderBox?;
+    Offset center;
+    if (renderBox != null && renderBox.attached) {
+      final size = renderBox.size;
+      final position = renderBox.localToGlobal(Offset.zero);
+      center = position + Offset(size.width / 2, size.height / 2);
+    } else {
+      center = MediaQuery.of(context).size.topCenter(Offset.zero);
+    }
+
+    Navigator.push(
+      context,
+      PageRouteBuilder(
+        transitionDuration: const Duration(milliseconds: 500),
+        reverseTransitionDuration: const Duration(milliseconds: 350),
+        pageBuilder: (_, __, ___) => const ProgressScreen(),
+        transitionsBuilder: (_, animation, __, child) {
+          return AnimatedBuilder(
+            animation: animation,
+            builder: (_, ___) => ClipPath(
+              clipper: _CircleRevealClipper(
+                center: center,
+                fraction: Curves.easeInOutCubic.transform(animation.value),
+              ),
+              child: child,
+            ),
+          );
+        },
       ),
     );
   }
@@ -869,4 +912,39 @@ class _WordCard extends StatelessWidget {
       ),
     );
   }
+}
+
+// ── Circular-reveal clip path ────────────────────────────────────────────────
+// Grows a circle from [center] out to the farthest screen corner as
+// [fraction] goes 0 → 1, so the incoming page appears to emerge from a
+// single point (the tapped progress ring) instead of sliding in normally.
+class _CircleRevealClipper extends CustomClipper<Path> {
+  final Offset center;
+  final double fraction;
+  _CircleRevealClipper({required this.center, required this.fraction});
+
+  @override
+  Path getClip(Size size) {
+    final radius = _maxRadius(size) * fraction;
+    return Path()..addOval(Rect.fromCircle(center: center, radius: radius));
+  }
+
+  double _maxRadius(Size size) {
+    final corners = [
+      Offset.zero,
+      Offset(size.width, 0),
+      Offset(0, size.height),
+      Offset(size.width, size.height),
+    ];
+    double maxDist = 0;
+    for (final c in corners) {
+      final d = (c - center).distance;
+      if (d > maxDist) maxDist = d;
+    }
+    return maxDist;
+  }
+
+  @override
+  bool shouldReclip(covariant _CircleRevealClipper oldClipper) =>
+      oldClipper.fraction != fraction || oldClipper.center != center;
 }
