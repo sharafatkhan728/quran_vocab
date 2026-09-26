@@ -98,8 +98,9 @@ class _AuthScreenState extends State<AuthScreen>
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F0E8),
+      backgroundColor: isDark ? const Color(0xFF0A1628) : const Color(0xFFF5F0E8),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -132,17 +133,17 @@ class _AuthScreenState extends State<AuthScreen>
                 ),
               ),
               const SizedBox(height: 16),
-              const Text('Quran Kalima',
+              Text('Quran Kalima',
                   style: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
-                      color: _green)),
+                      color: isDark ? Colors.white : _green)),
               const Text('کلمۂ قرآن',
                   style: TextStyle(fontSize: 16, color: _gold)),
               const SizedBox(height: 32),
 
               // Google sign in
-              _GoogleButton(onTap: _signInGoogle, loading: _loading),
+              _GoogleButton(onTap: _signInGoogle, loading: _loading, isDark: isDark),
 
               const SizedBox(height: 12),
 
@@ -159,8 +160,8 @@ class _AuthScreenState extends State<AuthScreen>
                 label: const Text('Continue Without Login'),
                 style: OutlinedButton.styleFrom(
                   minimumSize: const Size(double.infinity, 50),
-                  foregroundColor: _green,
-                  side: const BorderSide(color: _green),
+                  foregroundColor: isDark ? Colors.white70 : _green,
+                  side: BorderSide(color: isDark ? Colors.white30 : _green),
                 ),
               ),
 
@@ -168,20 +169,25 @@ class _AuthScreenState extends State<AuthScreen>
 
               // Divider
               Row(children: [
-                Expanded(child: Divider(color: Colors.grey.shade300)),
+                Expanded(
+                    child: Divider(
+                        color: isDark ? Colors.white24 : Colors.grey.shade300)),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child:
-                      Text('or', style: TextStyle(color: Colors.grey.shade500)),
+                  child: Text('or',
+                      style: TextStyle(
+                          color: isDark ? Colors.white54 : Colors.grey.shade500)),
                 ),
-                Expanded(child: Divider(color: Colors.grey.shade300)),
+                Expanded(
+                    child: Divider(
+                        color: isDark ? Colors.white24 : Colors.grey.shade300)),
               ]),
               const SizedBox(height: 16),
 
               // Email tabs
               Container(
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: isDark ? const Color(0xFF1A2E1F) : Colors.white,
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(color: _gold.withValues(alpha: 0.3)),
                   boxShadow: [
@@ -194,8 +200,8 @@ class _AuthScreenState extends State<AuthScreen>
                     TabBar(
                       controller: _tabs,
                       indicatorColor: _gold,
-                      labelColor: _green,
-                      unselectedLabelColor: Colors.grey,
+                      labelColor: isDark ? Colors.white : _green,
+                      unselectedLabelColor: isDark ? Colors.white54 : Colors.grey,
                       indicator: BoxDecoration(
                         color: _gold.withValues(alpha: 0.1),
                         borderRadius: const BorderRadius.vertical(
@@ -220,6 +226,7 @@ class _AuthScreenState extends State<AuthScreen>
                             buttonLabel: 'Sign In',
                             onSubmit: _signInEmail,
                             loading: _loading,
+                            isDark: isDark,
                           ),
                           _EmailForm(
                             emailCtrl: _emailCtrl,
@@ -231,6 +238,7 @@ class _AuthScreenState extends State<AuthScreen>
                             buttonLabel: 'Create Account',
                             onSubmit: _registerEmail,
                             loading: _loading,
+                            isDark: isDark,
                           ),
                         ],
                       ),
@@ -256,7 +264,9 @@ class _AuthScreenState extends State<AuthScreen>
               const SizedBox(height: 24),
               Text('By continuing you agree to our Terms & Privacy Policy',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? Colors.white38 : Colors.grey.shade500)),
             ],
           ),
         ),
@@ -268,7 +278,12 @@ class _AuthScreenState extends State<AuthScreen>
 class _GoogleButton extends StatelessWidget {
   final VoidCallback onTap;
   final bool loading;
-  const _GoogleButton({required this.onTap, required this.loading});
+  final bool isDark;
+  const _GoogleButton({
+    required this.onTap,
+    required this.loading,
+    required this.isDark,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -278,9 +293,10 @@ class _GoogleButton extends StatelessWidget {
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: isDark ? const Color(0xFF1A2E1F) : Colors.white,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey.shade300),
+          border: Border.all(
+              color: isDark ? Colors.white24 : Colors.grey.shade300),
           boxShadow: [
             BoxShadow(
                 color: Colors.black.withValues(alpha: 0.05), blurRadius: 8),
@@ -293,12 +309,15 @@ class _GoogleButton extends StatelessWidget {
               'assets/images/google.svg',
               width: 24,
               height: 24,
-              errorBuilder: (_, __, ___) =>
-                  const Icon(Icons.g_mobiledata, size: 24),
+              errorBuilder: (_, __, ___) => Icon(Icons.g_mobiledata,
+                  size: 24, color: isDark ? Colors.white70 : Colors.black87),
             ),
             const SizedBox(width: 12),
-            const Text('Continue with Google',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
+            Text('Continue with Google',
+                style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    color: isDark ? Colors.white : Colors.black87)),
           ],
         ),
       ),
@@ -315,6 +334,7 @@ class _EmailForm extends StatelessWidget {
   final String buttonLabel;
   final VoidCallback onSubmit;
   final bool loading;
+  final bool isDark;
 
   const _EmailForm({
     required this.emailCtrl,
@@ -325,26 +345,38 @@ class _EmailForm extends StatelessWidget {
     required this.buttonLabel,
     required this.onSubmit,
     required this.loading,
+    required this.isDark,
   });
 
   @override
   Widget build(BuildContext context) {
+    final textColor = isDark ? Colors.white : Colors.black87;
+    final hintColor = isDark ? Colors.white38 : Colors.grey.shade500;
+    final iconColor = isDark ? Colors.white54 : Colors.grey.shade600;
+    final fillColor = isDark ? const Color(0xFF0F1F14) : const Color(0xFFF5F0E8);
+
     return Padding(
       padding: const EdgeInsets.all(20),
       child: Column(
         children: [
-          if (nameCtrl != null) _field(nameCtrl!, 'Full Name', Icons.person),
+          if (nameCtrl != null)
+            _field(nameCtrl!, 'Full Name', Icons.person, textColor, hintColor,
+                iconColor, fillColor),
           if (nameCtrl != null) const SizedBox(height: 12),
-          _field(emailCtrl, 'Email', Icons.email),
+          _field(emailCtrl, 'Email', Icons.email, textColor, hintColor,
+              iconColor, fillColor),
           const SizedBox(height: 12),
           TextField(
             controller: passCtrl,
             obscureText: obscure,
+            style: TextStyle(color: textColor),
             decoration: InputDecoration(
               hintText: 'Password',
-              prefixIcon: const Icon(Icons.lock),
+              hintStyle: TextStyle(color: hintColor),
+              prefixIcon: Icon(Icons.lock, color: iconColor),
               suffixIcon: IconButton(
-                icon: Icon(obscure ? Icons.visibility : Icons.visibility_off),
+                icon: Icon(obscure ? Icons.visibility : Icons.visibility_off,
+                    color: iconColor),
                 onPressed: onObscure,
               ),
               border: OutlineInputBorder(
@@ -352,7 +384,7 @@ class _EmailForm extends StatelessWidget {
                 borderSide: BorderSide.none,
               ),
               filled: true,
-              fillColor: const Color(0xFFF5F0E8),
+              fillColor: fillColor,
             ),
           ),
           const SizedBox(height: 16),
@@ -383,18 +415,21 @@ class _EmailForm extends StatelessWidget {
     );
   }
 
-  Widget _field(TextEditingController ctrl, String hint, IconData icon) {
+  Widget _field(TextEditingController ctrl, String hint, IconData icon,
+      Color textColor, Color hintColor, Color iconColor, Color fillColor) {
     return TextField(
       controller: ctrl,
+      style: TextStyle(color: textColor),
       decoration: InputDecoration(
         hintText: hint,
-        prefixIcon: Icon(icon),
+        hintStyle: TextStyle(color: hintColor),
+        prefixIcon: Icon(icon, color: iconColor),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide.none,
         ),
         filled: true,
-        fillColor: const Color(0xFFF5F0E8),
+        fillColor: fillColor,
       ),
     );
   }
