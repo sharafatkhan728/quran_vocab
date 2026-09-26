@@ -21,6 +21,9 @@ import 'flashcard_screen.dart';
 import '../providers/learning_state_provider.dart';
 import '../database/database_manager.dart';
 import '../services/surah_list_cache.dart';
+import '../data/juz_manzil_data.dart';
+
+enum SurahListViewMode { surah, juz, manzil }
 
 class SurahListScreen extends StatefulWidget {
   const SurahListScreen({super.key});
@@ -32,6 +35,7 @@ class SurahListScreen extends StatefulWidget {
 class _SurahListScreenState extends State<SurahListScreen>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   int _dueTodayCount = 0;
+  SurahListViewMode _viewMode = SurahListViewMode.surah;
 
   // Built once instead of calling quran.getSurahName()/getSurahNameArabic()/
   // getVerseCount() repeatedly per card on every rebuild (scroll, theme
@@ -428,33 +432,38 @@ class _SurahListScreenState extends State<SurahListScreen>
                   ),
                 ),
               _buildProgressHeader(context),
+              _buildViewModeSelector(),
               Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 20),
-                  itemCount: 114,
-                  itemBuilder: (context, index) {
-                    final surah = _surahs[index];
-                    final id = surah.id;
-                    return _SurahCard(
-                      surah: surah,
-                      surahProgress: _surahProgress[id] ?? 0,
-                      lastReadAyah: _lastReadAyahs[id],
-                      onTap: () async {
-                        await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => SurahReaderScreen(
-                              surah: surah,
-                              jumpToAyah: _lastReadAyahs[id],
-                            ),
-                          ),
-                        );
-                        await Future.delayed(const Duration(milliseconds: 300));
-                        _loadProgress();
-                      },
-                    );
-                  },
-                ),
+                child: _viewMode == SurahListViewMode.surah
+                    ? ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 20),
+                        itemCount: 114,
+                        itemBuilder: (context, index) {
+                          final surah = _surahs[index];
+                          final id = surah.id;
+                          return _SurahCard(
+                            surah: surah,
+                            surahProgress: _surahProgress[id] ?? 0,
+                            lastReadAyah: _lastReadAyahs[id],
+                            onTap: () async {
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => SurahReaderScreen(
+                                    surah: surah,
+                                    jumpToAyah: _lastReadAyahs[id],
+                                  ),
+                                ),
+                              );
+                              await Future.delayed(
+                                  const Duration(milliseconds: 300));
+                              _loadProgress();
+                            },
+                          );
+                        },
+                      )
+                    : _buildJuzOrManzilList(
+                        isJuz: _viewMode == SurahListViewMode.juz),
               ),
             ],
           ),
@@ -475,6 +484,139 @@ class _SurahListScreenState extends State<SurahListScreen>
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildViewModeSelector() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: Row(
+        children: [
+          _modeChip('Surah', SurahListViewMode.surah),
+          const SizedBox(width: 8),
+          _modeChip('Juz', SurahListViewMode.juz),
+          const SizedBox(width: 8),
+          _modeChip('Manzil', SurahListViewMode.manzil),
+        ],
+      ),
+    );
+  }
+
+  Widget _modeChip(String label, SurahListViewMode mode) {
+    final selected = _viewMode == mode;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _viewMode = mode),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFF1B4332) : Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: selected
+                  ? const Color(0xFF1B4332)
+                  : const Color(0xFFD4AF37).withValues(alpha: 0.3),
+            ),
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+              color: selected ? Colors.white : Colors.grey,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openAt(int surahId, int ayahNumber) async {
+    final surah = Surah(
+      id: surahId,
+      englishName: quran.getSurahName(surahId),
+      arabicName: quran.getSurahNameArabic(surahId),
+      urduName: quran.getSurahName(surahId),
+      verseCount: quran.getVerseCount(surahId),
+    );
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SurahReaderScreen(
+          surah: surah,
+          jumpToAyahRequested: ayahNumber,
+        ),
+      ),
+    );
+    await Future.delayed(const Duration(milliseconds: 300));
+    _loadProgress();
+  }
+
+  Widget _buildJuzOrManzilList({required bool isJuz}) {
+    final count = isJuz ? 30 : 7;
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 20),
+      itemCount: count,
+      itemBuilder: (context, index) {
+        final num = index + 1;
+        final start = isJuz
+            ? JuzManzilData.juzStarts[num]!
+            : JuzManzilData.manzilStarts[num]!;
+        final range = isJuz
+            ? JuzManzilData.juzSurahRange(num)
+            : JuzManzilData.manzilSurahRange(num);
+        final startSurahName = quran.getSurahName(start.$1);
+        final rangeLabel = range.$1 == range.$2
+            ? quran.getSurahName(range.$1)
+            : '${quran.getSurahName(range.$1)} → ${quran.getSurahName(range.$2)}';
+
+        return GestureDetector(
+          onTap: () => _openAt(start.$1, start.$2),
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              color: Theme.of(context).cardColor,
+              border: Border.all(color: const Color(0xFFD4AF37).withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFFD4AF37).withValues(alpha: 0.15),
+                  ),
+                  child: Center(
+                    child: Text('$num',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, color: Color(0xFF1B4332))),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(isJuz ? 'Juz $num' : 'Manzil $num',
+                          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                      const SizedBox(height: 2),
+                      Text('Starts: $startSurahName ${start.$2}',
+                          style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                      Text(rangeLabel,
+                          style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: Colors.grey),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
