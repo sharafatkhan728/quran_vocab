@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import '../models/leaderboard_models.dart';
 import '../services/social_service.dart';
 
-class FriendsScreen extends StatefulWidget {
-  const FriendsScreen({super.key});
+class FriendsBody extends StatefulWidget {
+  const FriendsBody({super.key});
   @override
-  State<FriendsScreen> createState() => _FriendsScreenState();
+  State<FriendsBody> createState() => _FriendsBodyState();
 }
 
-class _FriendsScreenState extends State<FriendsScreen> {
+class _FriendsBodyState extends State<FriendsBody> {
   static const _green = Color(0xFF1B4332);
   List<FriendRequestEntry> _requests = [];
   List<Map<String, dynamic>> _friends = [];
@@ -53,71 +53,76 @@ class _FriendsScreenState extends State<FriendsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Friends'),
-        backgroundColor: _green,
-        foregroundColor: Colors.white,
-        actions: [IconButton(icon: const Icon(Icons.person_add), onPressed: _addByCode)],
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: ListView(
-                padding: const EdgeInsets.all(12),
-                children: [
-                  if (_requests.isNotEmpty) ...[
-                    const Text('Requests', style: TextStyle(fontWeight: FontWeight.bold)),
+    return Stack(
+      children: [
+        _loading
+            ? const Center(child: CircularProgressIndicator())
+            : RefreshIndicator(
+                onRefresh: _load,
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
+                  children: [
+                    if (_requests.isNotEmpty) ...[
+                      const Text('Requests', style: TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      ..._requests.map((r) => Card(
+                            child: ListTile(
+                              leading: Text(r.fromAvatarEmoji, style: const TextStyle(fontSize: 22)),
+                              title: Text(r.fromDisplayName),
+                              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                                IconButton(
+                                  icon: const Icon(Icons.check, color: Colors.green),
+                                  onPressed: () async {
+                                    await SocialService.acceptRequest(r);
+                                    _load();
+                                  },
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.close, color: Colors.red),
+                                  onPressed: () async {
+                                    await SocialService.declineRequest(r.fromUid);
+                                    _load();
+                                  },
+                                ),
+                              ]),
+                            ),
+                          )),
+                      const SizedBox(height: 16),
+                    ],
+                    const Text('My Friends', style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
-                    ..._requests.map((r) => Card(
+                    if (_friends.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Center(child: Text('Koi friend nahi hai abhi — code se add karo')),
+                      ),
+                    ..._friends.map((f) => Card(
                           child: ListTile(
-                            leading: Text(r.fromAvatarEmoji, style: const TextStyle(fontSize: 22)),
-                            title: Text(r.fromDisplayName),
-                            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                              IconButton(
-                                icon: const Icon(Icons.check, color: Colors.green),
-                                onPressed: () async {
-                                  await SocialService.acceptRequest(r);
-                                  _load();
-                                },
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.close, color: Colors.red),
-                                onPressed: () async {
-                                  await SocialService.declineRequest(r.fromUid);
-                                  _load();
-                                },
-                              ),
-                            ]),
+                            leading: Text(f['avatarEmoji'] ?? '📖', style: const TextStyle(fontSize: 22)),
+                            title: Text(f['displayName'] ?? 'Learner'),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.person_remove, color: Colors.grey),
+                              onPressed: () async {
+                                await SocialService.removeFriend(f['uid']);
+                                _load();
+                              },
+                            ),
                           ),
                         )),
-                    const SizedBox(height: 16),
                   ],
-                  const Text('My Friends', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  if (_friends.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Center(child: Text('Koi friend nahi hai abhi — code se add karo')),
-                    ),
-                  ..._friends.map((f) => Card(
-                        child: ListTile(
-                          leading: Text(f['avatarEmoji'] ?? '📖',
-                              style: const TextStyle(fontSize: 22)),
-                          title: Text(f['displayName'] ?? 'Learner'),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.person_remove, color: Colors.grey),
-                            onPressed: () async {
-                              await SocialService.removeFriend(f['uid']);
-                              _load();
-                            },
-                          ),
-                        ),
-                      )),
-                ],
+                ),
               ),
-            ),
+        Positioned(
+          right: 16,
+          bottom: 16,
+          child: FloatingActionButton.extended(
+            onPressed: _addByCode,
+            backgroundColor: _green,
+            icon: const Icon(Icons.person_add),
+            label: const Text('Add Friend'),
+          ),
+        ),
+      ],
     );
   }
 }

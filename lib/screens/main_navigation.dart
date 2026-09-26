@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'surah_list_screen.dart';
 import 'vocabulary_screen.dart';
+import 'community_screen.dart';
 import 'profile_settings_screen.dart';
 import '../providers/learning_state_provider.dart';
 import '../services/analytics_service.dart';
@@ -29,10 +30,11 @@ class _MainNavigationState extends State<MainNavigation> with WidgetsBindingObse
   final List<Widget> _screens = const [
     SurahListScreen(),
     VocabularyScreen(),
+    CommunityScreen(),
     ProfileSettingsScreen(),
   ];
 
-  static const _tabNames = ['Quran', 'Vocabulary', 'Profile'];
+  static const _tabNames = ['Quran', 'Vocabulary', 'Community', 'Profile'];
 
   @override
   void initState() {
@@ -161,6 +163,11 @@ class _MainNavigationState extends State<MainNavigation> with WidgetsBindingObse
               icon: Icon(Icons.abc_outlined),
               selectedIcon: Icon(Icons.abc),
               label: 'Vocabulary',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.groups_outlined),
+              selectedIcon: Icon(Icons.groups),
+              label: 'Community',
             ),
             NavigationDestination(
               icon: Icon(Icons.person_outline),

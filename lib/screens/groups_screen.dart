@@ -5,13 +5,13 @@ import '../services/social_service.dart';
 import 'group_detail_screen.dart';
 import 'leaderboard_profile_screen.dart';
 
-class GroupsScreen extends StatefulWidget {
-  const GroupsScreen({super.key});
+class GroupsBody extends StatefulWidget {
+  const GroupsBody({super.key});
   @override
-  State<GroupsScreen> createState() => _GroupsScreenState();
+  State<GroupsBody> createState() => _GroupsBodyState();
 }
 
-class _GroupsScreenState extends State<GroupsScreen> {
+class _GroupsBodyState extends State<GroupsBody> {
   static const _green = Color(0xFF1B4332);
   static const _gold = Color(0xFFD4AF37);
   List<GroupInfo> _groups = [];
@@ -98,53 +98,57 @@ class _GroupsScreenState extends State<GroupsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('My Groups'), backgroundColor: _green,
-          foregroundColor: Colors.white),
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          FloatingActionButton.extended(
-            heroTag: 'join',
-            onPressed: _joinGroup,
-            backgroundColor: _gold,
-            icon: const Icon(Icons.group_add),
-            label: const Text('Join'),
-          ),
-          const SizedBox(height: 10),
-          FloatingActionButton.extended(
-            heroTag: 'create',
-            onPressed: _createGroup,
-            backgroundColor: _green,
-            icon: const Icon(Icons.add),
-            label: const Text('Create'),
-          ),
-        ],
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _groups.isEmpty
-              ? const Center(child: Text('Koi group nahi — create ya join karo'))
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 100),
-                    itemCount: _groups.length,
-                    itemBuilder: (_, i) {
-                      final g = _groups[i];
-                      return Card(
-                        child: ListTile(
-                          leading: const Icon(Icons.groups, color: _green),
-                          title: Text(g.name),
-                          subtitle: Text('Code: ${g.code}'),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () => Navigator.push(context,
-                              MaterialPageRoute(builder: (_) => GroupDetailScreen(group: g))),
-                        ),
-                      );
-                    },
+    return Stack(
+      children: [
+        _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _groups.isEmpty
+                ? const Center(child: Text('Koi group nahi — create ya join karo'))
+                : RefreshIndicator(
+                    onRefresh: _load,
+                    child: ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 100),
+                      itemCount: _groups.length,
+                      itemBuilder: (_, i) {
+                        final g = _groups[i];
+                        return Card(
+                          child: ListTile(
+                            leading: const Icon(Icons.groups, color: _green),
+                            title: Text(g.name),
+                            subtitle: Text('Code: ${g.code}'),
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: () => Navigator.push(context,
+                                MaterialPageRoute(builder: (_) => GroupDetailScreen(group: g))),
+                          ),
+                        );
+                      },
+                    ),
                   ),
-                ),
+        Positioned(
+          right: 16,
+          bottom: 16,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              FloatingActionButton.extended(
+                heroTag: 'join',
+                onPressed: _joinGroup,
+                backgroundColor: _gold,
+                icon: const Icon(Icons.group_add),
+                label: const Text('Join'),
+              ),
+              const SizedBox(height: 10),
+              FloatingActionButton.extended(
+                heroTag: 'create',
+                onPressed: _createGroup,
+                backgroundColor: _green,
+                icon: const Icon(Icons.add),
+                label: const Text('Create'),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

@@ -21,9 +21,6 @@ import 'feedback_screen.dart';
 import 'app_tour_screen.dart';
 import 'privacy_screen.dart';
 import '../services/translation_service.dart';
-import 'leaderboard_screen.dart';
-import 'friends_screen.dart';
-import 'groups_screen.dart';
 
 class ProfileSettingsScreen extends StatefulWidget {
   const ProfileSettingsScreen({super.key});
@@ -141,30 +138,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                   _buildDisplaySettings(display, theme, isDark),
                   const SizedBox(height: 5),
                   _buildProfileSettings(user, isDark),
-                  const SizedBox(height: 5),
-                  _buildSection(isDark, title: 'Community', items: [
-                    _buildTile(isDark,
-                        icon: Icons.leaderboard,
-                        iconColor: Colors.amber.shade700,
-                        title: 'Leaderboard',
-                        subtitle: 'Global, Country, City & Friends ranking',
-                        onTap: () => Navigator.push(context,
-                            MaterialPageRoute(builder: (_) => const LeaderboardScreen()))),
-                    _buildTile(isDark,
-                        icon: Icons.people,
-                        iconColor: Colors.blue,
-                        title: 'Friends',
-                        subtitle: 'Add friends & compare progress',
-                        onTap: () => Navigator.push(context,
-                            MaterialPageRoute(builder: (_) => const FriendsScreen()))),
-                    _buildTile(isDark,
-                        icon: Icons.groups,
-                        iconColor: Colors.teal,
-                        title: 'Groups',
-                        subtitle: 'Learn together with a group goal',
-                        onTap: () => Navigator.push(context,
-                            MaterialPageRoute(builder: (_) => const GroupsScreen()))),
-                  ]),
                   const SizedBox(height: 5),
                   _buildSection(isDark, title: 'App', items: [
                     _buildTile(isDark,
