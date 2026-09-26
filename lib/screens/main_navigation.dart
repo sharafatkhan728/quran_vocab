@@ -10,6 +10,7 @@ import '../services/analytics_service.dart';
 import '../services/announcement_service.dart';
 import '../services/surah_prefetch_service.dart';
 import '../services/sync_service.dart';
+import '../services/leaderboard_service.dart';
 
 class MainNavigation extends StatefulWidget {
   const MainNavigation({super.key});
@@ -62,6 +63,12 @@ class _MainNavigationState extends State<MainNavigation> with WidgetsBindingObse
     Future.delayed(const Duration(seconds: 2), () {
       unawaited(SurahPrefetchService.start());
     });
+    // Leaderboard sync — throttled internally to min 10 min gap, safe to
+    // call this often (e.g. every 15 min while app is foreground).
+    LeaderboardService.scheduleSync();
+    Timer.periodic(const Duration(minutes: 15), (_) {
+      if (mounted) LeaderboardService.scheduleSync();
+    });
   }
 
   void _handleBackPressed() {
@@ -108,6 +115,7 @@ class _MainNavigationState extends State<MainNavigation> with WidgetsBindingObse
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       SyncService.scheduleSyncUp();
+      LeaderboardService.scheduleSync();
     }
   }
 

@@ -809,14 +809,6 @@ class _SurahListScreenState extends State<SurahListScreen>
     return null;
   }
 
-  // ── Comparison text ───────────────────────────────────────────────────────
-  String _getComparisonText(double pct, int known) {
-    if (known == 0) return 'Start learning today';
-    if (pct >= 50) return 'Top learner 🏅';
-    if (pct >= 25) return 'Better than most';
-    if (pct >= 10) return 'Great progress!';
-    return '$known words and counting';
-  }
 }
 
 class _SurahCard extends StatefulWidget {
