@@ -198,6 +198,11 @@ class SyncService {
       if (!metaDoc.exists) {
         _emit(SyncStatus.idle);
         await syncUp();
+        // Keeps in-memory LearningStateProvider in sync with whatever
+        // local state just got uploaded (e.g. freshly wiped/empty after
+        // a logout+new-account switch) — without this, a stale in-memory
+        // cache from the previous account could linger until app restart.
+        await onSyncDownComplete?.call();
         return RestoreResult.uploadedLocal;
       }
 

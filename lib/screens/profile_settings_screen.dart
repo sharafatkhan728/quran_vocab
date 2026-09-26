@@ -1471,6 +1471,14 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
 
     await context.read<UserProvider>().signOut();
 
+    // Refresh in-memory known/unknown cache now that local SQLite has
+    // been wiped by signOut() — otherwise Quran reader / Vocabulary
+    // screens would keep showing the old account's known words until
+    // the app is fully restarted.
+    if (mounted) {
+      await context.read<LearningStateProvider>().reload();
+    }
+
     if (mounted) Navigator.pop(context); // close the loading dialog
   }
 
@@ -1501,18 +1509,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
         // on this device and would bleed into whatever account signs in
         // next (their known words, SRS cards, streak etc. would appear to
         // belong to the new account).
-        final db = await DatabaseManager.db;
-        await db.delete('known_words');
-        await db.delete('srs_cards');
-        await db.delete('daily_stats');
-        await db.delete('reading_progress');
-        await db.delete('bookmarks');
-        await db.delete('user_meta', where: 'key IN (?, ?, ?, ?)', whereArgs: [
-          'srs_total_points',
-          'longest_streak',
-          'srs_total_sessions',
-          '_last_sync_ts',
-        ]);
+        await DatabaseManager.clearLocalUserProgress();
         if (mounted) {
           await context.read<LearningStateProvider>().reload();
         }

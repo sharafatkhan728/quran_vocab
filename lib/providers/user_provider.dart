@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import '../database/database_manager.dart';
 import '../services/crashlytics_service.dart';
 import '../services/sync_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -52,6 +53,15 @@ class UserProvider extends ChangeNotifier {
           _restoring = true;
           notifyListeners();
           try {
+            // Defensive: if a DIFFERENT account was signed in on this
+            // device (previousUid != null) without going through
+            // signOut() — which already wipes local progress — wipe it
+            // now. Otherwise syncDown()'s "this account has no cloud
+            // data yet" fallback would upload the previous account's
+            // local progress as if it belonged to this new account.
+            if (previousUid != null) {
+              await DatabaseManager.clearLocalUserProgress();
+            }
             await SyncService.syncDown();
           } finally {
             if (_user?.uid == user.uid) {
@@ -124,6 +134,10 @@ class UserProvider extends ChangeNotifier {
     // Push any pending local changes before signing out
     await SyncService.syncUp();
     await FirebaseAuth.instance.signOut();
+    // Wipe local progress now that it's safely pushed to THIS account's
+    // cloud doc — otherwise it survives on-device and leaks into
+    // whichever account (or fresh signup) uses this device next.
+    await DatabaseManager.clearLocalUserProgress();
     _profile = {};
     notifyListeners();
   }

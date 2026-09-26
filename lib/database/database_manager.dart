@@ -331,6 +331,29 @@ class DatabaseManager {
     _db = null;
   }
 
+  /// Wipes all per-user progress (known words, SRS cards, streaks, daily
+  /// stats, bookmarks, reading position, saved session) while leaving the
+  /// static Quran content (surahs, ayahs, vocab, morphology) untouched.
+  /// MUST be called whenever the signed-in account changes (logout, or an
+  /// account switch) — otherwise one account's local progress silently
+  /// leaks into whichever account uses this device next, via syncUp().
+  static Future<void> clearLocalUserProgress() async {
+    final db = await DatabaseManager.db;
+    await db.delete('known_words');
+    await db.delete('srs_cards');
+    await db.delete('daily_stats');
+    await db.delete('reading_progress');
+    await db.delete('bookmarks');
+    await db.delete('user_meta', where: 'key IN (?, ?, ?, ?, ?)', whereArgs: [
+      'srs_total_points',
+      'longest_streak',
+      'srs_total_sessions',
+      'srs_session_v2',
+      '_last_sync_ts',
+    ]);
+    debugPrint('DatabaseManager: cleared local user progress');
+  }
+
   // ── DB corruption guard ──────────────────────────────────────────────────
   // Emulators sometimes ship a SQLite without FTS5 / WAL support.
   // If the DB file is corrupted we delete it so the importer rebuilds from

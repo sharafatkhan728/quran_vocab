@@ -1277,14 +1277,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.0.3"
-  world_csc_picker:
-    dependency: "direct main"
-    description:
-      name: world_csc_picker
-      sha256: e8c21b24203d552ffb8f733bb8f4ff72662596011f3ed1cf7a52e83599ccc064
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.0.4"
   xdg_directories:
     dependency: transitive
     description:
