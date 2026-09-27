@@ -428,7 +428,11 @@ class _WordDetailDialogState extends State<WordDetailDialog> {
     // which is whatever language is currently selected for word-by-word
     // display in the Surah reader (could be Hindi/English), and would
     // otherwise leak into this fixed "اردو" column.
-    final urdu = _vocab?.meaningUr ?? '';
+// NAYA:
+    // While the DB lookup for _vocab is still in flight, fall back to the
+    // meaning already loaded by the Surah Reader — avoids a "—" flash.
+    final urdu = _vocab?.meaningUr ??
+        (_vocab == null ? widget.word.urduMeaning : '');
     final english = _vocab?.meaningEn ?? '';
     final hindi = _vocab?.meaningHi ?? '';
     final translit = widget.word.transliteration;
