@@ -402,22 +402,11 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   Widget _buildAnimatedLogo() {
-    return AnimatedBuilder(
-      animation: _logoCtrl,
-      builder: (context, _) {
-        return CustomPaint(
-          painter: LogoPainter(
-            bgReveal: _bgReveal.value,
-            ringReveal: _ringReveal.value,
-            bookReveal: _bookReveal.value,
-            textReveal: _textReveal.value,
-            glowPass: _glowPass.value,
-            glowFinal: _glowFinal.value,
-            isDark: Theme.of(context).brightness == Brightness.dark,
-          ),
-          size: const Size(140, 140),
-        );
-      },
+    // Simple, static app logo — no phased reveal animation.
+    return Image.asset(
+      'assets/images/app_logo.png',
+      width: 140,
+      height: 140,
     );
   }
 }
