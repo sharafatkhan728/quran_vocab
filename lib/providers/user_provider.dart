@@ -6,6 +6,7 @@ import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import '../database/database_manager.dart';
 import '../services/crashlytics_service.dart';
 import '../services/sync_service.dart';
+import '../services/social_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class UserProvider extends ChangeNotifier {
@@ -99,26 +100,39 @@ class UserProvider extends ChangeNotifier {
     try {
       final doc =
           await FirebaseFirestore.instance.collection('users').doc(uid).get();
-      await _localGoalReady;
       if (_user?.uid != uid) return;
       _profile = doc.exists ? (doc.data() ?? {}) : {};
 
+      // Daily goal ab har account ke liye ALAG key me store hota hai
+      // ('daily_goal_<uid>') — pehle ek hi global 'daily_goal' key thi jo
+      // har account share karta tha, isliye ek account ka manually-set
+      // goal doosre account ke Firestore document ko overwrite kar deta
+      // tha (yehi tumhara account-mixing wala bug tha).
+      final prefs = await SharedPreferences.getInstance();
+      final uidGoalKey = 'daily_goal_$uid';
+      final storedGoal = prefs.getInt(uidGoalKey);
       final cloudGoal = _profile['dailyGoal'];
-      if (_hasExplicitGoal) {
-        // User already chose a goal on this device — it wins.
-        if (cloudGoal != _localDailyGoal) {
-          _profile['dailyGoal'] = _localDailyGoal;
+
+      if (storedGoal != null) {
+        // Is account ka is device pe pehle se hi ek choice saved hai.
+        _localDailyGoal = storedGoal;
+        _hasExplicitGoal = true;
+        if (cloudGoal != storedGoal) {
+          _profile['dailyGoal'] = storedGoal;
           await FirebaseFirestore.instance
               .collection('users')
               .doc(uid)
-              .set({'dailyGoal': _localDailyGoal}, SetOptions(merge: true));
+              .set({'dailyGoal': storedGoal}, SetOptions(merge: true));
         }
       } else if (cloudGoal is int) {
-        // No local choice yet (e.g. fresh install) — adopt the cloud value.
+        // Is device pe is account ke liye pehli baar — cloud value apnao.
         _localDailyGoal = cloudGoal;
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setInt('daily_goal', cloudGoal);
         _hasExplicitGoal = true;
+        await prefs.setInt(uidGoalKey, cloudGoal);
+      } else {
+        // Na local, na cloud — default rakho.
+        _localDailyGoal = 5;
+        _hasExplicitGoal = false;
       }
       notifyListeners();
     } catch (e, stack) {
@@ -130,12 +144,15 @@ class UserProvider extends ChangeNotifier {
   Future<void> updateProfile(Map<String, dynamic> data) async {
     await _localGoalReady; // prevents the startup race that overwrote the goal
     _profile.addAll(data);
-    // Save daily goal locally so it works offline and without login
+    // Save daily goal locally so it works offline and without login.
+    // Logged-in account → uid-scoped key (kabhi doosre account me leak
+    // nahi hoga). Guest/pre-login (onboarding) → purana global key.
     if (data.containsKey('dailyGoal')) {
       _localDailyGoal = data['dailyGoal'] as int;
       _hasExplicitGoal = true;
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt('daily_goal', _localDailyGoal);
+      final key = _user != null ? 'daily_goal_${_user!.uid}' : 'daily_goal';
+      await prefs.setInt(key, _localDailyGoal);
     }
     notifyListeners();
     if (_user != null) {
@@ -164,6 +181,9 @@ class UserProvider extends ChangeNotifier {
     // whichever account (or fresh signup) uses this device next.
     await DatabaseManager.clearLocalUserProgress();
     _profile = {};
+    // Community badge count bhi is account ka hai — turant 0 kar do,
+    // warna 1 split-second ke liye purane account ka number dikh sakta hai.
+    SocialService.pendingRequestCount.value = 0;
     notifyListeners();
   }
 

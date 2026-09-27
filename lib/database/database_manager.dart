@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class DatabaseManager {
   static Database? _db;
@@ -351,6 +352,11 @@ class DatabaseManager {
       'srs_session_v2',
       '_last_sync_ts',
     ]);
+    // Favorite surahs SQLite me nahi, SharedPreferences me rehte hain —
+    // isliye alag se clear karna zaroori hai, warna purane account ke
+    // favorites naye account me bhi dikhte reh jaate.
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('favorite_surahs');
     debugPrint('DatabaseManager: cleared local user progress');
   }
 

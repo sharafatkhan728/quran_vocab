@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../database/database_manager.dart';
 import 'crashlytics_service.dart';
 import 'diagnostics_service.dart';
@@ -104,6 +105,13 @@ class SyncService {
           .map((r) => '${r['surah_id']}:${r['ayah_number']}')
           .toList();
 
+      // ── 5b. Favorite surahs ─────────────────────────────────────────────
+      // SharedPreferences me hai (SQLite me nahi), isliye seedha yahin se
+      // read kar rahe hain.
+      final prefsForFav = await SharedPreferences.getInstance();
+      final favoriteSurahs =
+          prefsForFav.getStringList('favorite_surahs') ?? [];
+
       // ── 6. User meta ──────────────────────────────────────────────────────
       final metaRows = await db.query('user_meta');
       final srsPoints = _metaInt(metaRows, 'srs_total_points');
@@ -139,6 +147,7 @@ class SyncService {
       batch.set(ref.doc('daily_stats'), dailyStats);
       batch.set(ref.doc('reading_progress'), readingProgress);
       batch.set(ref.doc('bookmarks'), {'list': bookmarks});
+      batch.set(ref.doc('favorite_surahs'), {'list': favoriteSurahs});
       batch.set(ref.doc('meta'), {
         'lastSync': FieldValue.serverTimestamp(),
         'srs_total_points': srsPoints,
@@ -470,6 +479,19 @@ class SyncService {
             conflictAlgorithm: ConflictAlgorithm.ignore,
           );
         }
+      }
+
+      // ── Restore favorite surahs ─────────────────────────────────────────────
+      final favoriteDoc = await _withTimeout(
+        () => ref.doc('favorite_surahs').get(),
+        const Duration(seconds: 15),
+        'syncDown favorite_surahs.get',
+      );
+      if (favoriteDoc.exists) {
+        final list = favoriteDoc.data()!['list'] as List? ?? [];
+        final prefsForFav = await SharedPreferences.getInstance();
+        await prefsForFav.setStringList(
+            'favorite_surahs', list.map((e) => e.toString()).toList());
       }
 
       // ── Restore user meta ─────────────────────────────────────────────────

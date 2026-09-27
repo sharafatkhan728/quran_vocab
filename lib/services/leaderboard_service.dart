@@ -16,8 +16,13 @@ class LeaderboardService {
 
   static final _db = FirebaseFirestore.instance;
   static const _minPushInterval = Duration(minutes: 3);
-  static const _lastPushKey = 'leaderboard_last_push_ms';
   static const _hasProfileKey = 'leaderboard_has_profile';
+
+  // Har account ka apna throttle timestamp — pehle yeh key sabhi accounts
+  // ke beech shared thi, isliye Account A ke sync ke turant baad Account B
+  // login karta to uska pehla score-push galti se delay ho jata.
+  static String _lastPushKeyFor(String uid) =>
+      'leaderboard_last_push_ms_$uid';
 
   // A week is stale after this many days — used both for the individual
   // leaderboard and (via SocialService.maybeResetWeek) for groups.
@@ -181,8 +186,9 @@ class LeaderboardService {
     if (!await hasProfile()) return; // user hasn't set up leaderboard yet
 
     final prefs = await SharedPreferences.getInstance();
+    final pushKey = _lastPushKeyFor(uid);
     if (!force) {
-      final last = prefs.getInt(_lastPushKey) ?? 0;
+      final last = prefs.getInt(pushKey) ?? 0;
       final elapsed = DateTime.now().millisecondsSinceEpoch - last;
       if (elapsed < _minPushInterval.inMilliseconds) return; // throttled
     }
@@ -233,7 +239,7 @@ class LeaderboardService {
         }, SetOptions(merge: true));
       }
 
-      await prefs.setInt(_lastPushKey, DateTime.now().millisecondsSinceEpoch);
+      await prefs.setInt(pushKey, DateTime.now().millisecondsSinceEpoch);
     } catch (e) {
       debugPrint('LeaderboardService.pushNow failed: $e');
     }

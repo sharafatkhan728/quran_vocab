@@ -22,6 +22,7 @@ import '../providers/learning_state_provider.dart';
 import '../database/database_manager.dart';
 import '../services/surah_list_cache.dart';
 import '../data/juz_manzil_data.dart';
+import '../services/sync_service.dart';
 
 enum SurahListViewMode { surah, juz, manzil }
 
@@ -93,6 +94,8 @@ class _SurahListScreenState extends State<SurahListScreen>
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(
         _favKey, _favorites.map((e) => '$e').toList());
+    // Bookmarks/known-words jaisa hi debounced cloud sync.
+    SyncService.scheduleSyncUp();
   }
 
   @override
