@@ -14,6 +14,22 @@
       },
       "oauth_client": [
         {
+          "client_id": "507080315475-3jcmh2dg2pvoobnsiu6liieicfa3nkp4.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.qurankalima.app",
+            "certificate_hash": "e71d8c63db22e2bf79e278751c34a3a0f9cc9681"
+          }
+        },
+        {
+          "client_id": "507080315475-t70mrlgmaeevp296ndqep98fc5ra40l3.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.qurankalima.app",
+            "certificate_hash": "4eaf43d7d81ca2f516efeb9cc0a66d3e7e9ec6bd"
+          }
+        },
+        {
           "client_id": "507080315475-dre8nc81m22j510kn8ba93t57s9hlcav.apps.googleusercontent.com",
           "client_type": 3
         }

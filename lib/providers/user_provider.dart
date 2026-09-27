@@ -131,8 +131,17 @@ class UserProvider extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
-    // Push any pending local changes before signing out
-    await SyncService.syncUp();
+    // Push any pending local changes before signing out — capped with a
+    // timeout so a slow/unavailable network connection can never leave
+    // the user staring at the "Logging out..." dialog forever. If it
+    // times out, we still proceed: normal usage already pushes changes
+    // to the cloud every few seconds via scheduleSyncUp(), so at worst a
+    // few seconds of the very latest activity might not have synced yet.
+    try {
+      await SyncService.syncUp().timeout(const Duration(seconds: 8));
+    } catch (e) {
+      debugPrint('UserProvider.signOut: final syncUp skipped ($e)');
+    }
     await FirebaseAuth.instance.signOut();
     // Wipe local progress now that it's safely pushed to THIS account's
     // cloud doc — otherwise it survives on-device and leaks into
