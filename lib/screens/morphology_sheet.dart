@@ -185,7 +185,7 @@ class _MorphologySheetState extends State<MorphologySheet>
     final screenH = MediaQuery.of(context).size.height;
 
     return Container(
-      height: screenH * 0.75,
+      height: screenH * 0.9,
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF0D1B12) : const Color(0xFFFDF9F0),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -390,13 +390,12 @@ class _MorphologySheetState extends State<MorphologySheet>
                       width: isSelected ? 1.5 : 0,
                     ),
                   ),
+// NAYA:
                   child: Text(
                     w.arabic,
                     textDirection: TextDirection.rtl,
                     style: _arabicStyle(display, isDark,
-                        size: isSelected
-                            ? display.arabicFontSize + 2
-                            : display.arabicFontSize),
+                        size: isSelected ? 28 : 26),
                   ),
                 ),
               );
@@ -688,8 +687,9 @@ class _MorphologySheetState extends State<MorphologySheet>
               offset: const Offset(0, 2)),
         ],
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+// NAYA:
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Container(
             width: 40,
@@ -701,52 +701,49 @@ class _MorphologySheetState extends State<MorphologySheet>
             ),
             child: Icon(icon, color: color, size: 20),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _showUrdu ? step.titleUrdu : step.title,
-                  style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: color,
-                      letterSpacing: 0.3),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  step.arabic,
-                  textDirection: TextDirection.rtl,
-                  style: _arabicStyle(display, isDark,
-                      size: step.type == SarfType.root ? 26 : 30),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  _showUrdu ? step.explanationUrdu : step.explanation,
-                  style: TextStyle(
-                      fontSize: 12,
-                      color: isDark ? Colors.white60 : Colors.grey.shade600,
-                      height: 1.5),
-                ),
-                if (step.prefixes.isNotEmpty || step.suffixes.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Wrap(
-                      spacing: 6,
-                      children: [
-                        ...step.prefixes.map((p) => _segBadge(
-                            '${MorphologyService.expand(p.pos)} prefix',
-                            Colors.orange)),
-                        ...step.suffixes.map((s) => _segBadge(
-                            '${MorphologyService.expand(s.pos)} suffix',
-                            Colors.purple)),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
+          const SizedBox(height: 10),
+          Text(
+            _showUrdu ? step.titleUrdu : step.title,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: color,
+                letterSpacing: 0.3),
           ),
+          const SizedBox(height: 4),
+          Text(
+            step.arabic,
+            textDirection: TextDirection.rtl,
+            textAlign: TextAlign.center,
+            style: _arabicStyle(display, isDark,
+                size: step.type == SarfType.root ? 26 : 30),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _showUrdu ? step.explanationUrdu : step.explanation,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                fontSize: 12,
+                color: isDark ? Colors.white60 : Colors.grey.shade600,
+                height: 1.5),
+          ),
+          if (step.prefixes.isNotEmpty || step.suffixes.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 6,
+                children: [
+                  ...step.prefixes.map((p) => _segBadge(
+                      '${MorphologyService.expand(p.pos)} prefix',
+                      Colors.orange)),
+                  ...step.suffixes.map((s) => _segBadge(
+                      '${MorphologyService.expand(s.pos)} suffix',
+                      Colors.purple)),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -1038,6 +1035,7 @@ class _MorphologySheetState extends State<MorphologySheet>
               final arabic = (w['text_uthmani'] ?? '') as String;
               final isMatch =
                   WordProgressService.normalizeArabic(arabic) == normalized;
+// NAYA:
               return isMatch
                   ? Container(
                       padding: const EdgeInsets.symmetric(
@@ -1048,15 +1046,13 @@ class _MorphologySheetState extends State<MorphologySheet>
                         border: Border.all(color: _gold, width: 1),
                       ),
                       child: Text(arabic,
-                          style: _arabicStyle(display, isDark,
-                                  size: display.arabicFontSize - 4)
+                          style: _arabicStyle(display, isDark, size: 22)
                               .copyWith(
                                   fontWeight: FontWeight.bold,
                                   color: isDark ? Colors.white : _green)),
                     )
                   : Text(arabic,
-                      style: _arabicStyle(display, isDark,
-                          size: display.arabicFontSize - 4));
+                      style: _arabicStyle(display, isDark, size: 22));
             }).toList(),
           ),
           Divider(height: 16, color: Colors.grey.withValues(alpha: 0.1)),

@@ -449,6 +449,9 @@ class _WordDetailDialogState extends State<WordDetailDialog> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 // Urdu
+// NAYA:
+                // Urdu — fixed size, no longer tied to the display font
+                // slider (pinch-zoom / settings), matches EN & Hindi below.
                 Expanded(
                   child: _tableCell(
                     label: 'اردو',
@@ -456,7 +459,7 @@ class _WordDetailDialogState extends State<WordDetailDialog> {
                     value: urdu.isNotEmpty ? urdu : '—',
                     valueRtl: true,
                     valueFontFamily: 'JameelNoori',
-                    fontSize: display.urduFontSize + 2,
+                    fontSize: 15,
                     valueColor: isDark ? const Color(0xFF7EC8A0) : _teal,
                     bg: cellBg,
                     headerBg: headerBg,
@@ -470,7 +473,7 @@ class _WordDetailDialogState extends State<WordDetailDialog> {
                   child: _tableCell(
                     label: 'EN',
                     value: english.isNotEmpty ? english : '—',
-                    fontSize: 13,
+                    fontSize: 15,
                     valueColor:
                         isDark ? Colors.blue.shade300 : Colors.blue.shade700,
                     bg: cellBg,
@@ -485,7 +488,7 @@ class _WordDetailDialogState extends State<WordDetailDialog> {
                   child: _tableCell(
                     label: 'हिंदी',
                     value: hindi.isNotEmpty ? hindi : '—',
-                    fontSize: 13,
+                    fontSize: 15,
                     valueColor: isDark
                         ? Colors.orange.shade300
                         : Colors.orange.shade800,

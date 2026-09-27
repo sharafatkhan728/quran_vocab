@@ -72,17 +72,51 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
   final Map<int, String> _ayahTranslations = {};
   bool _showTranslation = true;
 
+// NAYA:
   Set<String> _bookmarks = {};
-  // Pinch-to-zoom bookkeeping
-  double _pinchBaseArabic = 26;
-  double _pinchBaseUrdu = 13;
-  int _pinchPointers = 0;
 
-  void _pinchCapture(int pointers) {
-    final d = context.read<DisplayProvider>();
-    _pinchBaseArabic = d.arabicFontSize;
-    _pinchBaseUrdu = d.urduFontSize;
-    _pinchPointers = pointers;
+  // Pinch-to-zoom bookkeeping — tracked manually via raw pointer events
+  // (not GestureDetector's onScale*) so it never competes with the list's
+  // scroll gesture, and works no matter which direction the two fingers
+  // move in (vertical, horizontal, diagonal — only their distance matters).
+  final Map<int, Offset> _activePointers = {};
+  double? _pinchStartDistance;
+  double _pinchStartArabic = 26;
+  double _pinchStartUrdu = 13;
+
+  void _onPointerDown(PointerDownEvent event) {
+    _activePointers[event.pointer] = event.position;
+    if (_activePointers.length == 2) {
+      final pts = _activePointers.values.toList();
+      _pinchStartDistance = (pts[0] - pts[1]).distance;
+      final d = context.read<DisplayProvider>();
+      _pinchStartArabic = d.arabicFontSize;
+      _pinchStartUrdu = d.urduFontSize;
+    }
+  }
+
+  void _onPointerMove(PointerMoveEvent event) {
+    if (!_activePointers.containsKey(event.pointer)) return;
+    _activePointers[event.pointer] = event.position;
+    if (_activePointers.length == 2 &&
+        _pinchStartDistance != null &&
+        _pinchStartDistance! > 0) {
+      final pts = _activePointers.values.toList();
+      final currentDistance = (pts[0] - pts[1]).distance;
+      final scale = currentDistance / _pinchStartDistance!;
+      context.read<DisplayProvider>().setSizesLive(
+            arabic: (_pinchStartArabic * scale).clamp(18.0, 80.0).toDouble(),
+            urdu: (_pinchStartUrdu * scale).clamp(10.0, 40.0).toDouble(),
+          );
+    }
+  }
+
+  void _onPointerUpOrCancel(int pointer) {
+    _activePointers.remove(pointer);
+    if (_activePointers.length < 2) _pinchStartDistance = null;
+    if (_activePointers.isEmpty) {
+      context.read<DisplayProvider>().saveSizes();
+    }
   }
 
   int _totalAyahs = 0;
@@ -686,16 +720,17 @@ class _SurahReaderScreenState extends State<SurahReaderScreen> {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => _toggleAyahKnown(ayahNum, !on),
+// NAYA:
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.all(3),
+          padding: const EdgeInsets.all(4),
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: on ? Colors.green : Colors.transparent,
           ),
           child: Icon(
             Icons.done_all,
-            size: 16,
+            size: 22,
             color: on ? Colors.white : Colors.grey,
           ),
         ),
@@ -1118,32 +1153,17 @@ Future<void> _onWordLongPress(QuranWord word) async {
                       ]),
                     ),
                   ),
+// NAYA:
                 Expanded(
-                  child: GestureDetector(
-                    onScaleStart: (d) => _pinchCapture(d.pointerCount),
-                    onScaleUpdate: (d) {
-                      if (d.pointerCount < 2) {
-                        _pinchPointers = d.pointerCount;
-                        return;
-                      }
-                      // finger count changed mid-gesture -> scale restarts at 1.0
-                      if (d.pointerCount != _pinchPointers) {
-                        _pinchCapture(d.pointerCount);
-                      }
-                      context.read<DisplayProvider>().setSizesLive(
-                            arabic: (_pinchBaseArabic * d.scale)
-                                .clamp(18.0, 80.0)
-                                .toDouble(),
-                            urdu: (_pinchBaseUrdu * d.scale)
-                                .clamp(10.0, 40.0)
-                                .toDouble(),
-                          );
-                    },
-                    onScaleEnd: (_) =>
-                        context.read<DisplayProvider>().saveSizes(),
-                  child: _mushafMode
-                      ? _buildMushafContinuous(isDark)
-                      : _buildCardList(isDark),
+                  child: Listener(
+                    behavior: HitTestBehavior.translucent,
+                    onPointerDown: _onPointerDown,
+                    onPointerMove: _onPointerMove,
+                    onPointerUp: (e) => _onPointerUpOrCancel(e.pointer),
+                    onPointerCancel: (e) => _onPointerUpOrCancel(e.pointer),
+                    child: _mushafMode
+                        ? _buildMushafContinuous(isDark)
+                        : _buildCardList(isDark),
                   ),
                 ),
               ],
@@ -1202,6 +1222,7 @@ Future<void> _onWordLongPress(QuranWord word) async {
                 ),
               const SizedBox(width: 6),
 
+// NAYA:
               GestureDetector(
                 onTap: () => _toggleBookmark(ayahNum),
                 child: Icon(
@@ -1211,16 +1232,16 @@ Future<void> _onWordLongPress(QuranWord word) async {
                   color: _bookmarks.contains('${widget.surah.id}:$ayahNum')
                       ? const Color(0xFFD4AF37)
                       : Colors.grey,
-                  size: 18,
+                  size: 24,
                 ),
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: 6),
               if (words != null) _buildAyahKnownIcon(ayahNum, words, isDark),
-              const SizedBox(width: 4),
+              const SizedBox(width: 6),
               GestureDetector(
                 onTap: () => _shareAyah(ayahNum),
                 child: const Icon(Icons.share_outlined,
-                    color: Colors.grey, size: 18),
+                    color: Colors.grey, size: 24),
               ),
               const Spacer(),
               // Juz badge
@@ -1247,6 +1268,7 @@ Future<void> _onWordLongPress(QuranWord word) async {
                 }
                 return const SizedBox.shrink();
               }),
+// NAYA:
               Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
@@ -1254,7 +1276,7 @@ Future<void> _onWordLongPress(QuranWord word) async {
                   color: const Color(0xFF1B4332),
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: Text('﴾ $ayahNum ﴿',
+                child: Text('${widget.surah.id}:$ayahNum',
                     style: const TextStyle(color: Colors.white, fontSize: 12)),
               ),
             ]),
@@ -1273,6 +1295,7 @@ Future<void> _onWordLongPress(QuranWord word) async {
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
+// NAYA:
                       Directionality(
                         textDirection: TextDirection.rtl,
                         child: SizedBox(
@@ -1281,8 +1304,8 @@ Future<void> _onWordLongPress(QuranWord word) async {
                             alignment: WrapAlignment.start,
                             crossAxisAlignment: WrapCrossAlignment.start,
                             textDirection: TextDirection.rtl,
-                              children: words
-                                .map<Widget>((word) {
+                              children: [
+                                ...words.map<Widget>((word) {
                                   final normalized = WordProgressService
                                       .normalizeArabic(word.arabic);
                                   final lp = context
@@ -1295,8 +1318,23 @@ Future<void> _onWordLongPress(QuranWord word) async {
                                     onLongPress: () =>
                                         _onWordLongPress(live),
                                   );
-                                })
-                                .toList(),
+                                }),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 2, vertical: 35),
+                                  child: Directionality(
+                                    textDirection: TextDirection.ltr,
+                                    child: Text(
+                                      '($ayahNum)',
+                                      style: const TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFFD4AF37),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                           ),
                         ),
                       ),
