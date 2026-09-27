@@ -44,7 +44,8 @@ class ImportProgress {
 ///  _vTranslation — ayah_translations (Urdu/EN/HI full ayah)
 class DatabaseImporter {
   static const int _vCore = 2;
-  static const int _vVocab = 14; // bumped: fixed homograph vocab_word_id collision
+// NAYA CODE:
+  static const int _vVocab = 15; // bumped: fallback vocab match — no more silently dropped ayah words
   static const int _vMorphology = 10; // bumped: fixes root_id resolution in run() method
   static const int _vTranslation = 9;
 // </br>
