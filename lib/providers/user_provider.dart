@@ -9,6 +9,13 @@ import '../services/sync_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class UserProvider extends ChangeNotifier {
+  // Disk pe persist hone wala marker — yeh batata hai ke is device pe
+  // AAKHRI baar kaunsa account active tha. Isse account-switch reliably
+  // detect hota hai, chahe app restart hi kyu na ho chuka ho (in-memory
+  // previousUid restart ke baad hamesha null hota hai, isliye akela kaafi
+  // nahi hai — neeche constructor me dekho).
+  static const _lastActiveUidKey = 'last_active_uid';
+
   User? _user;
   Map<String, dynamic> _profile = {};
   bool _restoring = false;
@@ -53,15 +60,24 @@ class UserProvider extends ChangeNotifier {
           _restoring = true;
           notifyListeners();
           try {
-            // Defensive: if a DIFFERENT account was signed in on this
-            // device (previousUid != null) without going through
-            // signOut() — which already wipes local progress — wipe it
-            // now. Otherwise syncDown()'s "this account has no cloud
-            // data yet" fallback would upload the previous account's
-            // local progress as if it belonged to this new account.
-            if (previousUid != null) {
+            // previousUid akela reliable nahi hai: normal logout ke waqt
+            // yehi listener pehle ek baar user == null ke saath fire hota
+            // hai, jo previousUid ko null kar deta hai naye account ke
+            // login se PEHLE hi — isliye alag account login hone ke
+            // bawajood bhi previousUid null milta hai. Isliye hum disk pe
+            // persist hui "last active uid" se compare karte hain, jo us
+            // beech wale null event me bhi, aur poore app-restart ke baad
+            // bhi, sahi rehti hai. Warna syncDown() ka "is account ka cloud
+            // data nahi hai" wala fallback purane account ka bacha hua
+            // local data naye account ke sath upload kar deta.
+            final prefs = await SharedPreferences.getInstance();
+            final lastActiveUid = prefs.getString(_lastActiveUidKey);
+            final isDifferentAccount =
+                lastActiveUid != null && lastActiveUid != user.uid;
+            if (previousUid != null || isDifferentAccount) {
               await DatabaseManager.clearLocalUserProgress();
             }
+            await prefs.setString(_lastActiveUidKey, user.uid);
             await SyncService.syncDown();
           } finally {
             if (_user?.uid == user.uid) {

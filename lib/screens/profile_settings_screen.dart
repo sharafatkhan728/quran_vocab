@@ -1438,6 +1438,17 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     );
     if (confirm != true || !mounted) return;
 
+    // Sab kuch async gap se PEHLE capture kar lo. signOut() FirebaseAuth ki
+    // state badalta hai jisse _AppGate MainNavigation ko AuthScreen se
+    // replace kar deta hai — isi wajah se yeh screen (ProfileSettingsScreen)
+    // dispose ho sakti hai `signOut()` khatam hone se PEHLE. Isliye root
+    // Navigator aur providers ko abhi capture kar lo, taake baad me
+    // `mounted` false ho jaaye tab bhi dialog band ho sake aur state
+    // refresh ho sake.
+    final rootNavigator = Navigator.of(context, rootNavigator: true);
+    final userProvider = context.read<UserProvider>();
+    final learningProvider = context.read<LearningStateProvider>();
+
     // signOut() intentionally waits for the final cloud sync to finish
     // before actually signing out — that part must stay as-is so progress
     // is never lost. This dialog is purely visual: it tells the user
@@ -1446,6 +1457,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
+      useRootNavigator: true,
       builder: (_) => const PopScope(
         canPop: false,
         child: Center(
@@ -1469,17 +1481,19 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       ),
     );
 
-    await context.read<UserProvider>().signOut();
+    await userProvider.signOut();
 
     // Refresh in-memory known/unknown cache now that local SQLite has
     // been wiped by signOut() — otherwise Quran reader / Vocabulary
     // screens would keep showing the old account's known words until
     // the app is fully restarted.
-    if (mounted) {
-      await context.read<LearningStateProvider>().reload();
-    }
+    await learningProvider.reload();
 
-    if (mounted) Navigator.pop(context); // close the loading dialog
+    // Dialog ko ROOT navigator se band karo (`context`/`mounted` se nahi) —
+    // kyunki is screen ka dispose ho jana ab koi problem nahi hai.
+    if (rootNavigator.canPop()) {
+      rootNavigator.pop();
+    }
   }
 
   Future<void> _deleteAccount() async {
