@@ -19,16 +19,15 @@ class LeaderboardService {
   static const _lastPushKey = 'leaderboard_last_push_ms';
   static const _hasProfileKey = 'leaderboard_has_profile';
 
+  // A week is stale after this many days — used both for the individual
+  // leaderboard and (via SocialService.maybeResetWeek) for groups.
+  static const _weekDuration = Duration(days: 7);
+
   static Timer? _debounce;
 
   static String? get _uid => FirebaseAuth.instance.currentUser?.uid;
 
   // ── Profile existence (cached locally so we don't re-check every launch) ──
-  // CRITICAL: the cache key is scoped by uid. Without this, switching
-  // accounts on the same device (logout -> login with a different email)
-  // would reuse account A's "has profile" flag for account B, silently
-  // skipping profile setup and leaving account B with no leaderboard doc.
-
   static Future<bool> hasProfile() async {
     final uid = _uid;
     if (uid == null) return false;
@@ -78,8 +77,9 @@ class LeaderboardService {
     }
 
     final stats = await _collectLocalStats();
+    final hasWeekStart = existing.data()?['weekStartAt'] != null;
 
-    await _db.collection('leaderboard').doc(uid).set({
+    final data = <String, dynamic>{
       'uid': uid,
       'displayName': displayName.trim(),
       'avatarEmoji': avatarEmoji,
@@ -95,7 +95,15 @@ class LeaderboardService {
       'knownWords': stats.$2,
       'streak': stats.$3,
       'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    };
+    // First-ever save for this account — start the weekly window now.
+    if (!hasWeekStart) {
+      data['weekStartAt'] = FieldValue.serverTimestamp();
+      data['weekStartPoints'] = stats.$1;
+      data['weeklyPoints'] = 0;
+    }
+
+    await _db.collection('leaderboard').doc(uid).set(data, SetOptions(merge: true));
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('${_hasProfileKey}_$uid', true);
@@ -181,10 +189,33 @@ class LeaderboardService {
 
     try {
       final stats = await _collectLocalStats();
+      final points = stats.$1;
+
+      // ── Decide the weekly baseline before writing ──────────────────────
+      final myDoc = await _db.collection('leaderboard').doc(uid).get();
+      final existing = myDoc.data();
+      final weekStartAt = existing?['weekStartAt'] as Timestamp?;
+      final isStale = weekStartAt == null ||
+          DateTime.now().difference(weekStartAt.toDate()) >= _weekDuration;
+
+      final int weekStartPoints;
+      final Map<String, dynamic> weekFields = {};
+      if (isStale) {
+        weekStartPoints = points;
+        weekFields['weekStartAt'] = FieldValue.serverTimestamp();
+        weekFields['weekStartPoints'] = points;
+      } else {
+        weekStartPoints =
+            (existing?['weekStartPoints'] as num?)?.toInt() ?? points;
+      }
+      final weeklyPoints = (points - weekStartPoints).clamp(0, 1 << 30);
+
       await _db.collection('leaderboard').doc(uid).set({
-        'points': stats.$1,
+        'points': points,
         'knownWords': stats.$2,
         'streak': stats.$3,
+        'weeklyPoints': weeklyPoints,
+        ...weekFields,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
@@ -195,7 +226,7 @@ class LeaderboardService {
           .get();
       for (final m in myGroups.docs) {
         await m.reference.set({
-          'points': stats.$1,
+          'points': points,
           'knownWords': stats.$2,
           'streak': stats.$3,
           'updatedAt': FieldValue.serverTimestamp(),
@@ -209,13 +240,17 @@ class LeaderboardService {
   }
 
   // ── Fetch (one-time reads, capped, no live listeners) ───────────────────
+  // weekly=true sorts by the stored `weeklyPoints` field directly (server
+  // side, cheap and scales to any number of users) instead of computing it
+  // client side.
 
-  static Future<List<LeaderboardEntry>> fetchGlobal({int limit = 100}) async {
+  static Future<List<LeaderboardEntry>> fetchGlobal(
+      {int limit = 100, bool weekly = false}) async {
     try {
       final snap = await _db
           .collection('leaderboard')
           .where('visibleGlobal', isEqualTo: true)
-          .orderBy('points', descending: true)
+          .orderBy(weekly ? 'weeklyPoints' : 'points', descending: true)
           .limit(limit)
           .get();
       return snap.docs.map(LeaderboardEntry.fromDoc).toList();
@@ -226,13 +261,13 @@ class LeaderboardService {
   }
 
   static Future<List<LeaderboardEntry>> fetchCountry(String country,
-      {int limit = 100}) async {
+      {int limit = 100, bool weekly = false}) async {
     try {
       final snap = await _db
           .collection('leaderboard')
           .where('visibleCountry', isEqualTo: true)
           .where('countryKey', isEqualTo: country.trim().toLowerCase())
-          .orderBy('points', descending: true)
+          .orderBy(weekly ? 'weeklyPoints' : 'points', descending: true)
           .limit(limit)
           .get();
       return snap.docs.map(LeaderboardEntry.fromDoc).toList();
@@ -243,13 +278,13 @@ class LeaderboardService {
   }
 
   static Future<List<LeaderboardEntry>> fetchCity(String city,
-      {int limit = 100}) async {
+      {int limit = 100, bool weekly = false}) async {
     try {
       final snap = await _db
           .collection('leaderboard')
           .where('visibleCity', isEqualTo: true)
           .where('cityKey', isEqualTo: city.trim().toLowerCase())
-          .orderBy('points', descending: true)
+          .orderBy(weekly ? 'weeklyPoints' : 'points', descending: true)
           .limit(limit)
           .get();
       return snap.docs.map(LeaderboardEntry.fromDoc).toList();
@@ -259,7 +294,8 @@ class LeaderboardService {
     }
   }
 
-  static Future<List<LeaderboardEntry>> fetchByUids(List<String> uids) async {
+  static Future<List<LeaderboardEntry>> fetchByUids(List<String> uids,
+      {bool weekly = false}) async {
     if (uids.isEmpty) return [];
     final results = <LeaderboardEntry>[];
     for (int i = 0; i < uids.length; i += 30) {
@@ -270,7 +306,11 @@ class LeaderboardService {
           .get();
       results.addAll(snap.docs.map(LeaderboardEntry.fromDoc));
     }
-    results.sort((a, b) => b.points.compareTo(a.points));
+    if (weekly) {
+      results.sort((a, b) => b.weeklyPoints.compareTo(a.weeklyPoints));
+    } else {
+      results.sort((a, b) => b.points.compareTo(a.points));
+    }
     return results;
   }
 }

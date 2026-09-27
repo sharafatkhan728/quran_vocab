@@ -239,19 +239,19 @@ class _LeaderboardProfileScreenState extends State<LeaderboardProfileScreen> {
           SwitchListTile(
             title: const Text('🌍 Global leaderboard'),
             value: _visGlobal,
-            activeColor: _green,
+            activeThumbColor: _green,
             onChanged: (v) => setState(() => _visGlobal = v),
           ),
           SwitchListTile(
             title: const Text('🇮🇳 Country leaderboard'),
             value: _visCountry,
-            activeColor: _green,
+            activeThumbColor: _green,
             onChanged: (v) => setState(() => _visCountry = v),
           ),
           SwitchListTile(
             title: const Text('🏙️ City leaderboard'),
             value: _visCity,
-            activeColor: _green,
+            activeThumbColor: _green,
             onChanged: (v) => setState(() => _visCity = v),
           ),
           const SizedBox(height: 20),

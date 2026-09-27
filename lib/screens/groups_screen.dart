@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../models/leaderboard_models.dart';
 import '../services/leaderboard_service.dart';
@@ -93,17 +92,15 @@ class _GroupsBodyState extends State<GroupsBody> {
       if (code == null || code.trim().isEmpty) return;
       final group = await SocialService.joinGroupByCode(code);
       if (group == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(const SnackBar(content: Text('Code not found')));
-        }
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Code not found')));
         return;
       }
       _load();
-      if (mounted) {
-        Navigator.push(context,
-            MaterialPageRoute(builder: (_) => GroupDetailScreen(group: group)));
-      }
+      if (!context.mounted) return;
+      Navigator.push(context,
+          MaterialPageRoute(builder: (_) => GroupDetailScreen(group: group)));
     });
   }
 

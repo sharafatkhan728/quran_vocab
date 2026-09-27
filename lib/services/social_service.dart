@@ -291,6 +291,22 @@ class SocialService {
     return list;
   }
 
+  /// Live version — group members ki points update hote hi UI khud
+  /// refresh ho jaayega, bina manual pull-to-refresh ke.
+  static Stream<List<GroupMemberEntry>> streamGroupLeaderboard(
+      String groupId) {
+    return _db
+        .collection('groups')
+        .doc(groupId)
+        .collection('members')
+        .snapshots()
+        .map((snap) {
+      final list = snap.docs.map(GroupMemberEntry.fromDoc).toList();
+      list.sort((a, b) => b.points.compareTo(a.points));
+      return list;
+    });
+  }
+
   static Future<int> getGroupMemberCount(String groupId) async {
     final agg = await _db
         .collection('groups')

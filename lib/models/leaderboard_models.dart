@@ -9,6 +9,7 @@ class LeaderboardEntry {
   final int streak;
   final String country;
   final String city;
+  final int weeklyPoints;
 
   const LeaderboardEntry({
     required this.uid,
@@ -19,7 +20,20 @@ class LeaderboardEntry {
     required this.streak,
     required this.country,
     required this.city,
+    this.weeklyPoints = 0,
   });
+
+  /// Simple rank badge based on total known words — shown next to the
+  /// name in leaderboard rows so other users can see progress level
+  /// at a glance, matching the milestone tiers on the Progress screen.
+  String get badgeEmoji {
+    if (knownWords >= 3000) return '👑';
+    if (knownWords >= 1000) return '🚀';
+    if (knownWords >= 300) return '🌟';
+    if (knownWords >= 100) return '🌿';
+    if (knownWords >= 50) return '🌱';
+    return '';
+  }
 
   factory LeaderboardEntry.fromDoc(DocumentSnapshot<Map<String, dynamic>> d) {
     final m = d.data() ?? {};
@@ -32,6 +46,7 @@ class LeaderboardEntry {
       streak: (m['streak'] as num?)?.toInt() ?? 0,
       country: (m['country'] ?? '').toString(),
       city: (m['city'] ?? '').toString(),
+      weeklyPoints: (m['weeklyPoints'] as num?)?.toInt() ?? 0,
     );
   }
 }

@@ -34,10 +34,12 @@ class _CommunityScreenState extends State<CommunityScreen>
   Future<void> _check() async {
     setState(() => _checking = true);
     final has = await LeaderboardService.hasProfile();
-    if (mounted) setState(() {
+    if (mounted) {
+      setState(() {
       _hasProfile = has;
       _checking = false;
     });
+    }
   }
 
   @override
